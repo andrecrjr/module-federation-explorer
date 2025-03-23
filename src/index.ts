@@ -256,15 +256,36 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       const remoteKey = `remote-${element.name}`;
       const isRunning = this.getRunningRemoteTerminal(remoteKey) !== undefined;
       
-      treeItem.description = element.url;
-      treeItem.tooltip = `Remote: ${element.name}\nURL: ${element.url || 'Not specified'}\nFolder: ${element.folder}\nStatus: ${isRunning ? 'Running' : 'Stopped'}`;
-      treeItem.iconPath = new vscode.ThemeIcon(isRunning ? 'play-circle' : 'server');
-      treeItem.contextValue = isRunning ? 'runningRemote' : 'remote';
+      // Check if the folder is configured
+      const isFolderConfigured = !!element.folder;
       
-      // Add command to start/stop the remote based on current status
+      treeItem.description = element.folder 
+        ? (element.url || '') 
+        : 'Not configured - click to set up';
+        
+      treeItem.tooltip = `Remote: ${element.name}\n` +
+        `URL: ${element.url || 'Not specified'}\n` +
+        `Folder: ${element.folder || 'Not configured'}\n` +
+        `Status: ${isRunning ? 'Running' : (isFolderConfigured ? 'Stopped' : 'Not configured')}`;
+        
+      treeItem.iconPath = new vscode.ThemeIcon(
+        isRunning ? 'play-circle' : (isFolderConfigured ? 'server' : 'warning')
+      );
+      
+      treeItem.contextValue = isRunning 
+        ? 'runningRemote' 
+        : (isFolderConfigured ? 'remote' : 'unconfiguredRemote');
+      
+      // Add command to start/stop or configure the remote based on current status
       treeItem.command = {
-        command: isRunning ? 'moduleFederation.stopRemote' : 'moduleFederation.startRemote',
-        title: isRunning ? `Stop ${element.name}` : `Start ${element.name} (${element.packageManager || 'npm'})`,
+        command: isRunning 
+          ? 'moduleFederation.stopRemote' 
+          : 'moduleFederation.startRemote',
+        title: isRunning 
+          ? `Stop ${element.name}` 
+          : (isFolderConfigured 
+              ? `Start ${element.name} (${element.packageManager || 'npm'})` 
+              : `Configure ${element.name}`),
         arguments: [element]
       };
       
@@ -493,13 +514,13 @@ async function extractConfigFromWebpack(ast: any, workspaceRoot: string): Promis
         if (remotesProp?.value.type === 'ObjectExpression') {
           for (const prop of remotesProp.value.properties) {
             if (isValidRemoteProperty(prop)) {
-              const folderPath = path.join(workspaceRoot, prop.key.name);
+              // Each remote needs its own folder setting - leave blank and let user configure
               config.remotes.push({
                 name: prop.key.name,
                 url: prop.value.value,
-                folder: folderPath,
+                folder: '',  // This will be configured by the user
                 remoteEntry: prop.value.value,
-                packageManager: 'npm',
+                packageManager: '',  // Will be detected after folder is set
                 configType: 'webpack'
               });
             }
@@ -523,13 +544,7 @@ async function extractConfigFromWebpack(ast: any, workspaceRoot: string): Promis
     }
   });
 
-  // Detect package manager for each remote after AST traversal
-  for (const remote of config.remotes) {
-    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'webpack');
-    remote.packageManager = packageManager;
-    remote.startCommand = startCommand;
-  }
-  
+  // We'll defer package manager detection until the user selects a folder
   return config;
 }
 
@@ -570,14 +585,13 @@ async function extractConfigFromVite(ast: any, workspaceRoot: string): Promise<M
           if (prop.key.type === 'Identifier' || prop.key.type === 'Literal') {
             const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
             const remoteUrl = prop.value.type === 'Literal' ? prop.value.value : undefined;
-            const folderPath = path.join(workspaceRoot, remoteName);
             
             config.remotes.push({
               name: remoteName,
               url: remoteUrl,
-              folder: folderPath,
+              folder: '',  // This will be configured by the user
               remoteEntry: remoteUrl,
-              packageManager: 'npm',
+              packageManager: '',  // Will be detected after folder is set
               configType: 'vite'
             });
           }
@@ -602,14 +616,8 @@ async function extractConfigFromVite(ast: any, workspaceRoot: string): Promise<M
       }
     }
   }
-
-  // Detect package manager for each remote after AST traversal
-  for (const remote of config.remotes) {
-    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'vite');
-    remote.packageManager = packageManager;
-    remote.startCommand = startCommand;
-  }
   
+  // We'll defer package manager detection until the user selects a folder
   return config;
 }
 
@@ -773,27 +781,55 @@ export function activate(context: vscode.ExtensionContext) {
           
           // If folder is not set, ask user to select one
           if (!folder) {
-            provider.log(`No folder set for remote ${remote.name}, prompting user to select one`);
             const selectedFolder = await vscode.window.showOpenDialog({
               canSelectFiles: false,
               canSelectFolders: true,
               canSelectMany: false,
-              openLabel: 'Select Remote Folder',
-              title: `Select folder for remote "${remote.name}"`
+              openLabel: 'Select MFE Project Folder',
+              title: `Select the project folder for MFE remote "${remote.name}" (where package.json is located)`
             });
 
             if (!selectedFolder || selectedFolder.length === 0) {
-              provider.log(`User did not select a folder for remote ${remote.name}`);
-              vscode.window.showInformationMessage('No folder selected, remote configuration canceled.');
+              vscode.window.showInformationMessage('No MFE project folder selected. Please select the folder where your MFE project is located (containing package.json).');
               return;
             }
             
             folder = selectedFolder[0].fsPath;
             remote.folder = folder;
-            provider.log(`User selected folder for remote ${remote.name}: ${folder}`);
+            provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
             
             // Save the folder configuration
             await saveRemoteConfiguration(remote, context);
+          } else {
+            // If folder is already set, confirm with user
+            const confirmFolder = await vscode.window.showQuickPick(
+              [
+                { label: 'Yes, use current folder', description: folder },
+                { label: 'No, select a different folder', description: 'Browse for a different MFE project folder' }
+              ],
+              { placeHolder: `Current MFE project folder: ${folder}. Continue with this folder?` }
+            );
+            
+            if (!confirmFolder) return;
+            
+            if (confirmFolder.label.startsWith('No')) {
+              const selectedFolder = await vscode.window.showOpenDialog({
+                canSelectFiles: false,
+                canSelectFolders: true,
+                canSelectMany: false,
+                openLabel: 'Select MFE Project Folder',
+                title: `Select the project folder for MFE remote "${remote.name}" (where package.json is located)`
+              });
+
+              if (!selectedFolder || selectedFolder.length === 0) return;
+              
+              folder = selectedFolder[0].fsPath;
+              remote.folder = folder;
+              provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
+              
+              // Save the folder configuration
+              await saveRemoteConfiguration(remote, context);
+            }
           }
           
           // Check if build and start commands are configured
@@ -893,12 +929,12 @@ export function activate(context: vscode.ExtensionContext) {
               canSelectFiles: false,
               canSelectFolders: true,
               canSelectMany: false,
-              openLabel: 'Select Remote Folder',
-              title: `Select folder for remote "${remote.name}"`
+              openLabel: 'Select MFE Project Folder',
+              title: `Select the project folder for MFE remote "${remote.name}" (where package.json is located)`
             });
 
             if (!selectedFolder || selectedFolder.length === 0) {
-              vscode.window.showInformationMessage('No folder selected, remote configuration canceled.');
+              vscode.window.showInformationMessage('No MFE project folder selected. Please select the folder where your MFE project is located (containing package.json).');
               return;
             }
             
@@ -909,9 +945,9 @@ export function activate(context: vscode.ExtensionContext) {
             const confirmFolder = await vscode.window.showQuickPick(
               [
                 { label: 'Yes, use current folder', description: folder },
-                { label: 'No, select a different folder', description: 'Browse for a different location' }
+                { label: 'No, select a different folder', description: 'Browse for a different MFE project folder' }
               ],
-              { placeHolder: `Current folder: ${folder}. Continue with this folder?` }
+              { placeHolder: `Current MFE project folder: ${folder}. Continue with this folder?` }
             );
             
             if (!confirmFolder) return;
@@ -921,8 +957,8 @@ export function activate(context: vscode.ExtensionContext) {
                 canSelectFiles: false,
                 canSelectFolders: true,
                 canSelectMany: false,
-                openLabel: 'Select Remote Folder',
-                title: `Select folder for remote "${remote.name}"`
+                openLabel: 'Select MFE Project Folder',
+                title: `Select the project folder for MFE remote "${remote.name}" (where package.json is located)`
               });
 
               if (!selectedFolder || selectedFolder.length === 0) return;

@@ -82,6 +82,12 @@
                     "group": "inline"
                 },
                 {
+                    "command": "moduleFederation.startRemote",
+                    "when": "view == moduleFederation && viewItem == unconfiguredRemote",
+                    "group": "inline",
+                    "icon": "$(gear)"
+                },
+                {
                     "command": "moduleFederation.stopRemote",
                     "when": "view == moduleFederation && viewItem == runningRemote",
                     "group": "inline"
