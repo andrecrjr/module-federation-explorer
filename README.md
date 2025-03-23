@@ -1,116 +1,70 @@
-# Module Federation Explorer
+# Module Federation Explorer for Visual Studio Code Workspace
 
-A Visual Studio Code extension for exploring and managing Module Federation remotes in your workspace.
+The Module Federation Explorer is a Visual Studio Code extension that helps developers manage and explore Module Federation configurations in their project. This extension provides a tree view interface to visualize and interact with your Module Federation remotes, exposes, and configurations from Webpack and Vite setups.
 
 ## Features
 
-- **Automatic Configuration Detection**
-  - Detects Module Federation configurations from both Webpack and Vite setups
-  - Supports `.js` and `.ts` configuration files
-  - Auto-refreshes when configuration files change
-  - Excludes `node_modules` from configuration search
+- **Automatic Configuration Detection**: Automatically detects Webpack (`webpack.config.js`, `webpack.config.ts`) and Vite (`vite.config.js`, `vite.config.ts`) configuration files in your workspace.
+- **Tree View Interface**: Displays a hierarchical view of your Module Federation setup:
+  - Shows the status of Module Federation configuration (configured or not).
+  - Lists all remotes and exposed modules.
+  - Provides detailed information about each remote and exposed module.
+- **Start/Stop Remotes**: Allows you to start and stop remote applications directly from the tree view.
+- **Error Logging**: Logs errors and important events to the Output Channel for easy debugging.
+- **Dynamic Updates**: Watches for changes in configuration files and updates the tree view dynamically.
 
-- **Smart Package Manager Detection**
-  - Automatically detects npm, yarn, or pnpm
-  - Uses appropriate start commands based on project type (webpack/vite)
-  - Adapts to different script names (start/dev) based on framework
+## Installation
 
-- **Visual Explorer**
-  - Tree view of all Module Federation apps in your workspace
-  - Shows remotes and exposed modules for each app
-  - Displays real-time running status of applications
-  - Quick access to start/stop functionality
+1. Open Visual Studio Code.
+2. Go to the Extensions Marketplace (Ctrl+Shift+X or Cmd+Shift+X on macOS).
+3. Search for "Module Federation Explorer".
+4. Click "Install".
 
-- **Application Management**
-  - Start/stop Module Federation applications directly from VS Code
-  - Run remotes independently
-  - Configure custom start commands
-  - View running status with visual indicators
-  - **New**: Configure build commands for remotes
-  - **New**: Select custom folders for remote applications
+Alternatively, you can install it via the command line:
 
-- **Persistent Configuration**
-  - **New**: Saves remote configuration to a JSON file
-  - **New**: Remembers remote folders, package managers, and commands
-  - **New**: Automatically applies saved settings when reloading
-
-## Requirements
-
-- VS Code 1.80.0 or higher
-- Node.js and npm/yarn/pnpm installed
-- Webpack or Vite based Module Federation projects
+```bash
+vsce package && code --install-extension module-federation-explorer.version.vsix%
+```
 
 ## Usage
 
-1. Open a workspace containing Module Federation projects
-2. The extension will automatically detect configuration files and display them in the Module Federation explorer view
-3. Use the tree view to:
-   - View all detected Module Federation applications
-   - See remotes and exposed modules for each app
-   - Start/stop applications using the play/stop buttons
-   - Manually refresh configurations using the refresh button
-4. Right-click on items in the tree view for additional options
+### Viewing Module Federation Configuration
 
-## Configuration Options
+1. Open the Command Palette (Ctrl+Shift+P or Cmd+Shift+P on macOS).
+2. Search for and select "Module Federation Explorer: Show Welcome".
+3. The Module Federation Explorer will appear in the sidebar, displaying your project's Module Federation configuration.
 
-### Start Commands
-- Each remote application can have its own custom start command
-- Right-click on a remote and select "Configure Start Command" to:
-  - Choose the package manager (npm, yarn, or pnpm)
-  - Set a custom start command for the remote
-  - **New**: Configure a build command to run before the start command
-  - **New**: Select a custom folder for the remote application
+### Refreshing the View
 
-### Remote Application Folders
-- **New**: Select specific folders for remote applications
-- **New**: Configuration is saved and persisted between sessions
-- **New**: Change folders at any time through the configuration menu
+- Right-click on the Module Federation Explorer view and select "Refresh" to reload configurations.
+- Alternatively, use the command "Module Federation Explorer: Refresh" from the Command Palette.
 
-### Package Manager Detection
-The extension automatically detects and uses:
-- npm (looks for package-lock.json)
-- yarn (looks for yarn.lock)
-- pnpm (looks for pnpm-lock.yaml)
+### Starting and Stopping Remotes
 
-### Framework-specific Settings
-- Webpack projects: Uses `npm start` by default
-- Vite projects: Uses `npm run dev` by default
-- These defaults adapt based on the detected package manager
+- In the Module Federation Explorer tree view, click on the "Start Remote" button next to a remote to start it.
+- To stop a running remote, right-click on the remote and select "Stop Remote".
 
-### Available Commands
-- `Refresh`: Updates the Module Federation explorer view
-- `Start MFE App`: Starts a Module Federation application
-- `Stop MFE App`: Stops a running Module Federation application
-- `Start Remote`: Starts a specific remote application
-- `Configure Start Command`: Customizes how a remote application starts
-- `Show Welcome`: Displays the welcome message
+### Configuring Start Commands
 
-## Extension Settings
+- Right-click on a remote and select "Configure Start Command" to set up custom build and start commands for that remote.
 
-This extension contributes the following settings:
+## Configuration File Management
 
-* None currently
+The extension automatically detects and processes configuration files in your workspace. It looks for:
 
-## Known Issues
+- Webpack configuration files: `webpack.config.js`, `webpack.config.ts`
+- Vite configuration files: `vite.config.js`, `vite.config.ts`
 
-None currently.
+These files are parsed to extract Module Federation settings, including remotes and exposes.
 
-## Release Notes
+## Logging and Error Handling
 
-### 0.2.0
+All important events and errors are logged to the "Module Federation" Output Channel. Errors encountered during configuration loading or processing are displayed in the UI and logged for debugging purposes.
 
-New features:
-- Added build command support for remotes
-- Added folder selection for remote applications
-- Implemented persistent configuration storage
-- Remote configuration settings are now saved to a JSON file
-- Fixed issues with remote application startup
+## Contributing
 
-### 0.1.0
+Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or submit a pull request on the GitHub repository.
 
-Initial release of Module Federation Explorer with the following features:
-- Support for both Webpack and Vite Module Federation configurations
-- Automatic package manager detection (npm, yarn, pnpm)
-- Visual explorer for remotes and exposed modules
-- Start/stop functionality for applications and remotes
-- Auto-refresh on configuration changes 
+## License
+
+This extension is released under the MIT License.

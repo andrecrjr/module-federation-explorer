@@ -2,7 +2,7 @@
     "name": "mfe-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore and manage Module Federation remotes in VS Code",
-    "version": "0.2.0",
+    "version": "1.0.0",
     "engines": {
         "vscode": "^1.80.0"
     },
@@ -50,11 +50,11 @@
             },
             {
                 "command": "moduleFederation.configureStartCommand",
-                "title": "Configure Start Command"
+                "title": "Module Federation Explorer: Configure Start Command"
             },
             {
                 "command": "moduleFederation.showWelcome",
-                "title": "Show Welcome"
+                "title": "Module Federation Explorer: Show Welcome"
             }
         ],
         "menus": {
