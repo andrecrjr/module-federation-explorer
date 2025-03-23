@@ -2,11 +2,13 @@
  * Represents a Module Federation remote application
  */
 export interface Remote {
+  packageManager: string;
   name: string;
   url?: string;
   folder: string;
   configSource?: string; // Track which config file defined this remote
   remoteEntry?: string; // The remote entry point
+  startCommand?: string; // The command to start the remote application
 }
 
 /**
@@ -24,6 +26,7 @@ export interface ExposedModule {
  */
 export interface ModuleFederationStatus {
   hasConfig: boolean;
+  name?: string;
   configType?: 'webpack' | 'vite';
   configPath?: string;
   remotesCount: number;

@@ -38,7 +38,8 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
                 name: prop.key.name,
                 url: prop.value.value,
                 folder: folderPath,
-                remoteEntry: prop.value.value
+                remoteEntry: prop.value.value,
+                packageManager: 'npm'
               });
             }
           }
@@ -102,7 +103,8 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
             const folderPath = path.join(workspaceRoot, prop.key.name);
             config.remotes.push({
               name: prop.key.name,
-              folder: folderPath
+              folder: folderPath,
+              packageManager: 'npm'
             });
           }
         }
