@@ -1,8 +1,8 @@
 {
-    "name": "module-federation-explorer",
+    "name": "mfe-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore and manage Module Federation remotes in VS Code",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "engines": {
         "vscode": "^1.80.0"
     },

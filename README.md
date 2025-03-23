@@ -26,6 +26,13 @@ A Visual Studio Code extension for exploring and managing Module Federation remo
   - Run remotes independently
   - Configure custom start commands
   - View running status with visual indicators
+  - **New**: Configure build commands for remotes
+  - **New**: Select custom folders for remote applications
+
+- **Persistent Configuration**
+  - **New**: Saves remote configuration to a JSON file
+  - **New**: Remembers remote folders, package managers, and commands
+  - **New**: Automatically applies saved settings when reloading
 
 ## Requirements
 
@@ -51,6 +58,13 @@ A Visual Studio Code extension for exploring and managing Module Federation remo
 - Right-click on a remote and select "Configure Start Command" to:
   - Choose the package manager (npm, yarn, or pnpm)
   - Set a custom start command for the remote
+  - **New**: Configure a build command to run before the start command
+  - **New**: Select a custom folder for the remote application
+
+### Remote Application Folders
+- **New**: Select specific folders for remote applications
+- **New**: Configuration is saved and persisted between sessions
+- **New**: Change folders at any time through the configuration menu
 
 ### Package Manager Detection
 The extension automatically detects and uses:
@@ -82,6 +96,15 @@ This extension contributes the following settings:
 None currently.
 
 ## Release Notes
+
+### 0.2.0
+
+New features:
+- Added build command support for remotes
+- Added folder selection for remote applications
+- Implemented persistent configuration storage
+- Remote configuration settings are now saved to a JSON file
+- Fixed issues with remote application startup
 
 ### 0.1.0
 
