@@ -46,4 +46,16 @@ export interface ModuleFederationConfig {
   exposes: ExposedModule[];
   configType: 'webpack' | 'vite';
   configPath: string;
+}
+
+export interface RemotesFolder {
+  type: 'remotesFolder';
+  parentName: string;
+  remotes: Remote[];
+}
+
+export interface ExposesFolder {
+  type: 'exposesFolder';
+  parentName: string;
+  exposes: ExposedModule[];
 } 

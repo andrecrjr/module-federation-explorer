@@ -3,15 +3,19 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as estraverse from 'estraverse';
 import { ModuleFederationConfig } from './types';
-import { ExposedModule, ModuleFederationStatus, Remote } from './types';
+import { ExposedModule, ModuleFederationStatus, Remote, RemotesFolder, ExposesFolder } from './types';
 const { parse } = require('@typescript-eslint/parser');
+
+function isRemote(element: Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder): element is Remote {
+  return !('type' in element) && !('hasConfig' in element) && !('remoteName' in element);
+}
 
 /**
  * Tree data provider for Module Federation remotes
  */
-export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote | ModuleFederationStatus | ExposedModule> {
-  private _onDidChangeTreeData: vscode.EventEmitter<Remote | ModuleFederationStatus | ExposedModule | undefined> = new vscode.EventEmitter<Remote | ModuleFederationStatus | ExposedModule | undefined>();
-  readonly onDidChangeTreeData: vscode.Event<Remote | ModuleFederationStatus | ExposedModule | undefined> = this._onDidChangeTreeData.event;
+export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder> {
+  private _onDidChangeTreeData: vscode.EventEmitter<Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder | undefined> = new vscode.EventEmitter<Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder | undefined>();
+  readonly onDidChangeTreeData: vscode.Event<Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder | undefined> = this._onDidChangeTreeData.event;
   private outputChannel: vscode.OutputChannel;
   private runningApps: Map<string, { terminal: vscode.Terminal; processId?: number }> = new Map();
 
@@ -175,8 +179,26 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
     }
   }
 
-  getTreeItem(element: Remote | ModuleFederationStatus | ExposedModule): vscode.TreeItem {
-    if ('hasConfig' in element) {
+  getTreeItem(element: Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder): vscode.TreeItem {
+    if ('type' in element && element.type === 'remotesFolder') {
+      // This is a RemotesFolder
+      const treeItem = new vscode.TreeItem(
+        'Remotes',
+        vscode.TreeItemCollapsibleState.Expanded
+      );
+      treeItem.iconPath = new vscode.ThemeIcon('remote');
+      treeItem.contextValue = 'remotesFolder';
+      return treeItem;
+    } else if ('type' in element && element.type === 'exposesFolder') {
+      // This is an ExposesFolder
+      const treeItem = new vscode.TreeItem(
+        'Exposes',
+        vscode.TreeItemCollapsibleState.Expanded
+      );
+      treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
+      treeItem.contextValue = 'exposesFolder';
+      return treeItem;
+    } else if ('hasConfig' in element) {
       // This is a ModuleFederationStatus - represents an MFE app
       const treeItem = new vscode.TreeItem(
         element.name || 'Module Federation',
@@ -215,7 +237,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
       treeItem.contextValue = 'exposedModule';
       return treeItem;
-    } else {
+    } else if (isRemote(element)) {
       // This is a Remote
       const treeItem = new vscode.TreeItem(
         element.name, 
@@ -235,10 +257,12 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       };
       
       return treeItem;
+    } else {
+      throw new Error('Unknown element type');
     }
   }
 
-  getChildren(element?: Remote | ModuleFederationStatus | ExposedModule): Thenable<(Remote | ModuleFederationStatus | ExposedModule)[]> {
+  getChildren(element?: Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder): Thenable<(Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder)[]> {
     if (!element) {
       // Root level - show MFE apps
       return Promise.resolve(
@@ -252,22 +276,46 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
         }))
       );
     } else if ('hasConfig' in element) {
-      // MFE app node - show its remotes and exposes
+      // MFE app node - show remotes folder and exposes folder
       const config = this.configs.find(c => c.name === element.name);
       if (!config) return Promise.resolve([]);
       
-      // First show remotes, then exposes
-      return Promise.resolve([
-        ...config.remotes,
-        ...config.exposes
-      ]);
+      const children: (RemotesFolder | ExposesFolder)[] = [];
+      
+      // Add remotes folder if there are remotes
+      if (config.remotes.length > 0) {
+        children.push({
+          type: 'remotesFolder',
+          parentName: config.name,
+          remotes: config.remotes
+        });
+      }
+      
+      // Add exposes folder if there are exposes
+      if (config.exposes.length > 0) {
+        children.push({
+          type: 'exposesFolder',
+          parentName: config.name,
+          exposes: config.exposes
+        });
+      }
+      
+      return Promise.resolve(children);
+    } else if ('type' in element && element.type === 'remotesFolder') {
+      // RemotesFolder node - show all remotes
+      return Promise.resolve(element.remotes);
+    } else if ('type' in element && element.type === 'exposesFolder') {
+      // ExposesFolder node - show all exposes
+      return Promise.resolve(element.exposes);
     } else if ('remoteName' in element) {
       // ExposedModule node - no children
       return Promise.resolve([]);
-    } else {
+    } else if (isRemote(element)) {
       // Remote node - show its exposes
       const config = this.configs.find(c => c.remotes.some(r => r.name === element.name));
       return Promise.resolve(config?.exposes.filter(e => e.remoteName === element.name) || []);
+    } else {
+      return Promise.resolve([]);
     }
   }
 
@@ -434,11 +482,16 @@ async function extractConfigFromVite(ast: any, workspaceRoot: string): Promise<M
       const remotesProp = findProperty(options, 'remotes');
       if (remotesProp?.value.type === 'ObjectExpression') {
         for (const prop of remotesProp.value.properties) {
-          if (prop.key.type === 'Identifier') {
-            const folderPath = path.join(workspaceRoot, prop.key.name);
+          if (prop.key.type === 'Identifier' || prop.key.type === 'Literal') {
+            const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
+            const remoteUrl = prop.value.type === 'Literal' ? prop.value.value : undefined;
+            const folderPath = path.join(workspaceRoot, remoteName);
+            
             config.remotes.push({
-              name: prop.key.name,
+              name: remoteName,
+              url: remoteUrl,
               folder: folderPath,
+              remoteEntry: remoteUrl,
               packageManager: 'npm',
               configType: 'vite'
             });
