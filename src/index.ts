@@ -18,7 +18,8 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
   private _onDidChangeTreeData: vscode.EventEmitter<Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder | undefined> = new vscode.EventEmitter<Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder | undefined>();
   readonly onDidChangeTreeData: vscode.Event<Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder | undefined> = this._onDidChangeTreeData.event;
   private outputChannel: vscode.OutputChannel;
-  private runningApps: Map<string, { terminal: vscode.Terminal; processId?: number }> = new Map();
+  private 
+  : Map<string, { terminal: vscode.Terminal; processId?: number }> = new Map();
   public runningRemotes: Map<string, { terminal: vscode.Terminal }> = new Map();
 
   private configs: ModuleFederationConfig[] = [];
@@ -382,6 +383,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       // Store running app info
       this.runningApps.set(status.name, { terminal });
       this._onDidChangeTreeData.fire(undefined);
+      this.refresh();
       
       vscode.window.showInformationMessage(`Started ${status.name} using ${packageManager}`);
     } catch (error) {
@@ -404,6 +406,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       runningApp.terminal.dispose();
       this.runningApps.delete(status.name);
       this._onDidChangeTreeData.fire(undefined);
+      this.refresh();
       
       vscode.window.showInformationMessage(`Stopped ${status.name}`);
     } catch (error) {
@@ -438,6 +441,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
    */
   setRunningRemote(remoteKey: string, terminal: vscode.Terminal): void {
     this.runningRemotes.set(remoteKey, { terminal });
+    this._onDidChangeTreeData.fire(undefined);
   }
   
   /**
@@ -448,6 +452,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
     if (runningRemote) {
       runningRemote.terminal.dispose();
       this.runningRemotes.delete(remoteKey);
+      this._onDidChangeTreeData.fire(undefined);
     }
   }
   
@@ -755,8 +760,14 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.refresh()),
       
       // Start/Stop MFE app commands
-      vscode.commands.registerCommand('moduleFederation.startApp', (status: ModuleFederationStatus) => provider.startApp(status)),
-      vscode.commands.registerCommand('moduleFederation.stopApp', (status: ModuleFederationStatus) => provider.stopApp(status)),
+      vscode.commands.registerCommand('moduleFederation.startApp', (status: ModuleFederationStatus) => {
+        provider.startApp(status);
+        provider.refresh();
+      }),
+      vscode.commands.registerCommand('moduleFederation.stopApp', (status: ModuleFederationStatus) => {
+        provider.stopApp(status);
+        provider.refresh();
+      }),
       
       // Remote commands
       vscode.commands.registerCommand('moduleFederation.stopRemote', async (remote: Remote) => {
