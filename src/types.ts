@@ -9,6 +9,7 @@ export interface Remote {
   configSource?: string; // Track which config file defined this remote
   remoteEntry?: string; // The remote entry point
   startCommand?: string; // The command to start the remote application
+  configType: 'webpack' | 'vite'; // The type of configuration that defined this remote
 }
 
 /**
@@ -31,6 +32,9 @@ export interface ModuleFederationStatus {
   configPath?: string;
   remotesCount: number;
   exposesCount: number;
+  isRunning?: boolean;
+  processId?: number;
+  startCommand?: string;
 }
 
 /**

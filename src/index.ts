@@ -13,6 +13,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
   private _onDidChangeTreeData: vscode.EventEmitter<Remote | ModuleFederationStatus | ExposedModule | undefined> = new vscode.EventEmitter<Remote | ModuleFederationStatus | ExposedModule | undefined>();
   readonly onDidChangeTreeData: vscode.Event<Remote | ModuleFederationStatus | ExposedModule | undefined> = this._onDidChangeTreeData.event;
   private outputChannel: vscode.OutputChannel;
+  private runningApps: Map<string, { terminal: vscode.Terminal; processId?: number }> = new Map();
 
   private configs: ModuleFederationConfig[] = [];
   private status: ModuleFederationStatus = {
@@ -182,16 +183,25 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
         vscode.TreeItemCollapsibleState.Expanded
       );
       
+      const runningStatus = this.runningApps.has(element.name || '') ? '(Running)' : '';
       const statusText = element.hasConfig 
-        ? `${element.configType} - ${element.remotesCount} remote${element.remotesCount !== 1 ? 's' : ''}, ${element.exposesCount} expose${element.exposesCount !== 1 ? 's' : ''}`
+        ? `${element.configType} - ${element.remotesCount} remote${element.remotesCount !== 1 ? 's' : ''}, ${element.exposesCount} expose${element.exposesCount !== 1 ? 's' : ''} ${runningStatus}`
         : 'Not configured';
       
       treeItem.description = statusText;
       treeItem.tooltip = element.hasConfig 
-        ? `Module Federation App: ${element.name}\nConfig type: ${element.configType}\nConfig file: ${element.configPath}\nRemotes: ${element.remotesCount}\nExposes: ${element.exposesCount}`
+        ? `Module Federation App: ${element.name}\nConfig type: ${element.configType}\nConfig file: ${element.configPath}\nRemotes: ${element.remotesCount}\nExposes: ${element.exposesCount}\nStatus: ${runningStatus || 'Not Running'}`
         : 'Module Federation is not configured in this project.';
-      treeItem.iconPath = new vscode.ThemeIcon('package');
-      treeItem.contextValue = 'moduleFederationStatus';
+      treeItem.iconPath = new vscode.ThemeIcon(this.runningApps.has(element.name || '') ? 'play-circle' : 'package');
+      treeItem.contextValue = this.runningApps.has(element.name || '') ? 'moduleFederationStatusRunning' : 'moduleFederationStatus';
+      
+      // Add buttons for start/stop
+      treeItem.command = {
+        command: this.runningApps.has(element.name || '') ? 'moduleFederation.stopApp' : 'moduleFederation.startApp',
+        title: this.runningApps.has(element.name || '') ? 'Stop App' : 'Start App',
+        arguments: [element]
+      };
+      
       return treeItem;
     } else if ('remoteName' in element) {
       // This is an ExposedModule
@@ -260,6 +270,65 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       return Promise.resolve(config?.exposes.filter(e => e.remoteName === element.name) || []);
     }
   }
+
+  // Add method to start an MFE app
+  async startApp(status: ModuleFederationStatus) {
+    if (!status.name) return;
+    
+    try {
+      const config = this.configs.find(c => c.name === status.name);
+      if (!config) {
+        throw new Error(`Configuration not found for ${status.name}`);
+      }
+
+      // Check if already running
+      if (this.runningApps.has(status.name)) {
+        vscode.window.showInformationMessage(`${status.name} is already running`);
+        return;
+      }
+
+      // Get the project directory (parent of config file)
+      const projectDir = config.configPath.replace(/[^/\\]+$/, '');
+
+      // Detect package manager and determine start command
+      const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(projectDir, config.configType);
+      
+      // Create terminal and start the app
+      const terminal = vscode.window.createTerminal(`MFE: ${status.name}`);
+      terminal.show();
+      terminal.sendText(`cd "${projectDir}" && ${startCommand}`);
+      
+      // Store running app info
+      this.runningApps.set(status.name, { terminal });
+      this._onDidChangeTreeData.fire(undefined);
+      
+      vscode.window.showInformationMessage(`Started ${status.name} using ${packageManager}`);
+    } catch (error) {
+      this.logError(`Failed to start ${status.name}`, error);
+    }
+  }
+
+  // Add method to stop an MFE app
+  async stopApp(status: ModuleFederationStatus) {
+    if (!status.name) return;
+    
+    try {
+      const runningApp = this.runningApps.get(status.name);
+      if (!runningApp) {
+        vscode.window.showInformationMessage(`${status.name} is not running`);
+        return;
+      }
+
+      // Dispose the terminal
+      runningApp.terminal.dispose();
+      this.runningApps.delete(status.name);
+      this._onDidChangeTreeData.fire(undefined);
+      
+      vscode.window.showInformationMessage(`Stopped ${status.name}`);
+    } catch (error) {
+      this.logError(`Failed to stop ${status.name}`, error);
+    }
+  }
 }
 
 /**
@@ -297,7 +366,8 @@ async function extractConfigFromWebpack(ast: any, workspaceRoot: string): Promis
                 url: prop.value.value,
                 folder: folderPath,
                 remoteEntry: prop.value.value,
-                packageManager: 'npm'
+                packageManager: 'npm',
+                configType: 'webpack'
               });
             }
           }
@@ -322,7 +392,7 @@ async function extractConfigFromWebpack(ast: any, workspaceRoot: string): Promis
 
   // Detect package manager for each remote after AST traversal
   for (const remote of config.remotes) {
-    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder);
+    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'webpack');
     remote.packageManager = packageManager;
     remote.startCommand = startCommand;
   }
@@ -369,7 +439,8 @@ async function extractConfigFromVite(ast: any, workspaceRoot: string): Promise<M
             config.remotes.push({
               name: prop.key.name,
               folder: folderPath,
-              packageManager: 'npm'
+              packageManager: 'npm',
+              configType: 'vite'
             });
           }
         }
@@ -396,7 +467,7 @@ async function extractConfigFromVite(ast: any, workspaceRoot: string): Promise<M
 
   // Detect package manager for each remote after AST traversal
   for (const remote of config.remotes) {
-    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder);
+    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'vite');
     remote.packageManager = packageManager;
     remote.startCommand = startCommand;
   }
@@ -479,33 +550,39 @@ function isFederationPlugin(plugin: any): boolean {
 }
 
 /**
- * Detect package manager and get start command for a remote
+ * Detect package manager and get appropriate start command based on project type
  */
-async function detectPackageManagerAndStartCommand(folder: string): Promise<{ packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }> {
+async function detectPackageManagerAndStartCommand(folder: string, configType: 'webpack' | 'vite'): Promise<{ packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }> {
   try {
     // Check for package-lock.json (npm)
     const hasPackageLock = await fs.access(path.join(folder, 'package-lock.json')).then(() => true).catch(() => false);
     if (hasPackageLock) {
-      return { packageManager: 'npm', startCommand: 'npm start' };
+      const startScript = configType === 'vite' ? 'dev' : 'start';
+      return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
     }
 
     // Check for pnpm-lock.yaml (pnpm)
     const hasPnpmLock = await fs.access(path.join(folder, 'pnpm-lock.yaml')).then(() => true).catch(() => false);
     if (hasPnpmLock) {
-      return { packageManager: 'pnpm', startCommand: 'pnpm dev' };
+      const startScript = configType === 'vite' ? 'dev' : 'start';
+      return { packageManager: 'pnpm', startCommand: `pnpm run ${startScript}` };
     }
 
     // Check for yarn.lock (yarn)
     const hasYarnLock = await fs.access(path.join(folder, 'yarn.lock')).then(() => true).catch(() => false);
     if (hasYarnLock) {
-      return { packageManager: 'yarn', startCommand: 'yarn start' };
+      const startScript = configType === 'vite' ? 'dev' : 'start';
+      return { packageManager: 'yarn', startCommand: `yarn ${startScript}` };
     }
 
     // Default to npm if no lock file is found
-    return { packageManager: 'npm', startCommand: 'npm start' };
+    const startScript = configType === 'vite' ? 'dev' : 'start';
+    return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
   } catch (error) {
     console.error('Error detecting package manager:', error);
-    return { packageManager: 'npm', startCommand: 'npm start' };
+    // Default to npm if there's an error
+    const startScript = configType === 'vite' ? 'dev' : 'start';
+    return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
   }
 }
 
@@ -528,12 +605,16 @@ export function activate(context: vscode.ExtensionContext) {
     const disposables = [
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.refresh()),
       
+      // Start/Stop MFE app commands
+      vscode.commands.registerCommand('moduleFederation.startApp', (status: ModuleFederationStatus) => provider.startApp(status)),
+      vscode.commands.registerCommand('moduleFederation.stopApp', (status: ModuleFederationStatus) => provider.stopApp(status)),
+      
       // Start remote command
       vscode.commands.registerCommand('moduleFederation.startRemote', async (remote: Remote) => {
         try {
           // Detect package manager and start command if not already set
           if (!remote.packageManager || !remote.startCommand) {
-            const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder);
+            const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, remote.configType);
             remote.packageManager = packageManager;
             remote.startCommand = startCommand;
           }

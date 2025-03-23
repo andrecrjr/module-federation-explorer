@@ -30,6 +30,16 @@
                 "icon": "$(refresh)"
             },
             {
+                "command": "moduleFederation.startApp",
+                "title": "Start MFE App",
+                "icon": "$(play)"
+            },
+            {
+                "command": "moduleFederation.stopApp",
+                "title": "Stop MFE App",
+                "icon": "$(stop)"
+            },
+            {
                 "command": "moduleFederation.startRemote",
                 "title": "Start Remote"
             },
@@ -51,6 +61,16 @@
                 }
             ],
             "view/item/context": [
+                {
+                    "command": "moduleFederation.startApp",
+                    "when": "view == moduleFederation && viewItem == moduleFederationStatus",
+                    "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.stopApp",
+                    "when": "view == moduleFederation && viewItem == moduleFederationStatusRunning",
+                    "group": "inline"
+                },
                 {
                     "command": "moduleFederation.startRemote",
                     "when": "view == moduleFederation && viewItem == remote",

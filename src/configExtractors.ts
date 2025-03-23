@@ -1,8 +1,46 @@
 import * as path from 'path';
 import * as estraverse from 'estraverse';
+import * as fs from 'fs/promises';
 import { ModuleFederationConfig } from './types';
 
 const { parse } = require('@typescript-eslint/parser');
+
+/**
+ * Detect package manager and get appropriate start command based on project type
+ */
+async function detectPackageManagerAndStartCommand(folder: string, configType: 'webpack' | 'vite'): Promise<{ packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }> {
+  try {
+    // Check for package-lock.json (npm)
+    const hasPackageLock = await fs.access(path.join(folder, 'package-lock.json')).then(() => true).catch(() => false);
+    if (hasPackageLock) {
+      const startScript = configType === 'vite' ? 'dev' : 'start';
+      return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
+    }
+
+    // Check for pnpm-lock.yaml (pnpm)
+    const hasPnpmLock = await fs.access(path.join(folder, 'pnpm-lock.yaml')).then(() => true).catch(() => false);
+    if (hasPnpmLock) {
+      const startScript = configType === 'vite' ? 'dev' : 'start';
+      return { packageManager: 'pnpm', startCommand: `pnpm run ${startScript}` };
+    }
+
+    // Check for yarn.lock (yarn)
+    const hasYarnLock = await fs.access(path.join(folder, 'yarn.lock')).then(() => true).catch(() => false);
+    if (hasYarnLock) {
+      const startScript = configType === 'vite' ? 'dev' : 'start';
+      return { packageManager: 'yarn', startCommand: `yarn ${startScript}` };
+    }
+
+    // Default to npm if no lock file is found
+    const startScript = configType === 'vite' ? 'dev' : 'start';
+    return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
+  } catch (error) {
+    console.error('Error detecting package manager:', error);
+    // Default to npm if there's an error
+    const startScript = configType === 'vite' ? 'dev' : 'start';
+    return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
+  }
+}
 
 /**
  * Extract Module Federation configuration from webpack config AST
@@ -39,7 +77,8 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
                 url: prop.value.value,
                 folder: folderPath,
                 remoteEntry: prop.value.value,
-                packageManager: 'npm'
+                packageManager: 'npm',
+                configType: 'webpack'
               });
             }
           }
@@ -61,6 +100,13 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
       }
     }
   });
+  
+  // Detect package manager for each remote after AST traversal
+  for (const remote of config.remotes) {
+    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'webpack');
+    remote.packageManager = packageManager;
+    remote.startCommand = startCommand;
+  }
   
   return config;
 }
@@ -104,7 +150,8 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
             config.remotes.push({
               name: prop.key.name,
               folder: folderPath,
-              packageManager: 'npm'
+              packageManager: 'npm',
+              configType: 'vite'
             });
           }
         }
@@ -114,16 +161,26 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
       const exposesProp = findProperty(options, 'exposes');
       if (exposesProp?.value.type === 'ObjectExpression') {
         for (const prop of exposesProp.value.properties) {
-          if (prop.key.type === 'Identifier' && prop.value.type === 'Literal') {
-            config.exposes.push({
-              name: prop.key.name,
-              path: prop.value.value,
-              remoteName: config.name
-            });
+          if (prop.key.type === 'Identifier' || prop.key.type === 'Literal') {
+            const exposeName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
+            if (prop.value.type === 'Literal') {
+              config.exposes.push({
+                name: exposeName,
+                path: prop.value.value,
+                remoteName: config.name
+              });
+            }
           }
         }
       }
     }
+  }
+  
+  // Detect package manager for each remote after AST traversal
+  for (const remote of config.remotes) {
+    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'vite');
+    remote.packageManager = packageManager;
+    remote.startCommand = startCommand;
   }
   
   return config;
