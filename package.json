@@ -1,8 +1,8 @@
 {
-    "name": "module-federation-explorer",
+    "name": "mfe-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore and manage Module Federation remotes in VS Code",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "engines": {
         "vscode": "^1.80.0"
     },
@@ -44,6 +44,11 @@
                 "title": "Start Remote"
             },
             {
+                "command": "moduleFederation.stopRemote",
+                "title": "Stop Remote",
+                "icon": "$(stop)"
+            },
+            {
                 "command": "moduleFederation.configureStartCommand",
                 "title": "Configure Start Command"
             },
@@ -74,6 +79,17 @@
                 {
                     "command": "moduleFederation.startRemote",
                     "when": "view == moduleFederation && viewItem == remote",
+                    "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.startRemote",
+                    "when": "view == moduleFederation && viewItem == unconfiguredRemote",
+                    "group": "inline",
+                    "icon": "$(gear)"
+                },
+                {
+                    "command": "moduleFederation.stopRemote",
+                    "when": "view == moduleFederation && viewItem == runningRemote",
                     "group": "inline"
                 },
                 {
