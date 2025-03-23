@@ -2,52 +2,9 @@ import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as estraverse from 'estraverse';
+import { ModuleFederationConfig } from './types';
+import { ExposedModule, ModuleFederationStatus, Remote } from './types';
 const { parse } = require('@typescript-eslint/parser');
-
-/**
- * Represents a Module Federation remote application
- */
-interface Remote {
-  name: string;
-  url?: string;
-  folder: string;
-  configSource?: string; // Track which config file defined this remote
-  remoteEntry?: string; // The remote entry point
-  packageManager?: 'npm' | 'pnpm' | 'yarn';
-  startCommand?: string;
-}
-
-/**
- * Represents a Module Federation exposed module
- */
-interface ExposedModule {
-  name: string;
-  path: string;
-  remoteName: string;
-  configSource?: string;
-}
-
-/**
- * Represents the Module Federation configuration status
- */
-interface ModuleFederationStatus {
-  hasConfig: boolean;
-  configType?: 'webpack' | 'vite';
-  configPath?: string;
-  remotesCount: number;
-  exposesCount: number;
-}
-
-/**
- * Represents a Module Federation configuration
- */
-interface ModuleFederationConfig {
-  name: string;
-  remotes: Remote[];
-  exposes: ExposedModule[];
-  configType: 'webpack' | 'vite';
-  configPath: string;
-}
 
 /**
  * Tree data provider for Module Federation remotes
@@ -219,21 +176,21 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
 
   getTreeItem(element: Remote | ModuleFederationStatus | ExposedModule): vscode.TreeItem {
     if ('hasConfig' in element) {
-      // This is a ModuleFederationStatus
+      // This is a ModuleFederationStatus - represents an MFE app
       const treeItem = new vscode.TreeItem(
-        'Module Federation',
+        element.name || 'Module Federation',
         vscode.TreeItemCollapsibleState.Expanded
       );
       
       const statusText = element.hasConfig 
-        ? `Configured (${element.configType}) - ${element.remotesCount} remote${element.remotesCount !== 1 ? 's' : ''}, ${element.exposesCount} expose${element.exposesCount !== 1 ? 's' : ''}`
+        ? `${element.configType} - ${element.remotesCount} remote${element.remotesCount !== 1 ? 's' : ''}, ${element.exposesCount} expose${element.exposesCount !== 1 ? 's' : ''}`
         : 'Not configured';
       
       treeItem.description = statusText;
       treeItem.tooltip = element.hasConfig 
-        ? `Module Federation is configured using ${element.configType}.\nConfig file: ${element.configPath}\nRemotes: ${element.remotesCount}\nExposes: ${element.exposesCount}`
+        ? `Module Federation App: ${element.name}\nConfig type: ${element.configType}\nConfig file: ${element.configPath}\nRemotes: ${element.remotesCount}\nExposes: ${element.exposesCount}`
         : 'Module Federation is not configured in this project.';
-      treeItem.iconPath = new vscode.ThemeIcon('server');
+      treeItem.iconPath = new vscode.ThemeIcon('package');
       treeItem.contextValue = 'moduleFederationStatus';
       return treeItem;
     } else if ('remoteName' in element) {
@@ -244,8 +201,8 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       );
       
       treeItem.description = element.path;
-      treeItem.tooltip = `Exposed Module: ${element.name}\nPath: ${element.path}\nRemote: ${element.remoteName}\nSource: ${element.configSource}`;
-      treeItem.iconPath = new vscode.ThemeIcon('export');
+      treeItem.tooltip = `Exposed Module: ${element.name}\nPath: ${element.path}\nRemote: ${element.remoteName}`;
+      treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
       treeItem.contextValue = 'exposedModule';
       return treeItem;
     } else {
@@ -256,7 +213,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       );
       
       treeItem.description = element.url;
-      treeItem.tooltip = `Remote: ${element.name}\nURL: ${element.url || 'Not specified'}\nFolder: ${element.folder}\nSource: ${element.configSource}`;
+      treeItem.tooltip = `Remote: ${element.name}\nURL: ${element.url || 'Not specified'}\nFolder: ${element.folder}`;
       treeItem.iconPath = new vscode.ThemeIcon('server');
       treeItem.contextValue = 'remote';
       
@@ -273,13 +230,27 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
 
   getChildren(element?: Remote | ModuleFederationStatus | ExposedModule): Thenable<(Remote | ModuleFederationStatus | ExposedModule)[]> {
     if (!element) {
-      // Root level - show status
-      return Promise.resolve([this.status]);
+      // Root level - show MFE apps
+      return Promise.resolve(
+        this.configs.map(config => ({
+          hasConfig: true,
+          name: config.name,
+          configType: config.configType,
+          configPath: config.configPath,
+          remotesCount: config.remotes.length,
+          exposesCount: config.exposes.length
+        }))
+      );
     } else if ('hasConfig' in element) {
-      // Status node - show all remotes and exposes
-      const allRemotes = this.configs.flatMap(config => config.remotes);
-      const allExposes = this.configs.flatMap(config => config.exposes);
-      return Promise.resolve([...allRemotes, ...allExposes]);
+      // MFE app node - show its remotes and exposes
+      const config = this.configs.find(c => c.name === element.name);
+      if (!config) return Promise.resolve([]);
+      
+      // First show remotes, then exposes
+      return Promise.resolve([
+        ...config.remotes,
+        ...config.exposes
+      ]);
     } else if ('remoteName' in element) {
       // ExposedModule node - no children
       return Promise.resolve([]);
@@ -325,7 +296,8 @@ async function extractConfigFromWebpack(ast: any, workspaceRoot: string): Promis
                 name: prop.key.name,
                 url: prop.value.value,
                 folder: folderPath,
-                remoteEntry: prop.value.value
+                remoteEntry: prop.value.value,
+                packageManager: 'npm'
               });
             }
           }
@@ -396,7 +368,8 @@ async function extractConfigFromVite(ast: any, workspaceRoot: string): Promise<M
             const folderPath = path.join(workspaceRoot, prop.key.name);
             config.remotes.push({
               name: prop.key.name,
-              folder: folderPath
+              folder: folderPath,
+              packageManager: 'npm'
             });
           }
         }
@@ -554,6 +527,8 @@ export function activate(context: vscode.ExtensionContext) {
     // Register commands and watchers
     const disposables = [
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.refresh()),
+      
+      // Start remote command
       vscode.commands.registerCommand('moduleFederation.startRemote', async (remote: Remote) => {
         try {
           // Detect package manager and start command if not already set
@@ -570,6 +545,53 @@ export function activate(context: vscode.ExtensionContext) {
           vscode.window.showErrorMessage(`Failed to start remote ${remote.name}: ${error}`);
         }
       }),
+
+      // Configure start command
+      vscode.commands.registerCommand('moduleFederation.configureStartCommand', async (remote: Remote) => {
+        try {
+          // Get current package manager
+          const currentPM = remote.packageManager || 'npm';
+          
+          // Let user select package manager
+          const packageManagers: vscode.QuickPickItem[] = [
+            { label: 'npm', description: 'Node Package Manager' },
+            { label: 'yarn', description: 'Yarn Package Manager' },
+            { label: 'pnpm', description: 'Performant NPM' }
+          ];
+          
+          const selectedPM = await vscode.window.showQuickPick(
+            packageManagers,
+            {
+              placeHolder: 'Select package manager',
+              title: 'Configure Start Command'
+            }
+          );
+          
+          if (!selectedPM) return;
+          
+          // Let user input custom start command
+          const defaultCommand = remote.startCommand || `${selectedPM.label} start`;
+          const startCommand = await vscode.window.showInputBox({
+            prompt: 'Enter the start command',
+            value: defaultCommand,
+            title: 'Configure Start Command'
+          });
+          
+          if (!startCommand) return;
+          
+          // Update remote configuration
+          remote.packageManager = selectedPM.label as 'npm' | 'yarn' | 'pnpm';
+          remote.startCommand = startCommand;
+          
+          // Refresh the tree view
+          provider.refresh();
+          
+          vscode.window.showInformationMessage(`Updated start command for ${remote.name}: ${startCommand}`);
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to configure start command for ${remote.name}: ${error}`);
+        }
+      }),
+
       vscode.commands.registerCommand('moduleFederation.showWelcome', () => {
         vscode.window.showInformationMessage('Module Federation Explorer activated. Use the view to manage your remotes.');
       })
