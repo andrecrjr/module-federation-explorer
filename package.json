@@ -44,6 +44,11 @@
                 "title": "Start Remote"
             },
             {
+                "command": "moduleFederation.stopRemote",
+                "title": "Stop Remote",
+                "icon": "$(stop)"
+            },
+            {
                 "command": "moduleFederation.configureStartCommand",
                 "title": "Configure Start Command"
             },
@@ -74,6 +79,11 @@
                 {
                     "command": "moduleFederation.startRemote",
                     "when": "view == moduleFederation && viewItem == remote",
+                    "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.stopRemote",
+                    "when": "view == moduleFederation && viewItem == runningRemote",
                     "group": "inline"
                 },
                 {

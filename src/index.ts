@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs/promises';
+import * as fsPromises from 'fs/promises';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as estraverse from 'estraverse';
 import { ModuleFederationConfig } from './types';
@@ -18,6 +19,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
   readonly onDidChangeTreeData: vscode.Event<Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder | undefined> = this._onDidChangeTreeData.event;
   private outputChannel: vscode.OutputChannel;
   private runningApps: Map<string, { terminal: vscode.Terminal; processId?: number }> = new Map();
+  public runningRemotes: Map<string, { terminal: vscode.Terminal }> = new Map();
 
   private configs: ModuleFederationConfig[] = [];
   private status: ModuleFederationStatus = {
@@ -27,7 +29,10 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
   };
   private isLoading = false;
 
-  constructor(private readonly workspaceRoot: string | undefined) {
+  constructor(
+    private readonly workspaceRoot: string | undefined,
+    private readonly context: vscode.ExtensionContext
+  ) {
     this.outputChannel = vscode.window.createOutputChannel('Module Federation');
     this.log('Initializing Module Federation Explorer...');
     this.loadConfigurations();
@@ -116,6 +121,9 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
         this.configs = [...this.configs, ...webpackConfigs, ...viteConfigs];
       }
 
+      // After loading all configs, update with saved settings
+      await this.loadSavedRemoteConfigurations();
+
       // Update status
       this.status = {
         hasConfig: this.configs.length > 0,
@@ -149,7 +157,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
     for (const file of files) {
       try {
         this.log(`Processing ${configType} config: ${file.fsPath}`);
-        const content = await fs.readFile(file.fsPath, 'utf8');
+        const content = await fsPromises.readFile(file.fsPath, 'utf8');
         const ast = parse(content, {
           sourceType: 'module',
           ecmaVersion: 'latest'
@@ -172,7 +180,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
    */
   private async directoryExists(dirPath: string): Promise<boolean> {
     try {
-      const stats = await fs.stat(dirPath);
+      const stats = await fsPromises.stat(dirPath);
       return stats.isDirectory();
     } catch {
       return false;
@@ -244,15 +252,19 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
         vscode.TreeItemCollapsibleState.Collapsed
       );
       
-      treeItem.description = element.url;
-      treeItem.tooltip = `Remote: ${element.name}\nURL: ${element.url || 'Not specified'}\nFolder: ${element.folder}`;
-      treeItem.iconPath = new vscode.ThemeIcon('server');
-      treeItem.contextValue = 'remote';
+      // Check if this remote is running
+      const remoteKey = `remote-${element.name}`;
+      const isRunning = this.getRunningRemoteTerminal(remoteKey) !== undefined;
       
-      // Add command to start the remote
+      treeItem.description = element.url;
+      treeItem.tooltip = `Remote: ${element.name}\nURL: ${element.url || 'Not specified'}\nFolder: ${element.folder}\nStatus: ${isRunning ? 'Running' : 'Stopped'}`;
+      treeItem.iconPath = new vscode.ThemeIcon(isRunning ? 'play-circle' : 'server');
+      treeItem.contextValue = isRunning ? 'runningRemote' : 'remote';
+      
+      // Add command to start/stop the remote based on current status
       treeItem.command = {
-        command: 'moduleFederation.startRemote',
-        title: `Start ${element.name} (${element.packageManager || 'npm'})`,
+        command: isRunning ? 'moduleFederation.stopRemote' : 'moduleFederation.startRemote',
+        title: isRunning ? `Stop ${element.name}` : `Start ${element.name} (${element.packageManager || 'npm'})`,
         arguments: [element]
       };
       
@@ -376,6 +388,79 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
     } catch (error) {
       this.logError(`Failed to stop ${status.name}`, error);
     }
+  }
+
+  /**
+   * Get terminal for a running remote
+   */
+  getRunningRemoteTerminal(remoteKey: string): vscode.Terminal | undefined {
+    const runningRemote = this.runningRemotes.get(remoteKey);
+    
+    // Check if the terminal is still valid (not disposed)
+    if (runningRemote) {
+      try {
+        // Try to reference the terminal - if it's disposed, this will throw an error
+        const disposedCheck = runningRemote.terminal.processId;
+        return runningRemote.terminal;
+      } catch (error) {
+        // Terminal was disposed externally, clean up our reference
+        this.runningRemotes.delete(remoteKey);
+        return undefined;
+      }
+    }
+    
+    return undefined;
+  }
+  
+  /**
+   * Set a remote as running
+   */
+  setRunningRemote(remoteKey: string, terminal: vscode.Terminal): void {
+    this.runningRemotes.set(remoteKey, { terminal });
+  }
+  
+  /**
+   * Stop a running remote
+   */
+  stopRemote(remoteKey: string): void {
+    const runningRemote = this.runningRemotes.get(remoteKey);
+    if (runningRemote) {
+      runningRemote.terminal.dispose();
+      this.runningRemotes.delete(remoteKey);
+    }
+  }
+  
+  /**
+   * Update the remote configurations from saved settings
+   */
+  async loadSavedRemoteConfigurations(): Promise<void> {
+    try {
+      const savedConfigs = await loadRemoteConfigurations(this.context);
+      
+      // Update remotes with saved configurations
+      for (const config of this.configs) {
+        for (const remote of config.remotes) {
+          const savedRemote = savedConfigs[remote.name];
+          if (savedRemote) {
+            // Update folder, package manager and commands
+            remote.folder = savedRemote.folder || remote.folder;
+            remote.packageManager = savedRemote.packageManager || remote.packageManager;
+            remote.startCommand = savedRemote.startCommand || remote.startCommand;
+            remote.buildCommand = savedRemote.buildCommand || undefined;
+          }
+        }
+      }
+    } catch (error) {
+      this.logError('Failed to load saved remote configurations', error);
+    }
+  }
+
+  /**
+   * Clear all running remotes - used when the extension is reactivated
+   */
+  clearAllRemotes(): void {
+    this.runningRemotes.clear();
+    this.log('Cleared all running remotes on startup');
   }
 }
 
@@ -608,21 +693,21 @@ function isFederationPlugin(plugin: any): boolean {
 async function detectPackageManagerAndStartCommand(folder: string, configType: 'webpack' | 'vite'): Promise<{ packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }> {
   try {
     // Check for package-lock.json (npm)
-    const hasPackageLock = await fs.access(path.join(folder, 'package-lock.json')).then(() => true).catch(() => false);
+    const hasPackageLock = await fsPromises.access(path.join(folder, 'package-lock.json')).then(() => true).catch(() => false);
     if (hasPackageLock) {
       const startScript = configType === 'vite' ? 'dev' : 'start';
       return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
     }
 
     // Check for pnpm-lock.yaml (pnpm)
-    const hasPnpmLock = await fs.access(path.join(folder, 'pnpm-lock.yaml')).then(() => true).catch(() => false);
+    const hasPnpmLock = await fsPromises.access(path.join(folder, 'pnpm-lock.yaml')).then(() => true).catch(() => false);
     if (hasPnpmLock) {
       const startScript = configType === 'vite' ? 'dev' : 'start';
       return { packageManager: 'pnpm', startCommand: `pnpm run ${startScript}` };
     }
 
     // Check for yarn.lock (yarn)
-    const hasYarnLock = await fs.access(path.join(folder, 'yarn.lock')).then(() => true).catch(() => false);
+    const hasYarnLock = await fsPromises.access(path.join(folder, 'yarn.lock')).then(() => true).catch(() => false);
     if (hasYarnLock) {
       const startScript = configType === 'vite' ? 'dev' : 'start';
       return { packageManager: 'yarn', startCommand: `yarn ${startScript}` };
@@ -645,7 +730,10 @@ async function detectPackageManagerAndStartCommand(folder: string, configType: '
 export function activate(context: vscode.ExtensionContext) {
   try {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const provider = new ModuleFederationProvider(workspaceRoot);
+    const provider = new ModuleFederationProvider(workspaceRoot, context);
+    
+    // Clear any previously running remotes (in case of extension restart)
+    provider.clearAllRemotes();
     
     // Show initial welcome message
     vscode.window.showInformationMessage('Module Federation Explorer is now active! Looking for remote configurations...');
@@ -662,19 +750,132 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('moduleFederation.startApp', (status: ModuleFederationStatus) => provider.startApp(status)),
       vscode.commands.registerCommand('moduleFederation.stopApp', (status: ModuleFederationStatus) => provider.stopApp(status)),
       
+      // Remote commands
+      vscode.commands.registerCommand('moduleFederation.stopRemote', async (remote: Remote) => {
+        try {
+          const remoteKey = `remote-${remote.name}`;
+          provider.log(`Stopping remote ${remote.name}`);
+          provider.stopRemote(remoteKey);
+          provider.refresh();
+          vscode.window.showInformationMessage(`Stopped remote ${remote.name}`);
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to stop remote ${remote.name}: ${error}`);
+        }
+      }),
+
       // Start remote command
       vscode.commands.registerCommand('moduleFederation.startRemote', async (remote: Remote) => {
         try {
-          // Detect package manager and start command if not already set
-          if (!remote.packageManager || !remote.startCommand) {
-            const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, remote.configType);
-            remote.packageManager = packageManager;
+          provider.log(`Starting remote ${remote.name}, folder: ${remote.folder || 'not set'}`);
+          
+          // First, let the user select or confirm the remote folder
+          let folder = remote.folder;
+          
+          // If folder is not set, ask user to select one
+          if (!folder) {
+            provider.log(`No folder set for remote ${remote.name}, prompting user to select one`);
+            const selectedFolder = await vscode.window.showOpenDialog({
+              canSelectFiles: false,
+              canSelectFolders: true,
+              canSelectMany: false,
+              openLabel: 'Select Remote Folder',
+              title: `Select folder for remote "${remote.name}"`
+            });
+
+            if (!selectedFolder || selectedFolder.length === 0) {
+              provider.log(`User did not select a folder for remote ${remote.name}`);
+              vscode.window.showInformationMessage('No folder selected, remote configuration canceled.');
+              return;
+            }
+            
+            folder = selectedFolder[0].fsPath;
+            remote.folder = folder;
+            provider.log(`User selected folder for remote ${remote.name}: ${folder}`);
+            
+            // Save the folder configuration
+            await saveRemoteConfiguration(remote, context);
+          }
+          
+          // Check if build and start commands are configured
+          if (!remote.buildCommand || !remote.startCommand) {
+            provider.log(`Build or start command not configured for remote ${remote.name}`);
+            // Get current package manager or detect it
+            let packageManager = remote.packageManager;
+            if (!packageManager) {
+              // Detect package manager
+              if (fs.existsSync(path.join(remote.folder, 'package-lock.json'))) {
+                packageManager = 'npm';
+              } else if (fs.existsSync(path.join(remote.folder, 'yarn.lock'))) {
+                packageManager = 'yarn';
+              } else if (fs.existsSync(path.join(remote.folder, 'pnpm-lock.yaml'))) {
+                packageManager = 'pnpm';
+              } else {
+                packageManager = 'npm'; // Default to npm
+              }
+              remote.packageManager = packageManager;
+              provider.log(`Detected package manager for remote ${remote.name}: ${packageManager}`);
+            }
+            
+            // Ask user for build command
+            const defaultBuildCommand = `${packageManager} run build`;
+            const buildCommand = await vscode.window.showInputBox({
+              prompt: 'Enter the build command',
+              value: remote.buildCommand || defaultBuildCommand,
+              title: 'Configure Build Command'
+            });
+            
+            if (!buildCommand) {
+              vscode.window.showInformationMessage('Build command not provided, remote configuration canceled.');
+              return;
+            }
+            
+            // Ask user for start command
+            const defaultStartCommand = `${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`;
+            const startCommand = await vscode.window.showInputBox({
+              prompt: 'Enter the start command',
+              value: remote.startCommand || defaultStartCommand,
+              title: 'Configure Start Command'
+            });
+            
+            if (!startCommand) {
+              vscode.window.showInformationMessage('Start command not provided, remote configuration canceled.');
+              return;
+            }
+            
+            // Update remote configuration
+            remote.buildCommand = buildCommand;
             remote.startCommand = startCommand;
+            
+            // Save the updated configuration
+            await saveRemoteConfiguration(remote, context);
+            vscode.window.showInformationMessage(`Commands configured for remote "${remote.name}"`);
           }
 
-          const terminal = vscode.window.createTerminal(`${remote.name}`);
+          // Check if a terminal for this remote is already running
+          const remoteKey = `remote-${remote.name}`;
+          provider.log(`Checking if remote ${remote.name} is already running (key: ${remoteKey})`);
+          const existingTerminal = provider.getRunningRemoteTerminal(remoteKey);
+          if (existingTerminal) {
+            provider.log(`Remote ${remote.name} is already running, showing existing terminal`);
+            existingTerminal.show();
+            vscode.window.showInformationMessage(`Remote ${remote.name} is already running`);
+            return;
+          }
+          
+          provider.log(`Remote ${remote.name} is not running, creating new terminal`);
+
+          // Create a new terminal and start the remote
+          const terminal = vscode.window.createTerminal(`Remote: ${remote.name}`);
           terminal.show();
-          terminal.sendText(`cd "${remote.folder}" && ${remote.startCommand}`);
+          
+          // Run build and serve commands
+          terminal.sendText(`cd "${remote.folder}" && ${remote.buildCommand} && ${remote.startCommand}`);
+          
+          // Store running remote info
+          provider.setRunningRemote(remoteKey, terminal);
+          provider.refresh();
+          
+          vscode.window.showInformationMessage(`Started remote ${remote.name}: build with "${remote.buildCommand}" and serve with "${remote.startCommand}"`);
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to start remote ${remote.name}: ${error}`);
         }
@@ -683,6 +884,54 @@ export function activate(context: vscode.ExtensionContext) {
       // Configure start command
       vscode.commands.registerCommand('moduleFederation.configureStartCommand', async (remote: Remote) => {
         try {
+          // First, let the user select or confirm the remote folder
+          let folder = remote.folder;
+          
+          // If folder is not set, ask user to select one
+          if (!folder) {
+            const selectedFolder = await vscode.window.showOpenDialog({
+              canSelectFiles: false,
+              canSelectFolders: true,
+              canSelectMany: false,
+              openLabel: 'Select Remote Folder',
+              title: `Select folder for remote "${remote.name}"`
+            });
+
+            if (!selectedFolder || selectedFolder.length === 0) {
+              vscode.window.showInformationMessage('No folder selected, remote configuration canceled.');
+              return;
+            }
+            
+            folder = selectedFolder[0].fsPath;
+            remote.folder = folder;
+          } else {
+            // If folder is already set, confirm with user
+            const confirmFolder = await vscode.window.showQuickPick(
+              [
+                { label: 'Yes, use current folder', description: folder },
+                { label: 'No, select a different folder', description: 'Browse for a different location' }
+              ],
+              { placeHolder: `Current folder: ${folder}. Continue with this folder?` }
+            );
+            
+            if (!confirmFolder) return;
+            
+            if (confirmFolder.label.startsWith('No')) {
+              const selectedFolder = await vscode.window.showOpenDialog({
+                canSelectFiles: false,
+                canSelectFolders: true,
+                canSelectMany: false,
+                openLabel: 'Select Remote Folder',
+                title: `Select folder for remote "${remote.name}"`
+              });
+
+              if (!selectedFolder || selectedFolder.length === 0) return;
+              
+              folder = selectedFolder[0].fsPath;
+              remote.folder = folder;
+            }
+          }
+          
           // Get current package manager
           const currentPM = remote.packageManager || 'npm';
           
@@ -703,6 +952,14 @@ export function activate(context: vscode.ExtensionContext) {
           
           if (!selectedPM) return;
           
+          // Let user input custom build command
+          const defaultBuildCommand = remote.buildCommand || `${selectedPM.label} run build`;
+          const buildCommand = await vscode.window.showInputBox({
+            prompt: 'Enter the build command (leave empty to skip build step)',
+            value: defaultBuildCommand,
+            title: 'Configure Build Command'
+          });
+          
           // Let user input custom start command
           const defaultCommand = remote.startCommand || `${selectedPM.label} start`;
           const startCommand = await vscode.window.showInputBox({
@@ -715,14 +972,18 @@ export function activate(context: vscode.ExtensionContext) {
           
           // Update remote configuration
           remote.packageManager = selectedPM.label as 'npm' | 'yarn' | 'pnpm';
+          remote.buildCommand = buildCommand || '';
           remote.startCommand = startCommand;
+          
+          // Save configuration to a persistent storage
+          await saveRemoteConfiguration(remote, context);
           
           // Refresh the tree view
           provider.refresh();
           
-          vscode.window.showInformationMessage(`Updated start command for ${remote.name}: ${startCommand}`);
+          vscode.window.showInformationMessage(`Updated configuration for ${remote.name}`);
         } catch (error) {
-          vscode.window.showErrorMessage(`Failed to configure start command for ${remote.name}: ${error}`);
+          vscode.window.showErrorMessage(`Failed to configure commands for ${remote.name}: ${error}`);
         }
       }),
 
@@ -746,4 +1007,130 @@ export function activate(context: vscode.ExtensionContext) {
     console.error('[Module Federation] Failed to activate extension:', error);
     throw error; // Re-throw to ensure VS Code knows activation failed
   }
+}
+
+/**
+ * Save remote configuration to persistent storage
+ */
+async function saveRemoteConfiguration(remote: Remote, context: vscode.ExtensionContext): Promise<void> {
+  try {
+    // Try to get saved config path first
+    let configPath = await getConfigurationPath(context);
+    
+    // If no saved config path, use default or ask user
+    if (!configPath) {
+      // Default path in .vscode directory
+      const defaultPath = path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', '.vscode', 'mf-remotes.json');
+      
+      // Ask user where to store the configuration
+      const selectedFolder = await vscode.window.showOpenDialog({
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        openLabel: 'Select Configuration Folder',
+        title: 'Select folder where remote configurations will be stored'
+      });
+
+      if (selectedFolder && selectedFolder.length > 0) {
+        configPath = path.join(selectedFolder[0].fsPath, 'mf-remotes.json');
+      } else {
+        configPath = defaultPath;
+      }
+      
+      // Save the selected path for future use
+      await saveConfigurationPath(context, configPath);
+    }
+    
+    // Ensure parent directory exists
+    const configDir = path.dirname(configPath);
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    
+    // Read existing config or create empty object
+    let config: Record<string, Remote> = {};
+    if (fs.existsSync(configPath)) {
+      const configContent = await fsPromises.readFile(configPath, 'utf-8');
+      config = JSON.parse(configContent);
+    }
+    
+    // Update config with this remote
+    config[remote.name] = remote;
+    
+    // Write config back to file
+    await fsPromises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+    
+    // Show success message
+    vscode.window.showInformationMessage(`Configuration saved to ${configPath}`);
+  } catch (error) {
+    console.error('Failed to save remote configuration:', error);
+    throw new Error(`Failed to save remote configuration: ${error}`);
+  }
+}
+
+/**
+ * Load remote configurations from persistent storage
+ */
+async function loadRemoteConfigurations(context: vscode.ExtensionContext): Promise<Record<string, Remote>> {
+  try {
+    // Try to get saved config path first
+    let configPath = await getConfigurationPath(context);
+    
+    // If we have a saved path, check if file exists
+    if (configPath && fs.existsSync(configPath)) {
+      const configContent = await fsPromises.readFile(configPath, 'utf-8');
+      return JSON.parse(configContent);
+    }
+    
+    // Check default location if no saved path or file doesn't exist
+    const defaultConfigPath = path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', '.vscode', 'mf-remotes.json');
+    if (fs.existsSync(defaultConfigPath)) {
+      // Save this path for future use
+      await saveConfigurationPath(context, defaultConfigPath);
+      const configContent = await fsPromises.readFile(defaultConfigPath, 'utf-8');
+      return JSON.parse(configContent);
+    }
+    
+    // If not found anywhere, ask user to locate the config file
+    const selectedFiles = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      openLabel: 'Select Configuration File',
+      title: 'Select the mf-remotes.json configuration file',
+      filters: {
+        'JSON files': ['json']
+      }
+    });
+    
+    if (selectedFiles && selectedFiles.length > 0) {
+      const userConfigPath = selectedFiles[0].fsPath;
+      
+      // Save this path for future use
+      await saveConfigurationPath(context, userConfigPath);
+      
+      const configContent = await fsPromises.readFile(userConfigPath, 'utf-8');
+      return JSON.parse(configContent);
+    }
+    
+    // No config found
+    return {};
+  } catch (error) {
+    console.error('Failed to load remote configurations:', error);
+    return {};
+  }
+}
+
+/**
+ * Get the saved configuration path from the workspace state
+ */
+async function getConfigurationPath(context: vscode.ExtensionContext): Promise<string | undefined> {
+  return context.workspaceState.get<string>('mf-explorer.configPath');
+}
+
+/**
+ * Save the configuration path to the workspace state
+ */
+async function saveConfigurationPath(context: vscode.ExtensionContext, configPath: string): Promise<void> {
+  await context.workspaceState.update('mf-explorer.configPath', configPath);
 }
