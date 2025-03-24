@@ -1,6 +1,6 @@
 # Module Federation Explorer for Visual Studio Code Workspace
 
-The Module Federation Explorer is a Visual Studio Code extension that helps developers manage and explore Module Federation configurations in their project. This extension provides a tree view interface to visualize and interact with your Module Federation remotes, exposes, and configurations from Webpack and Vite setups.
+The **Module Federation Explorer** is a powerful Visual Studio Code extension designed to streamline the management and exploration of Module Federation configurations in your projects. Whether you're working with Webpack or Vite, this extension provides an intuitive interface to visualize, interact with, and manage your Module Federation remotes, exposes, and configurations.
 
 ## Features
 
@@ -10,8 +10,19 @@ The Module Federation Explorer is a Visual Studio Code extension that helps deve
   - Lists all remotes and exposed modules.
   - Provides detailed information about each remote and exposed module.
 - **Start/Stop Remotes**: Allows you to start and stop remote applications directly from the tree view.
+- **Remote Configuration**: Saves configuration for each remote module federation with customizable build and preview commands.
 - **Error Logging**: Logs errors and important events to the Output Channel for easy debugging.
 - **Dynamic Updates**: Watches for changes in configuration files and updates the tree view dynamically.
+
+## Enhanced Features
+
+- **Multi-Workspace Support**: Seamlessly works across multiple workspace folders, detecting and managing configurations in each folder independently.
+- **Customizable Start Commands**: Configure custom build and start commands for each remote, allowing flexibility for different environments and workflows.
+- **Package Manager Detection**: Automatically detects the package manager (npm, yarn, pnpm) used in your project and suggests appropriate start commands.
+- **Remote Folder Selection**: Easily select or confirm the project folder for each remote, ensuring the correct context for build and start operations.
+- **Command Palette Integration**: Access key functionalities like refreshing the view, starting/stopping remotes, and configuring start commands directly from the Command Palette.
+- **Persistent Configuration Storage**: Saves remote configurations to a persistent storage file, ensuring your settings are retained across sessions.
+- **Welcome Message and Guidance**: Provides a welcome message and guidance to help new users get started with the extension.
 
 ## Installation
 
@@ -23,7 +34,7 @@ The Module Federation Explorer is a Visual Studio Code extension that helps deve
 Alternatively, you can install it via the command line:
 
 ```bash
-vsce package && code --install-extension module-federation-explorer.version.vsix%
+vsce package && code --install-extension module-federation-explorer.[change-to-version].vsix
 ```
 
 ## Usage
@@ -60,6 +71,13 @@ These files are parsed to extract Module Federation settings, including remotes 
 ## Logging and Error Handling
 
 All important events and errors are logged to the "Module Federation" Output Channel. Errors encountered during configuration loading or processing are displayed in the UI and logged for debugging purposes.
+
+## Advanced Features
+
+- **Configuration Path Customization**: Customize the path where remote configurations are stored, allowing for flexible project structures.
+- **File Watcher**: Monitors configuration files for changes and automatically refreshes the tree view to reflect updates.
+- **Error Notifications**: Provides user-friendly error notifications in the VS Code UI, helping you quickly identify and resolve issues.
+- **Terminal Integration**: Integrates with VS Code terminals to run build and start commands, providing a seamless development experience.
 
 ## Contributing
 
