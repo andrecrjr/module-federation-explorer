@@ -42,6 +42,14 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
    * Refreshes the tree view
    */
   refresh(): void {
+    // Only fire a change event to refresh the UI without reloading configs
+    this._onDidChangeTreeData.fire(undefined);
+  }
+  
+  /**
+   * Reloads configurations from disk and then refreshes the tree view
+   */
+  reloadConfigurations(): void {
     this.loadConfigurations();
   }
 
@@ -68,6 +76,11 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
     
     try {
       this.isLoading = true;
+      
+      // Save names of running apps for restoration later
+      const runningAppNames = new Set([...this.runningApps.keys()]);
+      const oldConfigs = [...this.configs]; // Make a copy of the existing configs
+      
       this.configs = [];
       
       const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -381,6 +394,8 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       
       // Store running app info
       this.runningApps.set(status.name, { terminal });
+      
+      // Refresh the tree view to show the updated status
       this._onDidChangeTreeData.fire(undefined);
       
       vscode.window.showInformationMessage(`Started ${status.name} using ${packageManager}`);
@@ -403,6 +418,8 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
       // Dispose the terminal
       runningApp.terminal.dispose();
       this.runningApps.delete(status.name);
+      
+      // Refresh the tree view to show the updated status
       this._onDidChangeTreeData.fire(undefined);
       
       vscode.window.showInformationMessage(`Stopped ${status.name}`);
@@ -438,6 +455,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
    */
   setRunningRemote(remoteKey: string, terminal: vscode.Terminal): void {
     this.runningRemotes.set(remoteKey, { terminal });
+    this._onDidChangeTreeData.fire(undefined);
   }
   
   /**
@@ -448,6 +466,7 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
     if (runningRemote) {
       runningRemote.terminal.dispose();
       this.runningRemotes.delete(remoteKey);
+      this._onDidChangeTreeData.fire(undefined);
     }
   }
   
@@ -752,7 +771,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register commands and watchers
     const disposables = [
-      vscode.commands.registerCommand('moduleFederation.refresh', () => provider.refresh()),
+      vscode.commands.registerCommand('moduleFederation.refresh', () => provider.reloadConfigurations()),
       
       // Start/Stop MFE app commands
       vscode.commands.registerCommand('moduleFederation.startApp', (status: ModuleFederationStatus) => provider.startApp(status)),
@@ -800,6 +819,9 @@ export function activate(context: vscode.ExtensionContext) {
             
             // Save the folder configuration
             await saveRemoteConfiguration(remote, context);
+            
+            // Refresh the tree view to reflect folder changes
+            provider.reloadConfigurations();
           } else {
             // If folder is already set, confirm with user
             const confirmFolder = await vscode.window.showQuickPick(
@@ -829,6 +851,9 @@ export function activate(context: vscode.ExtensionContext) {
               
               // Save the folder configuration
               await saveRemoteConfiguration(remote, context);
+              
+              // Refresh the tree view to reflect folder changes
+              provider.reloadConfigurations();
             }
           }
           
@@ -884,6 +909,10 @@ export function activate(context: vscode.ExtensionContext) {
             
             // Save the updated configuration
             await saveRemoteConfiguration(remote, context);
+            
+            // Refresh view to reflect new command configuration
+            provider.reloadConfigurations();
+            
             vscode.window.showInformationMessage(`Commands configured for remote "${remote.name}"`);
           }
 
@@ -909,6 +938,8 @@ export function activate(context: vscode.ExtensionContext) {
           
           // Store running remote info
           provider.setRunningRemote(remoteKey, terminal);
+          
+          // Ensure UI is updated to show the running remote
           provider.refresh();
           
           vscode.window.showInformationMessage(`Started remote ${remote.name}: build with "${remote.buildCommand}" and serve with "${remote.startCommand}"`);
@@ -1015,7 +1046,7 @@ export function activate(context: vscode.ExtensionContext) {
           await saveRemoteConfiguration(remote, context);
           
           // Refresh the tree view
-          provider.refresh();
+          provider.reloadConfigurations();
           
           vscode.window.showInformationMessage(`Updated configuration for ${remote.name}`);
         } catch (error) {
@@ -1033,9 +1064,9 @@ export function activate(context: vscode.ExtensionContext) {
       '**/{webpack,vite}.config.js',
       true  // ignoreCreateEvents
     );
-    fileWatcher.onDidChange(() => provider.refresh());
-    fileWatcher.onDidCreate(() => provider.refresh());
-    fileWatcher.onDidDelete(() => provider.refresh());
+    fileWatcher.onDidChange(() => provider.reloadConfigurations());
+    fileWatcher.onDidCreate(() => provider.reloadConfigurations());
+    fileWatcher.onDidDelete(() => provider.reloadConfigurations());
     
     context.subscriptions.push(...disposables, fileWatcher);
 
@@ -1120,6 +1151,7 @@ async function loadRemoteConfigurations(context: vscode.ExtensionContext): Promi
     
     // Check default location if no saved path or file doesn't exist
     const defaultConfigPath = path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', '.vscode', 'mf-remotes.json');
+    
     if (fs.existsSync(defaultConfigPath)) {
       // Save this path for future use
       await saveConfigurationPath(context, defaultConfigPath);
@@ -1127,30 +1159,31 @@ async function loadRemoteConfigurations(context: vscode.ExtensionContext): Promi
       return JSON.parse(configContent);
     }
     
-    // If not found anywhere, ask user to locate the config file
-    const selectedFiles = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      openLabel: 'Select Configuration File',
-      title: 'Select the mf-remotes.json configuration file',
-      filters: {
-        'JSON files': ['json']
+    // If not found anywhere, create a new default configuration file
+    const defaultConfig: Record<string, Remote> = {
+      // Define a valid default structure for Remote
+      'defaultRemote': {
+        name: 'defaultRemote',
+        folder: '',
+        url: '',
+        packageManager: 'npm',
+        configType: 'webpack', // or 'vite' depending on your use case
+        startCommand: '',
+        buildCommand: ''
       }
-    });
-    
-    if (selectedFiles && selectedFiles.length > 0) {
-      const userConfigPath = selectedFiles[0].fsPath;
-      
-      // Save this path for future use
-      await saveConfigurationPath(context, userConfigPath);
-      
-      const configContent = await fsPromises.readFile(userConfigPath, 'utf-8');
-      return JSON.parse(configContent);
+    };
+
+    // Ensure the .vscode directory exists
+    const configDir = path.dirname(defaultConfigPath);
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
     }
-    
-    // No config found
-    return {};
+
+    // Write the default configuration to the file
+    await fsPromises.writeFile(defaultConfigPath, JSON.stringify(defaultConfig, null, 2), 'utf-8');
+    await saveConfigurationPath(context, defaultConfigPath); // Save the path for future use
+
+    return defaultConfig; // Return the newly created default configuration
   } catch (error) {
     console.error('Failed to load remote configurations:', error);
     return {};
