@@ -779,6 +779,7 @@ export function activate(context: vscode.ExtensionContext) {
       // Root management commands
       vscode.commands.registerCommand('moduleFederation.addRoot', () => provider.addRoot()),
       vscode.commands.registerCommand('moduleFederation.removeRoot', (rootFolder) => provider.removeRoot(rootFolder)),
+      vscode.commands.registerCommand('moduleFederation.changeConfigFile', () => provider.changeConfigFile()),
       
       // Remote commands
       vscode.commands.registerCommand('moduleFederation.stopRemote', async (remote: Remote) => {

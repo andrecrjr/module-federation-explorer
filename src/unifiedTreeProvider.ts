@@ -547,4 +547,20 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     this.runningRemotes.clear();
     this.log('Cleared all running remotes on startup');
   }
+
+  /**
+   * Change the configuration file and reload
+   */
+  async changeConfigFile(): Promise<void> {
+    try {
+      const changed = await this.rootConfigManager.changeConfigFile();
+      
+      if (changed) {
+        // Reload configurations from the new config file
+        await this.reloadConfigurations();
+      }
+    } catch (error) {
+      this.logError('Failed to change configuration file', error);
+    }
+  }
 } 

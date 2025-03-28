@@ -41,6 +41,11 @@
                 "icon": "$(trash)"
             },
             {
+                "command": "moduleFederation.changeConfigFile",
+                "title": "Change Configuration File",
+                "icon": "$(gear)"
+            },
+            {
                 "command": "moduleFederation.startRemote",
                 "title": "Start Remote"
             },
@@ -67,6 +72,11 @@
                 },
                 {
                     "command": "moduleFederation.addRoot",
+                    "when": "view == moduleFederation",
+                    "group": "navigation"
+                },
+                {
+                    "command": "moduleFederation.changeConfigFile",
                     "when": "view == moduleFederation",
                     "group": "navigation"
                 }
