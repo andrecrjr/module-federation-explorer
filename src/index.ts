@@ -740,10 +740,12 @@ export function activate(context: vscode.ExtensionContext) {
       // Start remote command
       vscode.commands.registerCommand('moduleFederation.startRemote', async (remote: Remote) => {
         try {
-          provider.log(`Starting remote ${remote.name}, folder: ${remote.folder || 'not set'}`);
+          // Call the provider's method to resolve the proper folder path
+          const resolvedFolderPath = (provider as any).resolveRemoteFolderPath(remote);
+          provider.log(`Starting remote ${remote.name}, folder: ${resolvedFolderPath || 'not set'}`);
           
           // First, let the user select or confirm the remote folder
-          let folder = remote.folder;
+          let folder = resolvedFolderPath;
           
           // If folder is not set, ask user to select one
           if (!folder) {
@@ -764,8 +766,8 @@ export function activate(context: vscode.ExtensionContext) {
             remote.folder = folder;
             provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
             
-            // Save the folder configuration
-            await saveRemoteConfiguration(remote, context);
+            // Save the folder configuration using the unified provider
+            await (provider as any).saveRemoteConfiguration(remote);
             
             // Refresh the tree view to reflect folder changes
             provider.reloadConfigurations();
@@ -796,8 +798,8 @@ export function activate(context: vscode.ExtensionContext) {
               remote.folder = folder;
               provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
               
-              // Save the folder configuration
-              await saveRemoteConfiguration(remote, context);
+              // Save the folder configuration using the unified provider
+              await (provider as any).saveRemoteConfiguration(remote);
               
               // Refresh the tree view to reflect folder changes
               provider.reloadConfigurations();
@@ -811,11 +813,11 @@ export function activate(context: vscode.ExtensionContext) {
             let packageManager = remote.packageManager;
             if (!packageManager) {
               // Detect package manager
-              if (fs.existsSync(path.join(remote.folder, 'package-lock.json'))) {
+              if (fs.existsSync(path.join(folder, 'package-lock.json'))) {
                 packageManager = 'npm';
-              } else if (fs.existsSync(path.join(remote.folder, 'yarn.lock'))) {
+              } else if (fs.existsSync(path.join(folder, 'yarn.lock'))) {
                 packageManager = 'yarn';
-              } else if (fs.existsSync(path.join(remote.folder, 'pnpm-lock.yaml'))) {
+              } else if (fs.existsSync(path.join(folder, 'pnpm-lock.yaml'))) {
                 packageManager = 'pnpm';
               } else {
                 packageManager = 'npm'; // Default to npm
@@ -854,8 +856,8 @@ export function activate(context: vscode.ExtensionContext) {
             remote.buildCommand = buildCommand;
             remote.startCommand = startCommand;
             
-            // Save the updated configuration
-            await saveRemoteConfiguration(remote, context);
+            // Save the updated configuration using the unified provider
+            await (provider as any).saveRemoteConfiguration(remote);
             
             // Refresh view to reflect new command configuration
             provider.reloadConfigurations();
@@ -881,7 +883,7 @@ export function activate(context: vscode.ExtensionContext) {
           terminal.show();
           
           // Run build and serve commands
-          terminal.sendText(`cd "${remote.folder}" && ${remote.buildCommand} && ${remote.startCommand}`);
+          terminal.sendText(`cd "${folder}" && ${remote.buildCommand} && ${remote.startCommand}`);
           
           // Store running remote info
           provider.setRunningRemote(remoteKey, terminal);
@@ -898,8 +900,12 @@ export function activate(context: vscode.ExtensionContext) {
       // Configure start command
       vscode.commands.registerCommand('moduleFederation.configureStartCommand', async (remote: Remote) => {
         try {
+          // Call the provider's method to resolve the proper folder path
+          const resolvedFolderPath = (provider as any).resolveRemoteFolderPath(remote);
+          provider.log(`Configuring start command for remote ${remote.name}, folder: ${resolvedFolderPath || 'not set'}`);
+          
           // First, let the user select or confirm the remote folder
-          let folder = remote.folder;
+          let folder = resolvedFolderPath;
           
           // If folder is not set, ask user to select one
           if (!folder) {
@@ -989,8 +995,8 @@ export function activate(context: vscode.ExtensionContext) {
           remote.buildCommand = buildCommand || '';
           remote.startCommand = startCommand;
           
-          // Save configuration to a persistent storage
-          await saveRemoteConfiguration(remote, context);
+          // Save configuration using the unified provider
+          await (provider as any).saveRemoteConfiguration(remote);
           
           // Refresh the tree view
           provider.reloadConfigurations();

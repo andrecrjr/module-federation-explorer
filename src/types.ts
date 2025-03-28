@@ -79,6 +79,9 @@ export interface UnifiedRootConfig {
   rootConfigs?: {
     [rootPath: string]: {
       startCommand?: string;
+      remotes?: {
+        [remoteName: string]: Remote;
+      };
     }
   };
 }

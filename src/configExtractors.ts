@@ -71,11 +71,11 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
         if (remotesProp?.value.type === 'ObjectExpression') {
           for (const prop of remotesProp.value.properties) {
             if (isValidRemoteProperty(prop)) {
-              const folderPath = path.join(workspaceRoot, prop.key.name);
+              const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
               config.remotes.push({
-                name: prop.key.name,
+                name: remoteName,
                 url: prop.value.value,
-                folder: folderPath,
+                folder: remoteName,
                 remoteEntry: prop.value.value,
                 packageManager: 'npm',
                 configType: 'webpack'
@@ -96,6 +96,11 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
               });
             }
           }
+        }
+        
+        console.log(`[Webpack MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}`);
+        if (config.remotes.length > 0) {
+          console.log(`[Webpack MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
         }
       }
     }
@@ -145,11 +150,13 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
       const remotesProp = findProperty(options, 'remotes');
       if (remotesProp?.value.type === 'ObjectExpression') {
         for (const prop of remotesProp.value.properties) {
-          if (prop.key.type === 'Identifier') {
-            const folderPath = path.join(workspaceRoot, prop.key.name);
+          if (prop.key.type === 'Identifier' || prop.key.type === 'Literal') {
+            const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
+            const remoteUrl = prop.value.type === 'Literal' ? prop.value.value : undefined;
             config.remotes.push({
-              name: prop.key.name,
-              folder: folderPath,
+              name: remoteName,
+              url: remoteUrl,
+              folder: remoteName,
               packageManager: 'npm',
               configType: 'vite'
             });
@@ -173,6 +180,11 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
           }
         }
       }
+      
+      console.log(`[Vite MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}`);
+      if (config.remotes.length > 0) {
+        console.log(`[Vite MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
+      }
     }
   }
   
@@ -190,14 +202,14 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
 function findProperty(obj: any, name: string): any {
   return obj.properties.find((p: any) =>
     p.type === 'Property' &&
-    p.key.type === 'Identifier' &&
-    p.key.name === name
+    ((p.key.type === 'Identifier' && p.key.name === name) ||
+     (p.key.type === 'Literal' && p.key.value === name))
   );
 }
 
 function isValidRemoteProperty(prop: any): boolean {
   return prop.type === 'Property' &&
-         prop.key.type === 'Identifier' &&
+         (prop.key.type === 'Identifier' || prop.key.type === 'Literal') &&
          prop.value.type === 'Literal' &&
          typeof prop.value.value === 'string';
 }

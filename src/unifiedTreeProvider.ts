@@ -120,6 +120,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
 
       // Load root folder configurations (start commands, etc.)
       await this.loadRootFolderConfigs();
+      
+      // Load remote configurations
+      await this.loadRemoteConfigurations();
 
       this.log('Finished loading configurations from all roots');
       this._onDidChangeTreeData.fire(undefined);
@@ -182,7 +185,22 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const configs = [...webpackConfigs, ...viteConfigs];
       if (configs.length > 0) {
         this.rootConfigs.set(rootPath, configs);
-        this.log(`Stored ${configs.length} configurations for root ${rootPath}`);
+        
+        // Count total remotes and exposes
+        const totalRemotes = configs.reduce((acc, config) => acc + config.remotes.length, 0);
+        const totalExposes = configs.reduce((acc, config) => acc + config.exposes.length, 0);
+        
+        this.log(`SUMMARY FOR ROOT ${path.basename(rootPath)}: Found ${configs.length} configurations with a total of ${totalRemotes} remotes and ${totalExposes} exposes`);
+        
+        if (totalRemotes > 0) {
+          const remoteNames = configs.flatMap(config => config.remotes.map(r => r.name));
+          this.log(`All remotes in ${path.basename(rootPath)}: ${remoteNames.join(', ')}`);
+        }
+        
+        if (totalExposes > 0) {
+          const exposeNames = configs.flatMap(config => config.exposes.map(e => e.name));
+          this.log(`All exposes in ${path.basename(rootPath)}: ${exposeNames.join(', ')}`);
+        }
       } else {
         this.log(`No Module Federation configurations found in ${rootPath}`);
       }
@@ -242,10 +260,24 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         for (const expose of config.exposes) {
           expose.configSource = file;
         }
+        
+        // Log what we found in this config file
+        this.log(`Found in ${relativeConfigPath}: name=${config.name}, remotes=${config.remotes.length}, exposes=${config.exposes.length}`);
+        if (config.remotes.length > 0) {
+          this.log(`Remotes found in ${relativeConfigPath}: ${config.remotes.map(r => r.name).join(', ')}`);
+        }
+        if (config.exposes.length > 0) {
+          this.log(`Exposes found in ${relativeConfigPath}: ${config.exposes.map(e => e.name).join(', ')}`);
+        }
       } catch (error) {
         this.logError(`Error processing ${file}`, error);
       }
     }
+    
+    // Log summary for this config type
+    const totalRemotes = results.reduce((acc, cfg) => acc + cfg.remotes.length, 0);
+    const totalExposes = results.reduce((acc, cfg) => acc + cfg.exposes.length, 0);
+    this.log(`Summary for ${configType} configs: found ${results.length} configs with ${totalRemotes} remotes and ${totalExposes} exposes`);
     
     return results;
   }
@@ -348,16 +380,19 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const remoteKey = `remote-${element.name}`;
       const isRunning = this.getRunningRemoteTerminal(remoteKey) !== undefined;
       
-      // Check if the folder is configured
-      const isFolderConfigured = !!element.folder;
+      // Resolve the proper folder path
+      const resolvedFolder = this.resolveRemoteFolderPath(element);
       
-      treeItem.description = element.folder 
+      // Check if the folder is configured
+      const isFolderConfigured = !!resolvedFolder && fsSync.existsSync(resolvedFolder);
+      
+      treeItem.description = isFolderConfigured 
         ? `${element.url || ''} ${isRunning ? '(Running)' : ''}` 
         : 'Not configured - click to set up';
         
       treeItem.tooltip = `Remote: ${element.name}\n` +
         `URL: ${element.url || 'Not specified'}\n` +
-        `Folder: ${element.folder || 'Not configured'}\n` +
+        `Folder: ${resolvedFolder || 'Not configured'}\n` +
         `Status: ${isRunning ? 'Running' : (isFolderConfigured ? 'Stopped' : 'Not configured')}`;
         
       treeItem.iconPath = new vscode.ThemeIcon(
@@ -408,6 +443,21 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const allRemotes = element.configs.flatMap(config => config.remotes);
       const allExposes = element.configs.flatMap(config => config.exposes);
       
+      this.log(`Building tree for root folder ${element.name}:`);
+      this.log(`- Found ${element.configs.length} configs with ${allRemotes.length} remotes and ${allExposes.length} exposes`);
+      
+      if (allRemotes.length > 0) {
+        this.log(`- Remotes to display: ${allRemotes.map(r => r.name).join(', ')}`);
+      } else {
+        this.log(`- No remotes found to display`);
+      }
+      
+      if (allExposes.length > 0) {
+        this.log(`- Exposes to display: ${allExposes.map(e => e.name).join(', ')}`);
+      } else {
+        this.log(`- No exposes found to display`);
+      }
+      
       // Add remotes folder if there are remotes
       if (allRemotes.length > 0) {
         children.push({
@@ -425,6 +475,8 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           exposes: allExposes
         });
       }
+      
+      this.log(`- Generated ${children.length} tree folders for ${element.name}`);
       
       return Promise.resolve(children);
     } else if (isRemotesFolder(element)) {
@@ -807,5 +859,156 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     this.runningRemotes.clear();
     this.runningRootApps.clear();
     this.log('Cleared all running remotes and root apps on startup');
+  }
+
+  /**
+   * Resolve the proper folder path for a remote using configured roots
+   */
+  private resolveRemoteFolderPath(remote: Remote): string {
+    // First check if we have a fully qualified path already
+    if (path.isAbsolute(remote.folder)) {
+      return remote.folder;
+    }
+    
+    // Try to find the remote in one of our configured roots
+    for (const [rootPath, configs] of this.rootConfigs.entries()) {
+      const remoteFolderPath = path.join(rootPath, remote.folder);
+      try {
+        if (fsSync.existsSync(remoteFolderPath) && fsSync.statSync(remoteFolderPath).isDirectory()) {
+          this.log(`Resolved remote ${remote.name} folder path to: ${remoteFolderPath}`);
+          return remoteFolderPath;
+        }
+      } catch (error) {
+        // Ignore errors, just continue checking other roots
+      }
+    }
+    
+    // If no match found, use the first root as default
+    const rootPaths = Array.from(this.rootConfigs.keys());
+    if (rootPaths.length > 0) {
+      const defaultPath = path.join(rootPaths[0], remote.folder);
+      this.log(`Using default folder path for remote ${remote.name}: ${defaultPath}`);
+      return defaultPath;
+    }
+    
+    // Fallback to workspace root if available
+    if (this.workspaceRoot) {
+      const workspacePath = path.join(this.workspaceRoot, remote.folder);
+      this.log(`Using workspace root for remote ${remote.name}: ${workspacePath}`);
+      return workspacePath;
+    }
+    
+    // Last resort, just return the relative path
+    return remote.folder;
+  }
+
+  /**
+   * Save remote configuration in the unified root config
+   */
+  async saveRemoteConfiguration(remote: Remote): Promise<void> {
+    try {
+      this.log(`Saving configuration for remote ${remote.name}`);
+      
+      // Get current config
+      const config = await this.rootConfigManager.loadRootConfig();
+      
+      // Find the appropriate root for this remote
+      const resolvedFolderPath = this.resolveRemoteFolderPath(remote);
+      let rootPath = '';
+      
+      // Find which root contains this remote
+      for (const configuredRoot of config.roots) {
+        if (resolvedFolderPath.startsWith(configuredRoot)) {
+          rootPath = configuredRoot;
+          break;
+        }
+      }
+      
+      // If no matching root found, use the first root
+      if (!rootPath && config.roots.length > 0) {
+        rootPath = config.roots[0];
+      }
+      
+      // Ensure rootConfigs exists
+      if (!config.rootConfigs) {
+        config.rootConfigs = {};
+      }
+      
+      // Ensure the config for this root exists
+      if (!config.rootConfigs[rootPath]) {
+        config.rootConfigs[rootPath] = {};
+      }
+      
+      // Ensure remotes section exists for this root
+      if (!config.rootConfigs[rootPath].remotes) {
+        config.rootConfigs[rootPath].remotes = {};
+      }
+      
+      // Store remote configuration
+      config.rootConfigs[rootPath].remotes![remote.name] = {
+        name: remote.name,
+        url: remote.url,
+        folder: remote.folder, // Just the name, not full path
+        packageManager: remote.packageManager,
+        configType: remote.configType,
+        startCommand: remote.startCommand,
+        buildCommand: remote.buildCommand
+      };
+      
+      // Save the config
+      await this.rootConfigManager.saveRootConfig(config);
+      
+      this.log(`Saved configuration for remote ${remote.name} in root ${rootPath}`);
+    } catch (error) {
+      this.logError(`Failed to save configuration for remote ${remote.name}`, error);
+    }
+  }
+
+  /**
+   * Load remote configurations from the unified root config
+   */
+  async loadRemoteConfigurations(): Promise<void> {
+    try {
+      // Get current config
+      const config = await this.rootConfigManager.loadRootConfig();
+      
+      // Check if rootConfigs section exists
+      if (!config.rootConfigs) {
+        this.log('No saved root configurations found');
+        return;
+      }
+      
+      // Go through each root configuration
+      for (const [rootPath, rootConfig] of Object.entries(config.rootConfigs)) {
+        // Skip if no remotes section
+        if (!rootConfig.remotes) {
+          continue;
+        }
+        
+        // Process each remote in this root
+        for (const [remoteName, savedRemote] of Object.entries(rootConfig.remotes)) {
+          // Find the remote in our configs
+          for (const [configRootPath, configs] of this.rootConfigs.entries()) {
+            for (const mfeConfig of configs) {
+              for (const remote of mfeConfig.remotes) {
+                if (remote.name === remoteName) {
+                  this.log(`Updating remote ${remote.name} with saved configuration from root ${rootPath}`);
+                  // Update properties from saved config
+                  remote.folder = savedRemote.folder || remote.name;
+                  remote.url = savedRemote.url || remote.url;
+                  remote.packageManager = savedRemote.packageManager || remote.packageManager;
+                  remote.startCommand = savedRemote.startCommand || remote.startCommand;
+                  remote.buildCommand = savedRemote.buildCommand || remote.buildCommand;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      this.log('Loaded remote configurations from unified config');
+    } catch (error) {
+      this.logError('Failed to load remote configurations', error);
+    }
   }
 }
