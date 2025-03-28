@@ -499,9 +499,35 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
   /**
    * Clear all running remotes - used when the extension is reactivated
    */
-  clearAllRemotes(): void {
+  clearAllRunningApps(): void {
     this.runningRemotes.clear();
     this.log('Cleared all running remotes on startup');
+  }
+
+  // Root management commands
+  addRoot(): void {
+    // Implementation of addRoot method
+  }
+
+  removeRoot(rootFolder: string): void {
+    // Implementation of removeRoot method
+  }
+
+  changeConfigFile(): void {
+    // Implementation of changeConfigFile method
+  }
+
+  // Root app commands
+  startRootApp(rootFolder: string): void {
+    // Implementation of startRootApp method
+  }
+
+  stopRootApp(rootFolder: string): void {
+    // Implementation of stopRootApp method
+  }
+
+  configureRootAppStartCommand(rootFolder: string): void {
+    // Implementation of configureRootAppStartCommand method
   }
 }
 
@@ -763,7 +789,7 @@ export function activate(context: vscode.ExtensionContext) {
     const provider = new UnifiedModuleFederationProvider(workspaceRoot, context);
     
     // Clear any previously running remotes (in case of extension restart)
-    provider.clearAllRemotes();
+    provider.clearAllRunningApps();
     
     // Show initial welcome message
     vscode.window.showInformationMessage('Module Federation Explorer is now active! Loading configurations from all roots...');
@@ -780,6 +806,11 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('moduleFederation.addRoot', () => provider.addRoot()),
       vscode.commands.registerCommand('moduleFederation.removeRoot', (rootFolder) => provider.removeRoot(rootFolder)),
       vscode.commands.registerCommand('moduleFederation.changeConfigFile', () => provider.changeConfigFile()),
+      
+      // Root app commands
+      vscode.commands.registerCommand('moduleFederation.startRootApp', (rootFolder) => provider.startRootApp(rootFolder)),
+      vscode.commands.registerCommand('moduleFederation.stopRootApp', (rootFolder) => provider.stopRootApp(rootFolder)),
+      vscode.commands.registerCommand('moduleFederation.configureRootApp', (rootFolder) => provider.configureRootAppStartCommand(rootFolder)),
       
       // Remote commands
       vscode.commands.registerCommand('moduleFederation.stopRemote', async (remote: Remote) => {

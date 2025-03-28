@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as fsSync from 'fs'; // Import for synchronous fs operations
 import { 
     Remote, 
     ExposedModule, 
@@ -54,6 +55,8 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   private isLoading = false;
   private runningApps: Map<string, { terminal: vscode.Terminal; processId?: number }> = new Map();
   public runningRemotes: Map<string, { terminal: vscode.Terminal }> = new Map();
+  // Store running root app information
+  private runningRootApps: Map<string, { terminal: vscode.Terminal }> = new Map();
   
   constructor(private readonly workspaceRoot: string | undefined, private readonly context: vscode.ExtensionContext) {
     this.outputChannel = vscode.window.createOutputChannel('Module Federation Explorer');
@@ -114,6 +117,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       for (const rootPath of rootConfig.roots) {
         await this.processRoot(rootPath);
       }
+
+      // Load root folder configurations (start commands, etc.)
+      await this.loadRootFolderConfigs();
 
       this.log('Finished loading configurations from all roots');
       this._onDidChangeTreeData.fire(undefined);
@@ -265,10 +271,38 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         vscode.TreeItemCollapsibleState.Expanded
       );
       
+      // Check if this root app is running
+      const isRunning = this.isRootAppRunning(element.path);
+      
       treeItem.description = element.path;
-      treeItem.tooltip = `Root Folder: ${element.path}\nConfigurations: ${element.configs.length}`;
-      treeItem.contextValue = 'rootFolder';
-      treeItem.iconPath = new vscode.ThemeIcon('folder');
+      if (isRunning) {
+        treeItem.description += ' (Running)';
+      }
+      
+      let tooltip = `Root Folder: ${element.path}\nConfigurations: ${element.configs.length}`;
+      if (element.startCommand) {
+        tooltip += `\nStart Command: ${element.startCommand}`;
+        tooltip += `\nStatus: ${isRunning ? 'Running' : 'Stopped'}`;
+      } else {
+        tooltip += '\nStart Command: Not configured';
+      }
+      
+      treeItem.tooltip = tooltip;
+      
+      // Update context value based on whether it's running and has a start command
+      const hasStartCommand = !!element.startCommand;
+      if (isRunning) {
+        treeItem.contextValue = 'runningRootApp';
+      } else if (hasStartCommand) {
+        treeItem.contextValue = 'configurableRootApp';
+      } else {
+        treeItem.contextValue = 'rootFolder';
+      }
+      
+      // Update icon based on status
+      treeItem.iconPath = new vscode.ThemeIcon(
+        isRunning ? 'play-circle' : 'folder'
+      );
       
       return treeItem;
     } else if (isRemotesFolder(element)) {
@@ -365,18 +399,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       return Promise.resolve([fedRoot]);
     } else if (isFederationRoot(element)) {
       // Return all configured root folders
-      const rootFolders: RootFolder[] = [];
-      
-      for (const [rootPath, configs] of this.rootConfigs.entries()) {
-        rootFolders.push({
-          type: 'rootFolder',
-          path: rootPath,
-          name: path.basename(rootPath),
-          configs: configs
-        });
-      }
-      
-      return Promise.resolve(rootFolders);
+      return this.getRootFolders();
     } else if (isRootFolder(element)) {
       // Show remotes folder and exposes folder for this root
       const children: (RemotesFolder | ExposesFolder)[] = [];
@@ -432,6 +455,31 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     } else {
       return Promise.resolve([]);
     }
+  }
+
+  /**
+   * Get root folders with their configurations
+   */
+  private async getRootFolders(): Promise<RootFolder[]> {
+    const rootFolders: RootFolder[] = [];
+    
+    // Get the root configuration
+    const config = await this.rootConfigManager.loadRootConfig();
+    
+    for (const [rootPath, configs] of this.rootConfigs.entries()) {
+      const rootConfig = config.rootConfigs?.[rootPath];
+      
+      rootFolders.push({
+        type: 'rootFolder',
+        path: rootPath,
+        name: path.basename(rootPath),
+        configs: configs,
+        startCommand: rootConfig?.startCommand,
+        isRunning: this.isRootAppRunning(rootPath)
+      });
+    }
+    
+    return rootFolders;
   }
 
   /**
@@ -562,5 +610,210 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     } catch (error) {
       this.logError('Failed to change configuration file', error);
     }
+  }
+
+  /**
+   * Check if a root app is running
+   */
+  private isRootAppRunning(rootPath: string): boolean {
+    return this.runningRootApps.has(rootPath);
+  }
+
+  /**
+   * Start a root app
+   */
+  async startRootApp(rootFolder: RootFolder): Promise<void> {
+    try {
+      const rootPath = rootFolder.path;
+      this.log(`Starting root app: ${rootPath}`);
+      
+      // Check if already running
+      if (this.isRootAppRunning(rootPath)) {
+        vscode.window.showInformationMessage(`Root app is already running: ${rootFolder.name}`);
+        return;
+      }
+      
+      // If start command is not configured, ask user to configure it
+      if (!rootFolder.startCommand) {
+        const startCommand = await this.configureRootAppStartCommand(rootFolder);
+        if (!startCommand) {
+          return; // User cancelled
+        }
+      }
+      
+      // Create terminal and run the start command
+      const terminal = vscode.window.createTerminal(`MFE Root: ${rootFolder.name}`);
+      terminal.show();
+      terminal.sendText(`cd "${rootPath}" && ${rootFolder.startCommand}`);
+      
+      // Store the running app
+      this.runningRootApps.set(rootPath, { terminal });
+      
+      // Refresh the tree view
+      this.refresh();
+      
+      vscode.window.showInformationMessage(`Started root app: ${rootFolder.name}`);
+    } catch (error) {
+      this.logError(`Failed to start root app: ${rootFolder.name}`, error);
+    }
+  }
+  
+  /**
+   * Stop a running root app
+   */
+  async stopRootApp(rootFolder: RootFolder): Promise<void> {
+    try {
+      const rootPath = rootFolder.path;
+      this.log(`Stopping root app: ${rootPath}`);
+      
+      // Check if it's running
+      const runningApp = this.runningRootApps.get(rootPath);
+      if (!runningApp) {
+        vscode.window.showInformationMessage(`Root app is not running: ${rootFolder.name}`);
+        return;
+      }
+      
+      // Dispose the terminal
+      runningApp.terminal.dispose();
+      this.runningRootApps.delete(rootPath);
+      
+      // Refresh the tree view
+      this.refresh();
+      
+      vscode.window.showInformationMessage(`Stopped root app: ${rootFolder.name}`);
+    } catch (error) {
+      this.logError(`Failed to stop root app: ${rootFolder.name}`, error);
+    }
+  }
+  
+  /**
+   * Configure start command for a root app
+   */
+  async configureRootAppStartCommand(rootFolder: RootFolder): Promise<string | undefined> {
+    try {
+      // Get current start command or default
+      const currentCommand = rootFolder.startCommand || '';
+      
+      // Detect common package managers in the directory
+      let defaultCommand = '';
+      try {
+        if (fsSync.existsSync(path.join(rootFolder.path, 'package-lock.json'))) {
+          defaultCommand = 'npm run start';
+        } else if (fsSync.existsSync(path.join(rootFolder.path, 'yarn.lock'))) {
+          defaultCommand = 'yarn start';
+        } else if (fsSync.existsSync(path.join(rootFolder.path, 'pnpm-lock.yaml'))) {
+          defaultCommand = 'pnpm run start';
+        } else {
+          defaultCommand = 'npm run start';
+        }
+      } catch {
+        defaultCommand = 'npm run start';
+      }
+      
+      // Ask user for the start command
+      const startCommand = await vscode.window.showInputBox({
+        prompt: `Configure start command for ${rootFolder.name}`,
+        value: currentCommand || defaultCommand,
+        placeHolder: 'e.g., npm run start, yarn dev, etc.',
+      });
+      
+      if (!startCommand) {
+        return undefined; // User cancelled
+      }
+      
+      // Update the root folder start command
+      rootFolder.startCommand = startCommand;
+      
+      // Save root folder configuration
+      await this.saveRootFolderConfig(rootFolder);
+      
+      // Refresh the tree view
+      this.refresh();
+      
+      vscode.window.showInformationMessage(`Configured start command for ${rootFolder.name}: ${startCommand}`);
+      return startCommand;
+    } catch (error) {
+      this.logError(`Failed to configure start command for root app: ${rootFolder.name}`, error);
+      return undefined;
+    }
+  }
+  
+  /**
+   * Save root folder configuration
+   */
+  private async saveRootFolderConfig(rootFolder: RootFolder): Promise<void> {
+    try {
+      const configPath = await this.rootConfigManager.getConfigPath();
+      if (!configPath) {
+        this.logError(`Failed to save root folder config for ${rootFolder.name}`, 'No configuration path found');
+        return;
+      }
+      
+      // Get current config
+      const config = await this.rootConfigManager.loadRootConfig();
+      
+      // Create or update the configs property if it doesn't exist
+      if (!config.rootConfigs) {
+        config.rootConfigs = {};
+      }
+      
+      // Save the root folder configuration
+      config.rootConfigs[rootFolder.path] = {
+        startCommand: rootFolder.startCommand
+      };
+      
+      // Save the config
+      await this.rootConfigManager.saveRootConfig(config);
+      
+      this.log(`Saved root folder configuration for ${rootFolder.name}`);
+    } catch (error) {
+      this.logError(`Failed to save root folder config for ${rootFolder.name}`, error);
+    }
+  }
+  
+  /**
+   * Load root folder configurations
+   */
+  private async loadRootFolderConfigs(): Promise<void> {
+    try {
+      const config = await this.rootConfigManager.loadRootConfig();
+      
+      // If no root configs property, nothing to load
+      if (!config.rootConfigs) {
+        return;
+      }
+      
+      // Update root folder configurations
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        const rootConfig = config.rootConfigs[rootPath];
+        if (rootConfig) {
+          // Update the root folder in the tree view
+          const rootFolder: RootFolder = {
+            type: 'rootFolder',
+            path: rootPath,
+            name: path.basename(rootPath),
+            configs: configs,
+            startCommand: rootConfig.startCommand,
+            isRunning: this.isRootAppRunning(rootPath)
+          };
+          
+          // Store the updated configuration in the map
+          this.rootConfigs.set(rootPath, configs);
+        }
+      }
+      
+      this.log('Loaded root folder configurations');
+    } catch (error) {
+      this.logError('Failed to load root folder configurations', error);
+    }
+  }
+
+  /**
+   * Clear all running apps - used when the extension is reactivated
+   */
+  clearAllRunningApps(): void {
+    this.runningRemotes.clear();
+    this.runningRootApps.clear();
+    this.log('Cleared all running remotes and root apps on startup');
   }
 } 

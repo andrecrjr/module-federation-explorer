@@ -38,7 +38,7 @@ export class RootConfigManager {
   /**
    * Get the path to the unified root configuration file
    */
-  private getConfigPath(): string | undefined {
+  getConfigPath(): string | undefined {
     const configPath = this.context.workspaceState.get<string>('mf-explorer.configPath');
     if (configPath) {
       return configPath;

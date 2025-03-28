@@ -46,6 +46,21 @@
                 "icon": "$(gear)"
             },
             {
+                "command": "moduleFederation.startRootApp",
+                "title": "Start Root App",
+                "icon": "$(play)"
+            },
+            {
+                "command": "moduleFederation.stopRootApp",
+                "title": "Stop Root App",
+                "icon": "$(stop)"
+            },
+            {
+                "command": "moduleFederation.configureRootApp",
+                "title": "Configure Root App",
+                "icon": "$(gear)"
+            },
+            {
                 "command": "moduleFederation.startRemote",
                 "title": "Start Remote"
             },
@@ -86,6 +101,21 @@
                     "command": "moduleFederation.removeRoot",
                     "when": "view == moduleFederation && viewItem == rootFolder",
                     "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.startRootApp",
+                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp)",
+                    "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.stopRootApp",
+                    "when": "view == moduleFederation && viewItem == runningRootApp",
+                    "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.configureRootApp",
+                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp || viewItem == runningRootApp)",
+                    "group": "rootApp@1"
                 },
                 {
                     "command": "moduleFederation.startRemote",

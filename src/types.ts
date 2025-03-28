@@ -76,6 +76,11 @@ export interface FederationRoot {
  */
 export interface UnifiedRootConfig {
   roots: string[]; // Array of absolute paths to root directories
+  rootConfigs?: {
+    [rootPath: string]: {
+      startCommand?: string;
+    }
+  };
 }
 
 /**
@@ -86,4 +91,6 @@ export interface RootFolder {
   path: string;
   name: string;
   configs: ModuleFederationConfig[];
+  startCommand?: string;
+  isRunning?: boolean;
 } 
