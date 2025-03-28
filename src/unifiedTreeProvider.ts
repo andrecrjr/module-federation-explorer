@@ -589,14 +589,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   }
 
   /**
-   * Clear all running remotes - used when the extension is reactivated
-   */
-  clearAllRemotes(): void {
-    this.runningRemotes.clear();
-    this.log('Cleared all running remotes on startup');
-  }
-
-  /**
    * Change the configuration file and reload
    */
   async changeConfigFile(): Promise<void> {
@@ -809,11 +801,25 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   }
 
   /**
-   * Clear all running apps - used when the extension is reactivated
+   * Clear all running remotes and root apps - used when the extension is reactivated
    */
   clearAllRunningApps(): void {
     this.runningRemotes.clear();
     this.runningRootApps.clear();
     this.log('Cleared all running remotes and root apps on startup');
   }
+
+  /**
+   * Check if a directory exists
+   */
+  /*
+  private async directoryExists(dirPath: string): Promise<boolean> {
+    try {
+      const stats = await fs.stat(dirPath);
+      return stats.isDirectory();
+    } catch (error) {
+      return false;
+    }
+  }
+  */
 } 

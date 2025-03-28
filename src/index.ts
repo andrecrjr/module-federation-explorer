@@ -366,69 +366,6 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
     }
   }
 
-  // Add method to start an MFE app
-  async startApp(status: ModuleFederationStatus) {
-    if (!status.name) return;
-    
-    try {
-      const config = this.configs.find(c => c.name === status.name);
-      if (!config) {
-        throw new Error(`Configuration not found for ${status.name}`);
-      }
-
-      // Check if already running
-      if (this.runningApps.has(status.name)) {
-        vscode.window.showInformationMessage(`${status.name} is already running`);
-        return;
-      }
-
-      // Get the project directory (parent of config file)
-      const projectDir = config.configPath.replace(/[^/\\]+$/, '');
-
-      // Detect package manager and determine start command
-      const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(projectDir, config.configType);
-      
-      // Create terminal and start the app
-      const terminal = vscode.window.createTerminal(`MFE: ${status.name}`);
-      terminal.show();
-      terminal.sendText(`cd "${projectDir}" && ${startCommand}`);
-      
-      // Store running app info
-      this.runningApps.set(status.name, { terminal });
-      
-      // Refresh the tree view to show the updated status
-      this._onDidChangeTreeData.fire(undefined);
-      
-      vscode.window.showInformationMessage(`Started ${status.name} using ${packageManager}`);
-    } catch (error) {
-      this.logError(`Failed to start ${status.name}`, error);
-    }
-  }
-
-  // Add method to stop an MFE app
-  async stopApp(status: ModuleFederationStatus) {
-    if (!status.name) return;
-    
-    try {
-      const runningApp = this.runningApps.get(status.name);
-      if (!runningApp) {
-        vscode.window.showInformationMessage(`${status.name} is not running`);
-        return;
-      }
-
-      // Dispose the terminal
-      runningApp.terminal.dispose();
-      this.runningApps.delete(status.name);
-      
-      // Refresh the tree view to show the updated status
-      this._onDidChangeTreeData.fire(undefined);
-      
-      vscode.window.showInformationMessage(`Stopped ${status.name}`);
-    } catch (error) {
-      this.logError(`Failed to stop ${status.name}`, error);
-    }
-  }
-
   /**
    * Get terminal for a running remote
    */
@@ -504,7 +441,9 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
     this.log('Cleared all running remotes on startup');
   }
 
-  // Root management commands
+  // Root management commands - these are stub methods that are not used
+  // They should be implemented in the UnifiedModuleFederationProvider instead
+  /*
   addRoot(): void {
     // Implementation of addRoot method
   }
@@ -529,6 +468,71 @@ export class ModuleFederationProvider implements vscode.TreeDataProvider<Remote 
   configureRootAppStartCommand(rootFolder: string): void {
     // Implementation of configureRootAppStartCommand method
   }
+  */
+
+  // App management methods - these are unused, now handled by UnifiedModuleFederationProvider
+  /*
+  async startApp(status: ModuleFederationStatus) {
+    if (!status.name) return;
+    
+    try {
+      const config = this.configs.find(c => c.name === status.name);
+      if (!config) {
+        throw new Error(`Configuration not found for ${status.name}`);
+      }
+
+      // Check if already running
+      if (this.runningApps.has(status.name)) {
+        vscode.window.showInformationMessage(`${status.name} is already running`);
+        return;
+      }
+
+      // Get the project directory (parent of config file)
+      const projectDir = config.configPath.replace(/[^/\\]+$/, '');
+
+      // Detect package manager and determine start command
+      const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(projectDir, config.configType);
+      
+      // Create terminal and start the app
+      const terminal = vscode.window.createTerminal(`MFE: ${status.name}`);
+      terminal.show();
+      terminal.sendText(`cd "${projectDir}" && ${startCommand}`);
+      
+      // Store running app info
+      this.runningApps.set(status.name, { terminal });
+      
+      // Refresh the tree view to show the updated status
+      this._onDidChangeTreeData.fire(undefined);
+      
+      vscode.window.showInformationMessage(`Started ${status.name} using ${packageManager}`);
+    } catch (error) {
+      this.logError(`Failed to start ${status.name}`, error);
+    }
+  }
+
+  async stopApp(status: ModuleFederationStatus) {
+    if (!status.name) return;
+    
+    try {
+      const runningApp = this.runningApps.get(status.name);
+      if (!runningApp) {
+        vscode.window.showInformationMessage(`${status.name} is not running`);
+        return;
+      }
+
+      // Dispose the terminal
+      runningApp.terminal.dispose();
+      this.runningApps.delete(status.name);
+      
+      // Refresh the tree view to show the updated status
+      this._onDidChangeTreeData.fire(undefined);
+      
+      vscode.window.showInformationMessage(`Stopped ${status.name}`);
+    } catch (error) {
+      this.logError(`Failed to stop ${status.name}`, error);
+    }
+  }
+  */
 }
 
 /**
