@@ -459,6 +459,13 @@ export class RootConfigManager {
       }
 
       config.roots.splice(index, 1);
+      
+      // Also remove the rootPath entry from rootConfigs if it exists
+      if (config.rootConfigs && config.rootConfigs[rootPath]) {
+        delete config.rootConfigs[rootPath];
+        this.log(`Removed rootConfig entry for ${rootPath}`);
+      }
+      
       await this.saveRootConfig(config);
       
       vscode.window.showInformationMessage(`Removed root ${rootPath} from configuration`);
