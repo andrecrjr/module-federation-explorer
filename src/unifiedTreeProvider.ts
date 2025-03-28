@@ -808,18 +808,4 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     this.runningRootApps.clear();
     this.log('Cleared all running remotes and root apps on startup');
   }
-
-  /**
-   * Check if a directory exists
-   */
-  /*
-  private async directoryExists(dirPath: string): Promise<boolean> {
-    try {
-      const stats = await fs.stat(dirPath);
-      return stats.isDirectory();
-    } catch (error) {
-      return false;
-    }
-  }
-  */
-} 
+}
