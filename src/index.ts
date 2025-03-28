@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as estraverse from 'estraverse';
 import { ModuleFederationConfig } from './types';
 import { ExposedModule, ModuleFederationStatus, Remote, RemotesFolder, ExposesFolder } from './types';
+import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
 const { parse } = require('@typescript-eslint/parser');
 
 function isRemote(element: Remote | ModuleFederationStatus | ExposedModule | RemotesFolder | ExposesFolder): element is Remote {
@@ -757,13 +758,15 @@ async function detectPackageManagerAndStartCommand(folder: string, configType: '
 export function activate(context: vscode.ExtensionContext) {
   try {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const provider = new ModuleFederationProvider(workspaceRoot, context);
+    
+    // Create the unified provider instead of the old one
+    const provider = new UnifiedModuleFederationProvider(workspaceRoot, context);
     
     // Clear any previously running remotes (in case of extension restart)
     provider.clearAllRemotes();
     
     // Show initial welcome message
-    vscode.window.showInformationMessage('Module Federation Explorer is now active! Looking for remote configurations...');
+    vscode.window.showInformationMessage('Module Federation Explorer is now active! Loading configurations from all roots...');
     provider.log('Extension activated successfully');
 
     // Register the tree data provider
@@ -773,9 +776,9 @@ export function activate(context: vscode.ExtensionContext) {
     const disposables = [
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.reloadConfigurations()),
       
-      // Start/Stop MFE app commands
-      vscode.commands.registerCommand('moduleFederation.startApp', (status: ModuleFederationStatus) => provider.startApp(status)),
-      vscode.commands.registerCommand('moduleFederation.stopApp', (status: ModuleFederationStatus) => provider.stopApp(status)),
+      // Root management commands
+      vscode.commands.registerCommand('moduleFederation.addRoot', () => provider.addRoot()),
+      vscode.commands.registerCommand('moduleFederation.removeRoot', (rootFolder) => provider.removeRoot(rootFolder)),
       
       // Remote commands
       vscode.commands.registerCommand('moduleFederation.stopRemote', async (remote: Remote) => {
@@ -1059,16 +1062,41 @@ export function activate(context: vscode.ExtensionContext) {
       })
     ];
 
-    // Add file watcher
-    const fileWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/{webpack,vite}.config.js',
-      true  // ignoreCreateEvents
-    );
-    fileWatcher.onDidChange(() => provider.reloadConfigurations());
-    fileWatcher.onDidCreate(() => provider.reloadConfigurations());
-    fileWatcher.onDidDelete(() => provider.reloadConfigurations());
+    // Add file watcher for config changes in all roots
+    const updateOnFileChange = async (uri: vscode.Uri) => {
+      try {
+        provider.log(`Configuration file changed: ${uri.fsPath}`);
+        await provider.reloadConfigurations();
+      } catch (error) {
+        provider.logError('Error handling file change', error);
+      }
+    };
     
-    context.subscriptions.push(...disposables, fileWatcher);
+    // Watch for webpack and vite config changes
+    const fileWatcher = vscode.workspace.createFileSystemWatcher(
+      '**/{webpack,vite}.config.{js,ts}',
+      false, // ignoreCreateEvents
+      false, // ignoreChangeEvents
+      false  // ignoreDeleteEvents
+    );
+    
+    fileWatcher.onDidChange(updateOnFileChange);
+    fileWatcher.onDidCreate(updateOnFileChange);
+    fileWatcher.onDidDelete(updateOnFileChange);
+    
+    // Also watch for changes in .vscode/mf-explorer.roots.json
+    const rootsWatcher = vscode.workspace.createFileSystemWatcher(
+      '**/.vscode/mf-explorer.roots.json',
+      false, // ignoreCreateEvents
+      false, // ignoreChangeEvents
+      false  // ignoreDeleteEvents
+    );
+    
+    rootsWatcher.onDidChange(updateOnFileChange);
+    rootsWatcher.onDidCreate(updateOnFileChange);
+    rootsWatcher.onDidDelete(updateOnFileChange);
+    
+    context.subscriptions.push(...disposables, fileWatcher, rootsWatcher);
 
   } catch (error) {
     console.error('[Module Federation] Failed to activate extension:', error);

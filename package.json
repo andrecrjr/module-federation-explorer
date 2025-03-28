@@ -11,7 +11,8 @@
     ],
     "activationEvents": [
         "workspaceContains:**/webpack.config.js",
-        "workspaceContains:**/vite.config.js"
+        "workspaceContains:**/vite.config.js",
+        "workspaceContains:**/.vscode/mf-explorer.roots.json"
     ],
     "main": "./dist/extension.js",
     "contributes": {
@@ -30,14 +31,14 @@
                 "icon": "$(refresh)"
             },
             {
-                "command": "moduleFederation.startApp",
-                "title": "Start MFE App",
-                "icon": "$(play)"
+                "command": "moduleFederation.addRoot",
+                "title": "Add Root Folder",
+                "icon": "$(add)"
             },
             {
-                "command": "moduleFederation.stopApp",
-                "title": "Stop MFE App",
-                "icon": "$(stop)"
+                "command": "moduleFederation.removeRoot",
+                "title": "Remove Root Folder",
+                "icon": "$(trash)"
             },
             {
                 "command": "moduleFederation.startRemote",
@@ -63,17 +64,17 @@
                     "command": "moduleFederation.refresh",
                     "when": "view == moduleFederation",
                     "group": "navigation"
+                },
+                {
+                    "command": "moduleFederation.addRoot",
+                    "when": "view == moduleFederation",
+                    "group": "navigation"
                 }
             ],
             "view/item/context": [
                 {
-                    "command": "moduleFederation.startApp",
-                    "when": "view == moduleFederation && viewItem == moduleFederationStatus",
-                    "group": "inline"
-                },
-                {
-                    "command": "moduleFederation.stopApp",
-                    "when": "view == moduleFederation && viewItem == moduleFederationStatusRunning",
+                    "command": "moduleFederation.removeRoot",
+                    "when": "view == moduleFederation && viewItem == rootFolder",
                     "group": "inline"
                 },
                 {
