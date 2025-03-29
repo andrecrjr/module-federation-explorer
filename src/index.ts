@@ -290,7 +290,8 @@ export function activate(context: vscode.ExtensionContext) {
       }),
 
       vscode.commands.registerCommand('moduleFederation.showWelcome', () => {
-        vscode.window.showInformationMessage('Module Federation Explorer activated. Use the view to manage your remotes.');
+        // Create and show welcome page instead of just an information message
+        showWelcomePage(context);
       }),
 
       // Add command to open the exposed module path
@@ -411,4 +412,85 @@ export function activate(context: vscode.ExtensionContext) {
     console.error('[Module Federation] Failed to activate extension:', error);
     throw error; // Re-throw to ensure VS Code knows activation failed
   }
+}
+
+/**
+ * Shows a welcome page explaining how Module Federation Explorer works
+ */
+function showWelcomePage(context: vscode.ExtensionContext) {
+  // Create and show panel
+  const panel = vscode.window.createWebviewPanel(
+    'moduleFederationWelcome',
+    'Welcome to Module Federation Explorer',
+    vscode.ViewColumn.One,
+    {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
+    }
+  );
+
+  // Set HTML content
+  panel.webview.html = getWelcomePageHtml(context, panel.webview);
+}
+
+/**
+ * Returns the HTML content for the welcome page
+ */
+function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.Webview): string {
+  // You can add CSS styles and even images from your extension's media folder
+  const stylePath = vscode.Uri.joinPath(context.extensionUri, 'media', 'welcome.css');
+  const styleUri = webview.asWebviewUri(stylePath);
+  
+  // You could also add a logo image
+  const logoPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'logo.png');
+  const logoUri = webview.asWebviewUri(logoPath);
+
+  return `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Welcome to Module Federation Explorer</title>
+        <link rel="stylesheet" href="${styleUri}">
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <img src="${logoUri}" alt="Module Federation Logo" width="80" height="80">
+                <h1>Welcome to Module Federation Explorer</h1>
+            </header>
+            
+            <section class="content">
+                <h2>Getting Started</h2>
+                <p>
+                    Module Federation Explorer helps you manage and visualize your webpack Module Federation setup.
+                    Here's how to get started:
+                </p>
+                
+                <h3>Key Features</h3>
+                <ul>
+                    <li><strong>Remotes Management:</strong> Easily add, view, and manage your remote modules</li>
+                    <li><strong>Visualization:</strong> See a graphical representation of your module dependencies</li>
+                    <li><strong>Simplified Configuration:</strong> Update your webpack Module Federation setup without editing JSON directly</li>
+                </ul>
+                
+                <h3>How to Use</h3>
+                <ol>
+                    <li>Navigate to the Module Federation Explorer view in the sidebar</li>
+                    <li>Right-click to add new remotes or manage existing ones</li>
+                    <li>Use the visualization tools to understand your module relationships</li>
+                </ol>
+                
+                <div class="tip">
+                    <h4>Tip:</h4>
+                    <p>You can always access this page again by running the "Module Federation: Show Welcome Page" command.</p>
+                </div>
+            </section>
+            
+            <footer>
+                <p>For more information, visit the <a href="https://github.com/your-repo/module-federation-explorer">documentation</a>.</p>
+            </footer>
+        </div>
+    </body>
+    </html>`;
 }
