@@ -10,7 +10,7 @@ export interface Remote {
   remoteEntry?: string; // The remote entry point
   startCommand?: string; // The command to start the remote application
   buildCommand?: string; // The command to build the remote application
-  configType: 'webpack' | 'vite'; // The type of configuration that defined this remote
+  configType: 'webpack' | 'vite' | 'modernjs'; // The type of configuration that defined this remote
 }
 
 /**
@@ -24,28 +24,13 @@ export interface ExposedModule {
 }
 
 /**
- * Represents the Module Federation configuration status
- */
-export interface ModuleFederationStatus {
-  hasConfig: boolean;
-  name?: string;
-  configType?: 'webpack' | 'vite';
-  configPath?: string;
-  remotesCount: number;
-  exposesCount: number;
-  isRunning?: boolean;
-  processId?: number;
-  startCommand?: string;
-}
-
-/**
  * Represents a Module Federation configuration
  */
 export interface ModuleFederationConfig {
   name: string;
   remotes: Remote[];
   exposes: ExposedModule[];
-  configType: 'webpack' | 'vite';
+  configType: 'webpack' | 'vite' | 'modernjs';
   configPath: string;
 }
 

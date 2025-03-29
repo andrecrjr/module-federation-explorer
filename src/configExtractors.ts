@@ -258,4 +258,103 @@ function isFederationPlugin(plugin: any): boolean {
          plugin.callee.name === 'federation' &&
          plugin.arguments.length > 0 &&
          plugin.arguments[0].type === 'ObjectExpression';
+}
+
+/**
+ * Extract Module Federation configuration from ModernJS config AST
+ */
+export async function extractConfigFromModernJS(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
+  const config: ModuleFederationConfig = {
+    name: '',
+    remotes: [],
+    exposes: [],
+    configType: 'modernjs',
+    configPath: ''
+  };
+  
+  estraverse.traverse(ast, {
+    enter(node: any) {
+      // Look for export default createModuleFederationConfig({ ... })
+      if (node.type === 'ExportDefaultDeclaration' &&
+          node.declaration.type === 'CallExpression' &&
+          node.declaration.callee.type === 'Identifier' &&
+          node.declaration.callee.name === 'createModuleFederationConfig' &&
+          node.declaration.arguments.length > 0 &&
+          node.declaration.arguments[0].type === 'ObjectExpression') {
+          
+        const options = node.declaration.arguments[0];
+          
+        // Extract name
+        const nameProp = findProperty(options, 'name');
+        if (nameProp?.value.type === 'Literal') {
+          config.name = nameProp.value.value;
+        }
+        
+        // Extract remotes
+        const remotesProp = findProperty(options, 'remotes');
+        if (remotesProp?.value.type === 'ObjectExpression') {
+          for (const prop of remotesProp.value.properties) {
+            if (isValidRemoteProperty(prop)) {
+              const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
+              config.remotes.push({
+                name: remoteName,
+                url: prop.value.value,
+                folder: remoteName,
+                remoteEntry: prop.value.value,
+                packageManager: 'npm',
+                configType: 'modernjs'
+              });
+            }
+          }
+        }
+        
+        // Extract exposes
+        const exposesProp = findProperty(options, 'exposes');
+        if (exposesProp?.value.type === 'ObjectExpression') {
+          for (const prop of exposesProp.value.properties) {
+            // Handle string literal keys like './Components'
+            if (prop.key.type === 'Literal' && prop.value.type === 'Literal') {
+              const exposeName = prop.key.value;
+              config.exposes.push({
+                name: exposeName,
+                path: prop.value.value,
+                remoteName: config.name
+              });
+            }
+            // Also handle identifier keys
+            else if (prop.key.type === 'Identifier' && prop.value.type === 'Literal') {
+              const exposeName = prop.key.name;
+              config.exposes.push({
+                name: exposeName,
+                path: prop.value.value,
+                remoteName: config.name
+              });
+            }
+          }
+        }
+        
+        console.log(`[ModernJS MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}`);
+        if (config.remotes.length > 0) {
+          console.log(`[ModernJS MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
+        }
+        if (config.exposes.length > 0) {
+          console.log(`[ModernJS MFE Config] Exposes:`, config.exposes.map(e => e.name).join(', '));
+        }
+      }
+    }
+  });
+  
+  // Detect package manager for each remote after AST traversal
+  for (const remote of config.remotes) {
+    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'webpack');
+    remote.packageManager = packageManager;
+    remote.startCommand = startCommand;
+  }
+  
+  return config;
+}
+
+function isModernJSFederationConfig(filename: string): boolean {
+  return filename.endsWith('module-federation.config.ts') || 
+         filename.endsWith('module-federation.config.js');
 } 

@@ -5,7 +5,6 @@ import * as fsSync from 'fs'; // Import for synchronous fs operations
 import { 
     Remote, 
     ExposedModule, 
-    ModuleFederationStatus, 
     ModuleFederationConfig,
     RemotesFolder,
     ExposesFolder,
@@ -13,9 +12,10 @@ import {
     UnifiedRootConfig,
     FederationRoot
 } from './types';
-import { extractConfigFromWebpack, extractConfigFromVite } from './configExtractors';
+import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS } from './configExtractors';
 import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
+import { outputChannel, log, show, clear } from './outputChannel';
 
 // Type guard functions to narrow down types
 function isFederationRoot(element: any): element is FederationRoot {
@@ -49,17 +49,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   readonly onDidChangeTreeData: vscode.Event<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | undefined> = 
     this._onDidChangeTreeData.event;
   
-  private outputChannel: vscode.OutputChannel;
   private rootConfigs: Map<string, ModuleFederationConfig[]> = new Map();
   private rootConfigManager: RootConfigManager;
   private isLoading = false;
-  private runningApps: Map<string, { terminal: vscode.Terminal; processId?: number }> = new Map();
   public runningRemotes: Map<string, { terminal: vscode.Terminal }> = new Map();
   // Store running root app information
   private runningRootApps: Map<string, { terminal: vscode.Terminal }> = new Map();
   
   constructor(private readonly workspaceRoot: string | undefined, private readonly context: vscode.ExtensionContext) {
-    this.outputChannel = vscode.window.createOutputChannel('Module Federation Explorer');
     this.rootConfigManager = new RootConfigManager(context);
     this.log('Initializing Unified Module Federation Explorer...');
     this.loadConfigurations();
@@ -82,14 +79,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   // Logger method for general logging
   log(message: string): void {
     const timestamp = new Date().toISOString();
-    this.outputChannel.appendLine(`[${timestamp}] ${message}`);
+    outputChannel.appendLine(`[${timestamp}] ${message}`);
   }
 
   // Error logger method
   logError(message: string, error: unknown): void {
     const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
     const timestamp = new Date().toISOString();
-    this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
+    outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
     console.error(`[Module Federation] ${message}:\n`, errorDetails);
     vscode.window.showErrorMessage(`${message}: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -153,17 +150,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         return;
       }
 
-      // Find all webpack and vite config files in this root, excluding node_modules
-      const webpackPattern = path.join(rootPath, '**', '{webpack.config.js,webpack.config.ts}');
-      const vitePattern = path.join(rootPath, '**', '{vite.config.js,vite.config.ts}');
-      const excludePattern = path.join(rootPath, '**', 'node_modules', '**');
-      
-      const [webpackFiles, viteFiles] = await Promise.all([
+      // Find all webpack, vite, and ModernJS config files in this root, excluding node_modules
+      const [webpackFiles, viteFiles, modernJSFiles] = await Promise.all([
         this.findFiles(rootPath, '**/{webpack.config.js,webpack.config.ts}', '**/node_modules/**'),
-        this.findFiles(rootPath, '**/{vite.config.js,vite.config.ts}', '**/node_modules/**')
+        this.findFiles(rootPath, '**/{vite.config.js,vite.config.ts}', '**/node_modules/**'),
+        this.findFiles(rootPath, '**/module-federation.config.{js,ts}', '**/node_modules/**')
       ]);
 
-      this.log(`Found ${webpackFiles.length} webpack configs and ${viteFiles.length} vite configs in ${rootPath}`);
+      this.log(`Found ${webpackFiles.length} webpack configs, ${viteFiles.length} vite configs, and ${modernJSFiles.length} ModernJS configs in ${rootPath}`);
 
       // Process webpack configs
       const webpackConfigs = await this.processConfigFiles(
@@ -181,8 +175,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         rootPath
       );
       
+      // Process ModernJS configs
+      const modernJSConfigs = await this.processConfigFiles(
+        modernJSFiles,
+        extractConfigFromModernJS,
+        'modernjs',
+        rootPath
+      );
+      
       // Store configs for this root
-      const configs = [...webpackConfigs, ...viteConfigs];
+      const configs = [...webpackConfigs, ...viteConfigs, ...modernJSConfigs];
       if (configs.length > 0) {
         this.rootConfigs.set(rootPath, configs);
         
@@ -366,8 +368,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       treeItem.description = element.path;
       treeItem.tooltip = `Exposed Module: ${element.name}\nPath: ${element.path}\nRemote: ${element.remoteName}`;
-      treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
+      treeItem.iconPath = new vscode.ThemeIcon('file-code');
       treeItem.contextValue = 'exposedModule';
+      
+      // Add command to open the exposed path when clicking the tree item
+      treeItem.command = {
+        command: 'moduleFederation.openExposedPath',
+        title: `Open exposed path: ${element.path}`,
+        arguments: [element]
+      };
+      
       return treeItem;
     } else if (isRemote(element)) {
       // This is a Remote
@@ -858,7 +868,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   clearAllRunningApps(): void {
     this.runningRemotes.clear();
     this.runningRootApps.clear();
-    this.log('Cleared all running remotes and root apps on startup');
   }
 
   /**
@@ -1009,6 +1018,220 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log('Loaded remote configurations from unified config');
     } catch (error) {
       this.logError('Failed to load remote configurations', error);
+    }
+  }
+
+  /**
+   * Resolve the file extension for a path without extension based on project type
+   */
+  public async resolveFileExtensionForPath(basePath: string): Promise<string> {
+    try {
+      this.log(`Resolving path: ${basePath}`);
+      
+      // If path already points to an existing file, return it directly
+      if (fsSync.existsSync(basePath) && fsSync.statSync(basePath).isFile()) {
+        return basePath;
+      }
+      
+      // Check if the path exists and is a directory
+      if (fsSync.existsSync(basePath) && fsSync.statSync(basePath).isDirectory()) {
+        this.log(`Path is a directory: ${basePath}, scanning contents`);
+        
+        // Read the directory contents
+        const dirContents = fsSync.readdirSync(basePath);
+        
+        // First, try to detect project type by looking for configuration files
+        let projectType: 'react' | 'vue' | 'angular' | 'svelte' | 'unknown' = 'unknown';
+        
+        if (dirContents.some(file => file.includes('tsconfig.json'))) {
+          if (dirContents.some(file => file.includes('angular.json') || file.includes('angular-cli.json'))) {
+            projectType = 'angular';
+          } else if (dirContents.some(file => file.includes('react-app-env.d.ts'))) {
+            projectType = 'react';
+          }
+        }
+        
+        if (projectType === 'unknown' && dirContents.some(file => file.includes('package.json'))) {
+          try {
+            const packageJsonPath = path.join(basePath, 'package.json');
+            const packageJson = JSON.parse(fsSync.readFileSync(packageJsonPath, 'utf8'));
+            const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
+            
+            if (dependencies.react) {
+              projectType = 'react';
+            } else if (dependencies.vue) {
+              projectType = 'vue';
+            } else if (dependencies.angular || dependencies['@angular/core']) {
+              projectType = 'angular';
+            } else if (dependencies.svelte) {
+              projectType = 'svelte';
+            }
+          } catch (err) {
+            // Silently handle package.json parsing errors
+            this.log(`Error parsing package.json: ${err}`);
+          }
+        }
+        
+        this.log(`Detected project type: ${projectType}`);
+        
+        // Order of file name patterns to check (priority order)
+        const filePatterns = ['index', 'main', 'app', 'entry'];
+        
+        // Extensions ordered by priority based on project type
+        const getExtensionPriority = () => {
+          if (projectType === 'react') {
+            return ['.tsx', '.jsx', '.ts', '.js'];
+          } else if (projectType === 'vue') {
+            return ['.vue', '.ts', '.js'];
+          } else if (projectType === 'angular') {
+            return ['.component.ts', '.component.html', '.ts', '.js'];
+          } else if (projectType === 'svelte') {
+            return ['.svelte', '.ts', '.js'];
+          } else {
+            return ['.ts', '.js', '.tsx', '.jsx', '.vue', '.svelte'];
+          }
+        };
+        
+        const prioritizedExtensions = getExtensionPriority();
+        
+        // First look for these specific filenames with priority extensions
+        for (const pattern of filePatterns) {
+          // Check for exact matches with prioritized extensions
+          for (const ext of prioritizedExtensions) {
+            const exactFilename = `${pattern}${ext}`;
+            if (dirContents.includes(exactFilename)) {
+              const match = path.join(basePath, exactFilename);
+              this.log(`Found exact match: ${match}`);
+              return match;
+            }
+          }
+          
+          // If no exact match, look for files starting with the pattern
+          const matchingFiles = dirContents.filter(file => 
+            file.startsWith(`${pattern}.`) || file === pattern);
+            
+          if (matchingFiles.length > 0) {
+            // Sort by extension priority
+            const sortedFiles = matchingFiles.sort((a, b) => {
+              const extA = path.extname(a);
+              const extB = path.extname(b);
+              
+              const indexA = prioritizedExtensions.indexOf(extA);
+              const indexB = prioritizedExtensions.indexOf(extB);
+              
+              // If both have prioritized extensions, compare them
+              if (indexA !== -1 && indexB !== -1) {
+                return indexA - indexB;
+              }
+              
+              // If only one has a prioritized extension, prefer it
+              if (indexA !== -1) return -1;
+              if (indexB !== -1) return 1;
+              
+              // Default alphabetical sort
+              return a.localeCompare(b);
+            });
+            
+            const bestMatch = path.join(basePath, sortedFiles[0]);
+            this.log(`Found best matching file: ${bestMatch}`);
+            return bestMatch;
+          }
+        }
+        
+        // If no standard pattern files found, look for any file with prioritized extensions
+        for (const ext of prioritizedExtensions) {
+          const filesWithExt = dirContents.filter(file => file.endsWith(ext));
+          if (filesWithExt.length > 0) {
+            // Sort alphabetically - typically would prioritize shorter names
+            const sortedFiles = filesWithExt.sort((a, b) => {
+              // Prefer shorter filenames (likely to be more "main" files)
+              if (a.length !== b.length) {
+                return a.length - b.length;
+              }
+              return a.localeCompare(b);
+            });
+            
+            const bestMatch = path.join(basePath, sortedFiles[0]);
+            this.log(`Found file with extension ${ext}: ${bestMatch}`);
+            return bestMatch;
+          }
+        }
+        
+        // If no match found, return the directory itself
+        this.log(`No suitable file found in directory, returning directory path`);
+        return basePath;
+      }
+      
+      // Not a directory or doesn't exist
+      // If it doesn't have an extension, try to guess based on existing files in parent dir
+      if (!path.extname(basePath)) {
+        const dirPath = path.dirname(basePath);
+        const baseName = path.basename(basePath);
+        
+        if (fsSync.existsSync(dirPath) && fsSync.statSync(dirPath).isDirectory()) {
+          // Read directory contents
+          const dirContents = fsSync.readdirSync(dirPath);
+          
+          // Try exact filename matches with common extensions
+          const commonExts = ['.ts', '.js', '.tsx', '.jsx', '.vue', '.svelte', '.component.ts'];
+          for (const ext of commonExts) {
+            const candidateFile = `${baseName}${ext}`;
+            if (dirContents.includes(candidateFile)) {
+              const match = path.join(dirPath, candidateFile);
+              this.log(`Found exact file match with extension: ${match}`);
+              return match;
+            }
+          }
+          
+          // No exact extension match, try files that start with the basename
+          const matchingFiles = dirContents.filter(file => 
+            file.startsWith(`${baseName}.`) || file === baseName);
+            
+          if (matchingFiles.length > 0) {
+            // Sort by extension preference
+            const sortedFiles = matchingFiles.sort((a, b) => {
+              // Prefer TypeScript over JavaScript
+              const extA = path.extname(a);
+              const extB = path.extname(b);
+              
+              // Predefined order of extensions
+              const order = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
+              const indexA = order.indexOf(extA);
+              const indexB = order.indexOf(extB);
+              
+              if (indexA !== -1 && indexB !== -1) {
+                return indexA - indexB;
+              }
+              
+              // If only one is in order, prefer it
+              if (indexA !== -1) return -1;
+              if (indexB !== -1) return 1;
+              
+              return a.localeCompare(b);
+            });
+            
+            const bestMatch = path.join(dirPath, sortedFiles[0]);
+            this.log(`Found matching file: ${bestMatch}`);
+            return bestMatch;
+          }
+        }
+        
+        // Special case: Check if the path itself with a common extension exists
+        const commonExts = ['.ts', '.js', '.tsx', '.jsx', '.vue', '.svelte', '.component.ts'];
+        for (const ext of commonExts) {
+          const pathWithExt = `${basePath}${ext}`;
+          if (fsSync.existsSync(pathWithExt)) {
+            this.log(`Found file with appended extension: ${pathWithExt}`);
+            return pathWithExt;
+          }
+        }
+      }
+      
+      // If no match found or the file already has an extension, return original path
+      return basePath;
+    } catch (error) {
+      this.logError(`Failed to resolve file extension for path: ${basePath}`, error);
+      return basePath;
     }
   }
 }
