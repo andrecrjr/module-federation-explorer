@@ -291,6 +291,64 @@ export function activate(context: vscode.ExtensionContext) {
 
       vscode.commands.registerCommand('moduleFederation.showWelcome', () => {
         vscode.window.showInformationMessage('Module Federation Explorer activated. Use the view to manage your remotes.');
+      }),
+
+      // Add command to open the exposed module path
+      vscode.commands.registerCommand('moduleFederation.openExposedPath', async (exposedModule) => {
+        try {
+          // Get the module path
+          const modulePath = exposedModule.path;
+          if (!modulePath) {
+            return vscode.window.showErrorMessage(`Cannot open path for module ${exposedModule.name}: Path not defined`);
+          }
+
+          // First try to find the file using workspace search
+          const uris = await vscode.workspace.findFiles(`**/${modulePath}`, '**/node_modules/**');
+          
+          if (uris.length > 0) {
+            // Open the first matching file
+            await vscode.window.showTextDocument(uris[0]);
+            return;
+          }
+          
+          // If we have configSource, try to use it to create an absolute path
+          if (exposedModule.configSource) {
+            // Get the directory containing the config file
+            const configDir = path.dirname(exposedModule.configSource);
+            const absolutePath = path.resolve(configDir, modulePath);
+            
+            try {
+              // Check if the file exists
+              if (fs.existsSync(absolutePath)) {
+                await vscode.window.showTextDocument(vscode.Uri.file(absolutePath));
+                return;
+              }
+            } catch (error) {
+              // Continue to other methods if this fails
+            }
+          }
+          
+          // If no results, try to resolve the path against the workspace root
+          if (vscode.workspace.workspaceFolders?.length) {
+            for (const folder of vscode.workspace.workspaceFolders) {
+              const fullPath = vscode.Uri.joinPath(folder.uri, modulePath);
+              try {
+                const stat = await vscode.workspace.fs.stat(fullPath);
+                if (stat) {
+                  // If file exists, open it
+                  await vscode.window.showTextDocument(fullPath);
+                  return;
+                }
+              } catch (error) {
+                // File not found at this path, continue searching
+              }
+            }
+          }
+          
+          vscode.window.showErrorMessage(`Could not find file matching path: ${modulePath}`);
+        } catch (error) {
+          vscode.window.showErrorMessage(`Error opening exposed path: ${error}`);
+        }
       })
     ];
 

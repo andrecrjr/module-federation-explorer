@@ -24,21 +24,6 @@ export interface ExposedModule {
 }
 
 /**
- * Represents the Module Federation configuration status
- */
-export interface ModuleFederationStatus {
-  hasConfig: boolean;
-  name?: string;
-  configType?: 'webpack' | 'vite';
-  configPath?: string;
-  remotesCount: number;
-  exposesCount: number;
-  isRunning?: boolean;
-  processId?: number;
-  startCommand?: string;
-}
-
-/**
  * Represents a Module Federation configuration
  */
 export interface ModuleFederationConfig {

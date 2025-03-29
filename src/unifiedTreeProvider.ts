@@ -5,7 +5,6 @@ import * as fsSync from 'fs'; // Import for synchronous fs operations
 import { 
     Remote, 
     ExposedModule, 
-    ModuleFederationStatus, 
     ModuleFederationConfig,
     RemotesFolder,
     ExposesFolder,
@@ -53,7 +52,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   private rootConfigs: Map<string, ModuleFederationConfig[]> = new Map();
   private rootConfigManager: RootConfigManager;
   private isLoading = false;
-  private runningApps: Map<string, { terminal: vscode.Terminal; processId?: number }> = new Map();
   public runningRemotes: Map<string, { terminal: vscode.Terminal }> = new Map();
   // Store running root app information
   private runningRootApps: Map<string, { terminal: vscode.Terminal }> = new Map();
@@ -366,8 +364,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       treeItem.description = element.path;
       treeItem.tooltip = `Exposed Module: ${element.name}\nPath: ${element.path}\nRemote: ${element.remoteName}`;
-      treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
+      treeItem.iconPath = new vscode.ThemeIcon('file-code');
       treeItem.contextValue = 'exposedModule';
+      
+      // Add command to open the exposed path when clicking the tree item
+      treeItem.command = {
+        command: 'moduleFederation.openExposedPath',
+        title: `Open exposed path: ${element.path}`,
+        arguments: [element]
+      };
+      
       return treeItem;
     } else if (isRemote(element)) {
       // This is a Remote
@@ -858,7 +864,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   clearAllRunningApps(): void {
     this.runningRemotes.clear();
     this.runningRootApps.clear();
-    this.log('Cleared all running remotes and root apps on startup');
   }
 
   /**
