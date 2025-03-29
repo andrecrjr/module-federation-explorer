@@ -444,6 +444,8 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
   // You could also add a logo image
   const logoPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'logo.png');
   const logoUri = webview.asWebviewUri(logoPath);
+  const explorerImagePath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mfe-explorer-tree.png');
+  const explorerImageUri = webview.asWebviewUri(explorerImagePath);
 
   return `<!DOCTYPE html>
     <html lang="en">
@@ -520,20 +522,24 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
             border-top: 1px solid var(--vscode-widget-border);
             padding-top: 16px;
           }
+          .header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+          }
         </style>
     </head>
     <body>
         <div class="container">
-            <header>
+            <header class="header">
                 <img src="${logoUri}" alt="Module Federation Logo" width="80" height="80">
                 <h1>Welcome to Module Federation Explorer</h1>
+                <p>This extension helps you visualize, configure, and manage Module Federation setups across multiple projects, supporting webpack, Vite, and ModernJS configurations.</p>
+                <img src="${explorerImageUri}" alt="Module Federation Explorer Image" width="50%" height="auto" style="margin-top: 20px; margin:0 auto;">
             </header>
             
             <section class="content">
-                <p>
-                    Module Federation Explorer helps you visualize, configure, and manage Module Federation setups
-                    across multiple projects, supporting webpack, Vite, and ModernJS configurations.
-                </p>
                 
                 <div class="feature-section">
                     <h2>Key Features</h2>
