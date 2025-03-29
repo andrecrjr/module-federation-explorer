@@ -452,6 +452,75 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Welcome to Module Federation Explorer</title>
         <link rel="stylesheet" href="${styleUri}">
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; 
+            line-height: 1.6; 
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px; 
+          }
+          .container { 
+            padding: 20px; 
+            border-radius: 6px; 
+          }
+          h1, h2, h3, h4 { 
+            color: var(--vscode-foreground); 
+            font-weight: 600;
+          }
+          .content { 
+            margin: 20px 0; 
+          }
+          .tip { 
+            background-color: var(--vscode-notifications-background);
+            color: var(--vscode-notifications-foreground); 
+            border-left: 4px solid var(--vscode-notificationLink-foreground); 
+            padding: 10px 16px; 
+            margin: 20px 0; 
+          }
+          .feature-section { 
+            margin-bottom: 24px; 
+          }
+          code { 
+            background-color: var(--vscode-textPreformat-background); 
+            color: var(--vscode-textPreformat-foreground);
+            padding: 2px 4px; 
+            border-radius: 3px; 
+            font-family: 'Courier New', monospace; 
+          }
+          .card { 
+            border: 1px solid var(--vscode-widget-border); 
+            background-color: var(--vscode-editor-background);
+            border-radius: 6px; 
+            padding: 16px; 
+            margin-bottom: 16px; 
+          }
+          .card h4 { 
+            margin-top: 0; 
+            color: var(--vscode-editor-foreground);
+          }
+          ul, ol {
+            color: var(--vscode-foreground);
+          }
+          a {
+            color: var(--vscode-textLink-foreground);
+            text-decoration: none;
+          }
+          a:hover {
+            text-decoration: underline;
+            color: var(--vscode-textLink-activeForeground);
+          }
+          p, li {
+            color: var(--vscode-foreground);
+          }
+          footer {
+            margin-top: 30px;
+            border-top: 1px solid var(--vscode-widget-border);
+            padding-top: 16px;
+          }
+        </style>
     </head>
     <body>
         <div class="container">
@@ -461,34 +530,80 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
             </header>
             
             <section class="content">
-                <h2>Getting Started</h2>
                 <p>
-                    Module Federation Explorer helps you manage and visualize your webpack Module Federation setup.
-                    Here's how to get started:
+                    Module Federation Explorer helps you visualize, configure, and manage Module Federation setups
+                    across multiple projects, supporting webpack, Vite, and ModernJS configurations.
                 </p>
                 
-                <h3>Key Features</h3>
-                <ul>
-                    <li><strong>Remotes Management:</strong> Easily add, view, and manage your remote modules</li>
-                    <li><strong>Visualization:</strong> See a graphical representation of your module dependencies</li>
-                    <li><strong>Simplified Configuration:</strong> Update your webpack Module Federation setup without editing JSON directly</li>
-                </ul>
+                <div class="feature-section">
+                    <h2>Key Features</h2>
+                    <div class="card">
+                        <h4>Multi-Root Support</h4>
+                        <p>Manage Module Federation across multiple project roots in your workspace:</p>
+                        <ul>
+                            <li>Add or remove project roots</li>
+                            <li>Automatically discovers webpack, Vite, and ModernJS configurations</li>
+                            <li>Configured roots are saved in <code>.vscode/mf-explorer.roots.json</code></li>
+                        </ul>
+                    </div>
+                    
+                    <div class="card">
+                        <h4>Remote Management</h4>
+                        <p>Start and manage your Module Federation remotes:</p>
+                        <ul>
+                            <li>Configure build and start commands for each remote</li>
+                            <li>Start and stop remotes directly from VS Code</li>
+                            <li>Automatically detects package manager (npm, yarn, pnpm)</li>
+                            <li>Navigate to exposed module source files</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="card">
+                        <h4>Configuration Visualization</h4>
+                        <p>Explore your Module Federation configurations:</p>
+                        <ul>
+                            <li>View all exposed modules</li>
+                            <li>See which remotes are currently running</li>
+                            <li>Auto-detects configuration changes</li>
+                        </ul>
+                    </div>
+                </div>
                 
-                <h3>How to Use</h3>
+                <h2>Getting Started</h2>
                 <ol>
-                    <li>Navigate to the Module Federation Explorer view in the sidebar</li>
-                    <li>Right-click to add new remotes or manage existing ones</li>
-                    <li>Use the visualization tools to understand your module relationships</li>
+                    <li>Open the Module Federation Explorer view in the sidebar</li>
+                    <li>Use the "Add Root" command to add your first project root</li>
+                    <li>The extension will automatically scan for Module Federation configurations</li>
+                    <li>Right-click on remotes to start, stop, or configure them</li>
+                    <li>Click on exposed modules to navigate to their source code</li>
                 </ol>
                 
                 <div class="tip">
-                    <h4>Tip:</h4>
-                    <p>You can always access this page again by running the "Module Federation: Show Welcome Page" command.</p>
+                    <h4>Commands You Can Use:</h4>
+                    <ul>
+                        <li><code>moduleFederation.refresh</code> - Reload all configurations</li>
+                        <li><code>moduleFederation.addRoot</code> - Add a new project root</li>
+                        <li><code>moduleFederation.removeRoot</code> - Remove a project root</li>
+                        <li><code>moduleFederation.startRemote</code> - Start a remote app</li>
+                        <li><code>moduleFederation.stopRemote</code> - Stop a running remote</li>
+                        <li><code>moduleFederation.configureRemote</code> - Set build and start commands</li>
+                    </ul>
+                </div>
+                
+                <div class="tip">
+                    <h4>Automatic Updates:</h4>
+                    <p>The extension automatically watches for changes in your configuration files:</p>
+                    <ul>
+                        <li>webpack.config.js/ts</li>
+                        <li>vite.config.js/ts</li>
+                        <li>module-federation.config.js/ts</li>
+                        <li>.vscode/mf-explorer.roots.json</li>
+                    </ul>
                 </div>
             </section>
             
             <footer>
-                <p>For more information, visit the <a href="https://github.com/your-repo/module-federation-explorer">documentation</a>.</p>
+                <p>For issues or feature requests, please visit the <a href="https://github.com/your-repo/module-federation-explorer">GitHub repository</a>.</p>
             </footer>
         </div>
     </body>
