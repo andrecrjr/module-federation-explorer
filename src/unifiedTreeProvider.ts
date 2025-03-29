@@ -12,7 +12,7 @@ import {
     UnifiedRootConfig,
     FederationRoot
 } from './types';
-import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS, isModernJSFederationConfig } from './configExtractors';
+import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS } from './configExtractors';
 import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
 
@@ -1029,43 +1029,105 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     try {
       this.log(`Resolving path: ${basePath}`);
       
+      // If path already points to an existing file, return it directly
+      if (fsSync.existsSync(basePath) && fsSync.statSync(basePath).isFile()) {
+        return basePath;
+      }
+      
       // Check if the path exists and is a directory
       if (fsSync.existsSync(basePath) && fsSync.statSync(basePath).isDirectory()) {
-        this.log(`Path is a directory: ${basePath}, looking for files inside`);
+        this.log(`Path is a directory: ${basePath}, scanning contents`);
         
         // Read the directory contents
         const dirContents = fsSync.readdirSync(basePath);
         
+        // First, try to detect project type by looking for configuration files
+        let projectType: 'react' | 'vue' | 'angular' | 'svelte' | 'unknown' = 'unknown';
+        
+        if (dirContents.some(file => file.includes('tsconfig.json'))) {
+          if (dirContents.some(file => file.includes('angular.json') || file.includes('angular-cli.json'))) {
+            projectType = 'angular';
+          } else if (dirContents.some(file => file.includes('react-app-env.d.ts'))) {
+            projectType = 'react';
+          }
+        }
+        
+        if (projectType === 'unknown' && dirContents.some(file => file.includes('package.json'))) {
+          try {
+            const packageJsonPath = path.join(basePath, 'package.json');
+            const packageJson = JSON.parse(fsSync.readFileSync(packageJsonPath, 'utf8'));
+            const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
+            
+            if (dependencies.react) {
+              projectType = 'react';
+            } else if (dependencies.vue) {
+              projectType = 'vue';
+            } else if (dependencies.angular || dependencies['@angular/core']) {
+              projectType = 'angular';
+            } else if (dependencies.svelte) {
+              projectType = 'svelte';
+            }
+          } catch (err) {
+            // Silently handle package.json parsing errors
+            this.log(`Error parsing package.json: ${err}`);
+          }
+        }
+        
+        this.log(`Detected project type: ${projectType}`);
+        
         // Order of file name patterns to check (priority order)
         const filePatterns = ['index', 'main', 'app', 'entry'];
         
-        // First look for these specific filenames
+        // Extensions ordered by priority based on project type
+        const getExtensionPriority = () => {
+          if (projectType === 'react') {
+            return ['.tsx', '.jsx', '.ts', '.js'];
+          } else if (projectType === 'vue') {
+            return ['.vue', '.ts', '.js'];
+          } else if (projectType === 'angular') {
+            return ['.component.ts', '.component.html', '.ts', '.js'];
+          } else if (projectType === 'svelte') {
+            return ['.svelte', '.ts', '.js'];
+          } else {
+            return ['.ts', '.js', '.tsx', '.jsx', '.vue', '.svelte'];
+          }
+        };
+        
+        const prioritizedExtensions = getExtensionPriority();
+        
+        // First look for these specific filenames with priority extensions
         for (const pattern of filePatterns) {
-          // Find any file that starts with the pattern (regardless of extension)
+          // Check for exact matches with prioritized extensions
+          for (const ext of prioritizedExtensions) {
+            const exactFilename = `${pattern}${ext}`;
+            if (dirContents.includes(exactFilename)) {
+              const match = path.join(basePath, exactFilename);
+              this.log(`Found exact match: ${match}`);
+              return match;
+            }
+          }
+          
+          // If no exact match, look for files starting with the pattern
           const matchingFiles = dirContents.filter(file => 
-            file.startsWith(pattern + '.') || file === pattern);
+            file.startsWith(`${pattern}.`) || file === pattern);
             
           if (matchingFiles.length > 0) {
-            // Sort to prioritize TypeScript over JavaScript files
+            // Sort by extension priority
             const sortedFiles = matchingFiles.sort((a, b) => {
-              // Define priority of extensions
-              const extensionPriority = {
-                '.tsx': 1, '.ts': 2, '.jsx': 3, '.js': 4,
-                '.vue': 5, '.svelte': 6, '.component.ts': 7,
-                '.component.js': 8
-              };
-              
               const extA = path.extname(a);
               const extB = path.extname(b);
               
+              const indexA = prioritizedExtensions.indexOf(extA);
+              const indexB = prioritizedExtensions.indexOf(extB);
+              
               // If both have prioritized extensions, compare them
-              if (extensionPriority[extA] && extensionPriority[extB]) {
-                return extensionPriority[extA] - extensionPriority[extB];
+              if (indexA !== -1 && indexB !== -1) {
+                return indexA - indexB;
               }
               
               // If only one has a prioritized extension, prefer it
-              if (extensionPriority[extA]) return -1;
-              if (extensionPriority[extB]) return 1;
+              if (indexA !== -1) return -1;
+              if (indexB !== -1) return 1;
               
               // Default alphabetical sort
               return a.localeCompare(b);
@@ -1077,12 +1139,20 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           }
         }
         
-        // If no standard pattern files found, look for any file with common extensions
-        const commonExtensions = ['.tsx', '.ts', '.jsx', '.js', '.vue', '.svelte'];
-        for (const ext of commonExtensions) {
+        // If no standard pattern files found, look for any file with prioritized extensions
+        for (const ext of prioritizedExtensions) {
           const filesWithExt = dirContents.filter(file => file.endsWith(ext));
           if (filesWithExt.length > 0) {
-            const bestMatch = path.join(basePath, filesWithExt[0]);
+            // Sort alphabetically - typically would prioritize shorter names
+            const sortedFiles = filesWithExt.sort((a, b) => {
+              // Prefer shorter filenames (likely to be more "main" files)
+              if (a.length !== b.length) {
+                return a.length - b.length;
+              }
+              return a.localeCompare(b);
+            });
+            
+            const bestMatch = path.join(basePath, sortedFiles[0]);
             this.log(`Found file with extension ${ext}: ${bestMatch}`);
             return bestMatch;
           }
@@ -1103,16 +1173,57 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           // Read directory contents
           const dirContents = fsSync.readdirSync(dirPath);
           
-          // Find any file that starts with the base name (regardless of extension)
+          // Try exact filename matches with common extensions
+          const commonExts = ['.ts', '.js', '.tsx', '.jsx', '.vue', '.svelte', '.component.ts'];
+          for (const ext of commonExts) {
+            const candidateFile = `${baseName}${ext}`;
+            if (dirContents.includes(candidateFile)) {
+              const match = path.join(dirPath, candidateFile);
+              this.log(`Found exact file match with extension: ${match}`);
+              return match;
+            }
+          }
+          
+          // No exact extension match, try files that start with the basename
           const matchingFiles = dirContents.filter(file => 
-            file.startsWith(baseName + '.') || file === baseName);
+            file.startsWith(`${baseName}.`) || file === baseName);
             
           if (matchingFiles.length > 0) {
-            // Sort by extension priority
-            const sortedFiles = matchingFiles.sort();
+            // Sort by extension preference
+            const sortedFiles = matchingFiles.sort((a, b) => {
+              // Prefer TypeScript over JavaScript
+              const extA = path.extname(a);
+              const extB = path.extname(b);
+              
+              // Predefined order of extensions
+              const order = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
+              const indexA = order.indexOf(extA);
+              const indexB = order.indexOf(extB);
+              
+              if (indexA !== -1 && indexB !== -1) {
+                return indexA - indexB;
+              }
+              
+              // If only one is in order, prefer it
+              if (indexA !== -1) return -1;
+              if (indexB !== -1) return 1;
+              
+              return a.localeCompare(b);
+            });
+            
             const bestMatch = path.join(dirPath, sortedFiles[0]);
             this.log(`Found matching file: ${bestMatch}`);
             return bestMatch;
+          }
+        }
+        
+        // Special case: Check if the path itself with a common extension exists
+        const commonExts = ['.ts', '.js', '.tsx', '.jsx', '.vue', '.svelte', '.component.ts'];
+        for (const ext of commonExts) {
+          const pathWithExt = `${basePath}${ext}`;
+          if (fsSync.existsSync(pathWithExt)) {
+            this.log(`Found file with appended extension: ${pathWithExt}`);
+            return pathWithExt;
           }
         }
       }
