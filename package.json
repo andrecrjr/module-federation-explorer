@@ -11,7 +11,8 @@
     ],
     "activationEvents": [
         "workspaceContains:**/webpack.config.js",
-        "workspaceContains:**/vite.config.js"
+        "workspaceContains:**/vite.config.js",
+        "workspaceContains:**/.vscode/mf-explorer.roots.json"
     ],
     "main": "./dist/extension.js",
     "contributes": {
@@ -30,14 +31,34 @@
                 "icon": "$(refresh)"
             },
             {
-                "command": "moduleFederation.startApp",
-                "title": "Start MFE App",
+                "command": "moduleFederation.addRoot",
+                "title": "Add Root Folder",
+                "icon": "$(add)"
+            },
+            {
+                "command": "moduleFederation.removeRoot",
+                "title": "Remove Root Folder",
+                "icon": "$(trash)"
+            },
+            {
+                "command": "moduleFederation.changeConfigFile",
+                "title": "Change Configuration File",
+                "icon": "$(gear)"
+            },
+            {
+                "command": "moduleFederation.startRootApp",
+                "title": "Start Root App",
                 "icon": "$(play)"
             },
             {
-                "command": "moduleFederation.stopApp",
-                "title": "Stop MFE App",
+                "command": "moduleFederation.stopRootApp",
+                "title": "Stop Root App",
                 "icon": "$(stop)"
+            },
+            {
+                "command": "moduleFederation.configureRootApp",
+                "title": "Configure Root App",
+                "icon": "$(gear)"
             },
             {
                 "command": "moduleFederation.startRemote",
@@ -63,18 +84,38 @@
                     "command": "moduleFederation.refresh",
                     "when": "view == moduleFederation",
                     "group": "navigation"
+                },
+                {
+                    "command": "moduleFederation.addRoot",
+                    "when": "view == moduleFederation",
+                    "group": "navigation"
+                },
+                {
+                    "command": "moduleFederation.changeConfigFile",
+                    "when": "view == moduleFederation",
+                    "group": "navigation"
                 }
             ],
             "view/item/context": [
                 {
-                    "command": "moduleFederation.startApp",
-                    "when": "view == moduleFederation && viewItem == moduleFederationStatus",
+                    "command": "moduleFederation.removeRoot",
+                    "when": "view == moduleFederation && viewItem == rootFolder",
                     "group": "inline"
                 },
                 {
-                    "command": "moduleFederation.stopApp",
-                    "when": "view == moduleFederation && viewItem == moduleFederationStatusRunning",
+                    "command": "moduleFederation.startRootApp",
+                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp)",
                     "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.stopRootApp",
+                    "when": "view == moduleFederation && viewItem == runningRootApp",
+                    "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.configureRootApp",
+                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp || viewItem == runningRootApp)",
+                    "group": "rootApp@1"
                 },
                 {
                     "command": "moduleFederation.startRemote",

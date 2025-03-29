@@ -59,4 +59,41 @@ export interface ExposesFolder {
   type: 'exposesFolder';
   parentName: string;
   exposes: ExposedModule[];
+}
+
+/**
+ * Represents a federation root directory
+ */
+export interface FederationRoot {
+  type: 'federationRoot';
+  path: string;
+  name: string;
+  configs: ModuleFederationConfig[];
+}
+
+/**
+ * Represents the unified federation root structure
+ */
+export interface UnifiedRootConfig {
+  roots: string[]; // Array of absolute paths to root directories
+  rootConfigs?: {
+    [rootPath: string]: {
+      startCommand?: string;
+      remotes?: {
+        [remoteName: string]: Remote;
+      };
+    }
+  };
+}
+
+/**
+ * Represents a root directory in the tree view
+ */
+export interface RootFolder {
+  type: 'rootFolder';
+  path: string;
+  name: string;
+  configs: ModuleFederationConfig[];
+  startCommand?: string;
+  isRunning?: boolean;
 } 
