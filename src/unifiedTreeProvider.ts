@@ -12,7 +12,7 @@ import {
     UnifiedRootConfig,
     FederationRoot
 } from './types';
-import { extractConfigFromWebpack, extractConfigFromVite } from './configExtractors';
+import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS, isModernJSFederationConfig } from './configExtractors';
 import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
 
@@ -151,17 +151,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         return;
       }
 
-      // Find all webpack and vite config files in this root, excluding node_modules
-      const webpackPattern = path.join(rootPath, '**', '{webpack.config.js,webpack.config.ts}');
-      const vitePattern = path.join(rootPath, '**', '{vite.config.js,vite.config.ts}');
-      const excludePattern = path.join(rootPath, '**', 'node_modules', '**');
-      
-      const [webpackFiles, viteFiles] = await Promise.all([
+      // Find all webpack, vite, and ModernJS config files in this root, excluding node_modules
+      const [webpackFiles, viteFiles, modernJSFiles] = await Promise.all([
         this.findFiles(rootPath, '**/{webpack.config.js,webpack.config.ts}', '**/node_modules/**'),
-        this.findFiles(rootPath, '**/{vite.config.js,vite.config.ts}', '**/node_modules/**')
+        this.findFiles(rootPath, '**/{vite.config.js,vite.config.ts}', '**/node_modules/**'),
+        this.findFiles(rootPath, '**/module-federation.config.{js,ts}', '**/node_modules/**')
       ]);
 
-      this.log(`Found ${webpackFiles.length} webpack configs and ${viteFiles.length} vite configs in ${rootPath}`);
+      this.log(`Found ${webpackFiles.length} webpack configs, ${viteFiles.length} vite configs, and ${modernJSFiles.length} ModernJS configs in ${rootPath}`);
 
       // Process webpack configs
       const webpackConfigs = await this.processConfigFiles(
@@ -179,8 +176,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         rootPath
       );
       
+      // Process ModernJS configs
+      const modernJSConfigs = await this.processConfigFiles(
+        modernJSFiles,
+        extractConfigFromModernJS,
+        'modernjs',
+        rootPath
+      );
+      
       // Store configs for this root
-      const configs = [...webpackConfigs, ...viteConfigs];
+      const configs = [...webpackConfigs, ...viteConfigs, ...modernJSConfigs];
       if (configs.length > 0) {
         this.rootConfigs.set(rootPath, configs);
         
