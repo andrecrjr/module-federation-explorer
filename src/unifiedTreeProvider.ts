@@ -15,6 +15,7 @@ import {
 import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS } from './configExtractors';
 import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
+import { outputChannel, log, show, clear } from './outputChannel';
 
 // Type guard functions to narrow down types
 function isFederationRoot(element: any): element is FederationRoot {
@@ -48,7 +49,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   readonly onDidChangeTreeData: vscode.Event<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | undefined> = 
     this._onDidChangeTreeData.event;
   
-  private outputChannel: vscode.OutputChannel;
   private rootConfigs: Map<string, ModuleFederationConfig[]> = new Map();
   private rootConfigManager: RootConfigManager;
   private isLoading = false;
@@ -57,7 +57,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   private runningRootApps: Map<string, { terminal: vscode.Terminal }> = new Map();
   
   constructor(private readonly workspaceRoot: string | undefined, private readonly context: vscode.ExtensionContext) {
-    this.outputChannel = vscode.window.createOutputChannel('Module Federation Explorer');
     this.rootConfigManager = new RootConfigManager(context);
     this.log('Initializing Unified Module Federation Explorer...');
     this.loadConfigurations();
@@ -80,14 +79,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   // Logger method for general logging
   log(message: string): void {
     const timestamp = new Date().toISOString();
-    this.outputChannel.appendLine(`[${timestamp}] ${message}`);
+    outputChannel.appendLine(`[${timestamp}] ${message}`);
   }
 
   // Error logger method
   logError(message: string, error: unknown): void {
     const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
     const timestamp = new Date().toISOString();
-    this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
+    outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
     console.error(`[Module Federation] ${message}:\n`, errorDetails);
     vscode.window.showErrorMessage(`${message}: ${error instanceof Error ? error.message : String(error)}`);
   }

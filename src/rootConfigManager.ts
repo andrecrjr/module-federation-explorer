@@ -3,17 +3,17 @@ import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { UnifiedRootConfig, FederationRoot } from './types';
+import { outputChannel } from './outputChannel';
 
 /**
  * Manages the unified root configuration
  */
 export class RootConfigManager {
-  private outputChannel: vscode.OutputChannel;
   private static CONFIG_FILENAME = 'mf-explorer.roots.json';
   private static CONFIG_DIR = '.vscode';
 
   constructor(private readonly context: vscode.ExtensionContext) {
-    this.outputChannel = vscode.window.createOutputChannel('Module Federation Roots');
+    // Removed the creation of a separate output channel
   }
 
   /**
@@ -21,7 +21,7 @@ export class RootConfigManager {
    */
   private log(message: string): void {
     const timestamp = new Date().toISOString();
-    this.outputChannel.appendLine(`[${timestamp}] ${message}`);
+    outputChannel.appendLine(`[${timestamp}] ${message}`);
   }
 
   /**
@@ -30,7 +30,7 @@ export class RootConfigManager {
   private logError(message: string, error: unknown): void {
     const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
     const timestamp = new Date().toISOString();
-    this.outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
+    outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
     console.error(`[Module Federation Roots] ${message}:\n`, errorDetails);
     vscode.window.showErrorMessage(`${message}: ${error instanceof Error ? error.message : String(error)}`);
   }
