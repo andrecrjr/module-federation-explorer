@@ -1021,4 +1021,107 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.logError('Failed to load remote configurations', error);
     }
   }
+
+  /**
+   * Resolve the file extension for a path without extension based on project type
+   */
+  public async resolveFileExtensionForPath(basePath: string): Promise<string> {
+    try {
+      this.log(`Resolving path: ${basePath}`);
+      
+      // Check if the path exists and is a directory
+      if (fsSync.existsSync(basePath) && fsSync.statSync(basePath).isDirectory()) {
+        this.log(`Path is a directory: ${basePath}, looking for files inside`);
+        
+        // Read the directory contents
+        const dirContents = fsSync.readdirSync(basePath);
+        
+        // Order of file name patterns to check (priority order)
+        const filePatterns = ['index', 'main', 'app', 'entry'];
+        
+        // First look for these specific filenames
+        for (const pattern of filePatterns) {
+          // Find any file that starts with the pattern (regardless of extension)
+          const matchingFiles = dirContents.filter(file => 
+            file.startsWith(pattern + '.') || file === pattern);
+            
+          if (matchingFiles.length > 0) {
+            // Sort to prioritize TypeScript over JavaScript files
+            const sortedFiles = matchingFiles.sort((a, b) => {
+              // Define priority of extensions
+              const extensionPriority = {
+                '.tsx': 1, '.ts': 2, '.jsx': 3, '.js': 4,
+                '.vue': 5, '.svelte': 6, '.component.ts': 7,
+                '.component.js': 8
+              };
+              
+              const extA = path.extname(a);
+              const extB = path.extname(b);
+              
+              // If both have prioritized extensions, compare them
+              if (extensionPriority[extA] && extensionPriority[extB]) {
+                return extensionPriority[extA] - extensionPriority[extB];
+              }
+              
+              // If only one has a prioritized extension, prefer it
+              if (extensionPriority[extA]) return -1;
+              if (extensionPriority[extB]) return 1;
+              
+              // Default alphabetical sort
+              return a.localeCompare(b);
+            });
+            
+            const bestMatch = path.join(basePath, sortedFiles[0]);
+            this.log(`Found best matching file: ${bestMatch}`);
+            return bestMatch;
+          }
+        }
+        
+        // If no standard pattern files found, look for any file with common extensions
+        const commonExtensions = ['.tsx', '.ts', '.jsx', '.js', '.vue', '.svelte'];
+        for (const ext of commonExtensions) {
+          const filesWithExt = dirContents.filter(file => file.endsWith(ext));
+          if (filesWithExt.length > 0) {
+            const bestMatch = path.join(basePath, filesWithExt[0]);
+            this.log(`Found file with extension ${ext}: ${bestMatch}`);
+            return bestMatch;
+          }
+        }
+        
+        // If no match found, return the directory itself
+        this.log(`No suitable file found in directory, returning directory path`);
+        return basePath;
+      }
+      
+      // Not a directory or doesn't exist
+      // If it doesn't have an extension, try to guess based on existing files in parent dir
+      if (!path.extname(basePath)) {
+        const dirPath = path.dirname(basePath);
+        const baseName = path.basename(basePath);
+        
+        if (fsSync.existsSync(dirPath) && fsSync.statSync(dirPath).isDirectory()) {
+          // Read directory contents
+          const dirContents = fsSync.readdirSync(dirPath);
+          
+          // Find any file that starts with the base name (regardless of extension)
+          const matchingFiles = dirContents.filter(file => 
+            file.startsWith(baseName + '.') || file === baseName);
+            
+          if (matchingFiles.length > 0) {
+            // Sort by extension priority
+            const sortedFiles = matchingFiles.sort();
+            const bestMatch = path.join(dirPath, sortedFiles[0]);
+            this.log(`Found matching file: ${bestMatch}`);
+            return bestMatch;
+          }
+        }
+      }
+      
+      // If no match found or the file already has an extension, return original path
+      return basePath;
+    } catch (error) {
+      this.logError(`Failed to resolve file extension for path: ${basePath}`, error);
+      return basePath;
+    }
+  }
 }

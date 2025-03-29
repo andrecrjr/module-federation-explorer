@@ -315,7 +315,7 @@ export function activate(context: vscode.ExtensionContext) {
           if (exposedModule.configSource) {
             // Get the directory containing the config file
             const configDir = path.dirname(exposedModule.configSource);
-            const absolutePath = path.resolve(configDir, modulePath);
+            let absolutePath = path.resolve(configDir, modulePath);
             
             try {
               // Check if the file exists
@@ -323,15 +323,26 @@ export function activate(context: vscode.ExtensionContext) {
                 await vscode.window.showTextDocument(vscode.Uri.file(absolutePath));
                 return;
               }
+              
+              // If path doesn't have extension, try to resolve it using provider's helper
+              if (!path.extname(absolutePath)) {
+                const resolvedPath = await provider.resolveFileExtensionForPath(absolutePath);
+                if (resolvedPath !== absolutePath && fs.existsSync(resolvedPath)) {
+                  await vscode.window.showTextDocument(vscode.Uri.file(resolvedPath));
+                  return;
+                }
+              }
             } catch (error) {
               // Continue to other methods if this fails
+              provider.log(`Error resolving absolute path: ${error}`);
             }
           }
           
           // If no results, try to resolve the path against the workspace root
           if (vscode.workspace.workspaceFolders?.length) {
             for (const folder of vscode.workspace.workspaceFolders) {
-              const fullPath = vscode.Uri.joinPath(folder.uri, modulePath);
+              let fullPath = vscode.Uri.joinPath(folder.uri, modulePath);
+              
               try {
                 const stat = await vscode.workspace.fs.stat(fullPath);
                 if (stat) {
@@ -340,7 +351,15 @@ export function activate(context: vscode.ExtensionContext) {
                   return;
                 }
               } catch (error) {
-                // File not found at this path, continue searching
+                // File not found at this path, try with extension resolution
+                
+                if (!path.extname(fullPath.fsPath)) {
+                  const resolvedPath = await provider.resolveFileExtensionForPath(fullPath.fsPath);
+                  if (resolvedPath !== fullPath.fsPath && fs.existsSync(resolvedPath)) {
+                    await vscode.window.showTextDocument(vscode.Uri.file(resolvedPath));
+                    return;
+                  }
+                }
               }
             }
           }
@@ -362,9 +381,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
     };
     
-    // Watch for webpack and vite config changes
+    // Watch for webpack, vite, and ModernJS config changes
     const fileWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/{webpack,vite}.config.{js,ts}',
+      '**/{webpack,vite}.config.{js,ts},**/module-federation.config.{js,ts}',
       false, // ignoreCreateEvents
       false, // ignoreChangeEvents
       false  // ignoreDeleteEvents
