@@ -32,12 +32,12 @@
             },
             {
                 "command": "moduleFederation.addRoot",
-                "title": "Add Root Folder",
+                "title": "Add Host Folder",
                 "icon": "$(add)"
             },
             {
                 "command": "moduleFederation.removeRoot",
-                "title": "Remove Root Folder",
+                "title": "Remove Host Folder",
                 "icon": "$(trash)"
             },
             {
@@ -47,12 +47,12 @@
             },
             {
                 "command": "moduleFederation.startRootApp",
-                "title": "Start Root App",
+                "title": "Start Host App",
                 "icon": "$(play)"
             },
             {
                 "command": "moduleFederation.stopRootApp",
-                "title": "Stop Root App",
+                "title": "Stop Host App",
                 "icon": "$(stop)"
             },
             {
