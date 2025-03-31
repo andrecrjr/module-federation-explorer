@@ -15,8 +15,6 @@
         "Other"
     ],
     "activationEvents": [
-        "onCommand:moduleFederation.initialize",
-        "onView:moduleFederation",
         "workspaceContains:**/.vscode/mf-explorer.roots.json"
     ],
     "main": "./dist/extension.js",
