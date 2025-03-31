@@ -5,6 +5,27 @@ import { ModuleFederationConfig } from './types';
 
 const { parse } = require('@typescript-eslint/parser');
 
+// Define custom fallback for TypeScript AST node types that estraverse doesn't know
+const fallback = (node: any) => {
+  // Return the keys that should be traversed for this node
+  if (node.type === 'TSNonNullExpression') {
+    return ['expression'];
+  }
+  // Add other TypeScript node types as needed
+  if (node.type?.startsWith('TS')) {
+    return Object.keys(node).filter(key => 
+      typeof node[key] === 'object' && 
+      node[key] !== null && 
+      !key.startsWith('_') && 
+      key !== 'type' && 
+      key !== 'loc' && 
+      key !== 'range'
+    );
+  }
+  // Use a type assertion to avoid TypeScript error
+  return (estraverse.VisitorKeys as any)[node.type] || [];
+};
+
 /**
  * Detect package manager and get appropriate start command based on project type
  */
@@ -72,11 +93,15 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
           for (const prop of remotesProp.value.properties) {
             if (isValidRemoteProperty(prop)) {
               const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
+              
+              // Extract remote URL using our helper function
+              const remoteUrl = extractRemoteUrlFromExpression(prop.value);
+              
               config.remotes.push({
                 name: remoteName,
-                url: prop.value.value,
+                url: remoteUrl,
                 folder: remoteName,
-                remoteEntry: prop.value.value,
+                remoteEntry: remoteUrl,
                 packageManager: 'npm',
                 configType: 'webpack'
               });
@@ -103,7 +128,8 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
           console.log(`[Webpack MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
         }
       }
-    }
+    },
+    fallback
   });
   
   // Detect package manager for each remote after AST traversal
@@ -150,9 +176,12 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
       const remotesProp = findProperty(options, 'remotes');
       if (remotesProp?.value.type === 'ObjectExpression') {
         for (const prop of remotesProp.value.properties) {
-          if (prop.key.type === 'Identifier' || prop.key.type === 'Literal') {
+          if (isValidRemoteProperty(prop)) {
             const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
-            const remoteUrl = prop.value.type === 'Literal' ? prop.value.value : undefined;
+            
+            // Extract remote URL using our helper function
+            const remoteUrl = extractRemoteUrlFromExpression(prop.value);
+            
             config.remotes.push({
               name: remoteName,
               url: remoteUrl,
@@ -210,8 +239,7 @@ function findProperty(obj: any, name: string): any {
 function isValidRemoteProperty(prop: any): boolean {
   return prop.type === 'Property' &&
          (prop.key.type === 'Identifier' || prop.key.type === 'Literal') &&
-         prop.value.type === 'Literal' &&
-         typeof prop.value.value === 'string';
+         extractRemoteUrlFromExpression(prop.value) !== undefined;
 }
 
 function isModuleFederationPluginNode(node: any): boolean {
@@ -239,14 +267,37 @@ function findViteConfigObject(ast: any): any {
       if (node.type === 'ExportDefaultDeclaration') {
         if (node.declaration.type === 'CallExpression' &&
             node.declaration.callee.type === 'Identifier' &&
-            node.declaration.callee.name === 'defineConfig' &&
-            node.declaration.arguments.length > 0) {
-          configObj = node.declaration.arguments[0];
+            node.declaration.callee.name === 'defineConfig') {
+          // Handle defineConfig({ ... })
+          if (node.declaration.arguments.length > 0 && 
+              node.declaration.arguments[0].type === 'ObjectExpression') {
+            configObj = node.declaration.arguments[0];
+          }
+          // Handle defineConfig(({ mode }) => ({ ... }))
+          else if (node.declaration.arguments.length > 0 && 
+                  node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
+                  node.declaration.arguments[0].body.type === 'ObjectExpression') {
+            configObj = node.declaration.arguments[0].body;
+          }
+          // Handle defineConfig(({ mode }) => { return { ... }; })
+          else if (node.declaration.arguments.length > 0 && 
+                  node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
+                  node.declaration.arguments[0].body.type === 'BlockStatement') {
+            // Try to find the return statement
+            const returnStatement = node.declaration.arguments[0].body.body.find(
+              (stmt: any) => stmt.type === 'ReturnStatement'
+            );
+            if (returnStatement && returnStatement.argument && 
+                returnStatement.argument.type === 'ObjectExpression') {
+              configObj = returnStatement.argument;
+            }
+          }
         } else if (node.declaration.type === 'ObjectExpression') {
           configObj = node.declaration;
         }
       }
-    }
+    },
+    fallback
   });
   
   return configObj;
@@ -296,11 +347,15 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
           for (const prop of remotesProp.value.properties) {
             if (isValidRemoteProperty(prop)) {
               const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
+              
+              // Extract remote URL using our helper function
+              const remoteUrl = extractRemoteUrlFromExpression(prop.value);
+              
               config.remotes.push({
                 name: remoteName,
-                url: prop.value.value,
+                url: remoteUrl,
                 folder: remoteName,
-                remoteEntry: prop.value.value,
+                remoteEntry: remoteUrl,
                 packageManager: 'npm',
                 configType: 'modernjs'
               });
@@ -341,7 +396,8 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
           console.log(`[ModernJS MFE Config] Exposes:`, config.exposes.map(e => e.name).join(', '));
         }
       }
-    }
+    },
+    fallback
   });
   
   // Detect package manager for each remote after AST traversal
@@ -357,4 +413,57 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
 function isModernJSFederationConfig(filename: string): boolean {
   return filename.endsWith('module-federation.config.ts') || 
          filename.endsWith('module-federation.config.js');
+}
+
+// This function will extract a simplified representation of various expressions that might be used for remote URLs
+function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
+  if (!valueNode) {
+    return undefined;
+  }
+
+  // Handle TypeScript non-null assertion operator (!)
+  if (valueNode.type === 'TSNonNullExpression') {
+    // Process the expression without the non-null assertion
+    return extractRemoteUrlFromExpression(valueNode.expression);
+  }
+
+  // Simple string literal
+  if (valueNode.type === 'Literal' && typeof valueNode.value === 'string') {
+    return valueNode.value;
+  }
+
+  // Environment variable like env.VAR_NAME or process.env.VAR_NAME
+  if (valueNode.type === 'MemberExpression') {
+    let objectName = '';
+    // Get the object part (env or process.env)
+    if (valueNode.object.type === 'Identifier') {
+      objectName = valueNode.object.name;
+    } else if (valueNode.object.type === 'MemberExpression' && 
+              valueNode.object.object.type === 'Identifier' && 
+              valueNode.object.property.type === 'Identifier') {
+      objectName = `${valueNode.object.object.name}.${valueNode.object.property.name}`;
+    }
+    
+    // Get the property part (VAR_NAME)
+    if (valueNode.property.type === 'Identifier') {
+      return `[ENV: ${objectName}.${valueNode.property.name}]`;
+    }
+  }
+
+  // Template literal like `http://${env.HOST}:${env.PORT}/remoteEntry.js`
+  if (valueNode.type === 'TemplateLiteral') {
+    let result = '';
+    // Combine all parts of the template literal
+    for (let i = 0; i < valueNode.quasis.length; i++) {
+      result += valueNode.quasis[i].value.raw;
+      if (i < valueNode.expressions.length) {
+        // For expressions, just add a placeholder
+        result += '[EXPR]';
+      }
+    }
+    return result;
+  }
+
+  // For any other types, return a generic placeholder
+  return '[DYNAMIC_URL]';
 } 
