@@ -63,57 +63,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     this.rootConfigManager = new RootConfigManager(context);
     this.dependencyGraphManager = new DependencyGraphManager(context);
     this.log('Initializing Unified Module Federation Explorer...');
-    // Don't automatically load configurations
-  }
-
-  /**
-   * Initializes the extension with user confirmation
-   */
-  async initialize(): Promise<void> {
-    // Check if a configuration file exists
-    const configExists = await this.configFileExists();
-    
-    if (configExists) {
-      // Auto-load the existing configuration without asking
-      this.log('Existing configuration file found, loading automatically');
-      await this.loadConfigurations();
-      return;
-    }
-    
-    // Ask if user wants to use Module Federation
-    const isMFProject = await vscode.window.showInformationMessage(
-      'Is this a Module Federation project?', 
-      'Yes', 
-      'No'
-    );
-    
-    if (isMFProject === 'Yes') {
-      // Create a new configuration first
-      const created = await this.createNewConfiguration();
-      if (created) {
-        await this.loadConfigurations();
-      }
-    } else {
-      this.log('User indicated this is not a Module Federation project');
-    }
-  }
-
-  /**
-   * Checks for existing configuration and auto-initializes if found
-   */
-  async checkAndAutoInitialize(): Promise<void> {
-    try {
-      // Check if a configuration file exists
-      const configExists = await this.configFileExists();
-      
-      if (configExists) {
-        // Auto-load the existing configuration
-        this.log('Existing configuration file found, auto-initializing');
-        await this.loadConfigurations();
-      }
-    } catch (error) {
-      this.logError('Failed to auto-initialize', error);
-    }
+    this.loadConfigurations();
   }
 
   /**
@@ -338,29 +288,15 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     return results;
   }
 
-  /**
-   * Convert model object to TreeItem
-   */
   getTreeItem(element: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule): vscode.TreeItem {
-    let treeItem: vscode.TreeItem;
-    
     if (isFederationRoot(element)) {
-      // Create tree item for federation root
-      treeItem = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Expanded);
+      // This is the Host node
+      const treeItem = new vscode.TreeItem(
+        'Federation Explorer',
+        vscode.TreeItemCollapsibleState.Expanded
+      );
       
-      // If this is the initialization prompt
-      if (element.contextValue === 'needsInitialization') {
-        treeItem.description = element.description;
-        treeItem.tooltip = element.detail;
-        treeItem.command = element.command ? {
-          command: element.command.command,
-          title: element.command.title
-        } : undefined;
-        treeItem.iconPath = new vscode.ThemeIcon('debug-start');
-        return treeItem;
-      }
-      
-      treeItem.tooltip = 'Module Federation Explorer';
+      treeItem.tooltip = 'Module Federation Host Explorer';
       treeItem.contextValue = 'federationRoot';
       treeItem.iconPath = new vscode.ThemeIcon('server-environment');
       
@@ -368,286 +304,237 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     } else if (isRootFolder(element)) {
       // This is a Host folder node
       const name = path.basename(element.path);
-      treeItem = new vscode.TreeItem(
+      const treeItem = new vscode.TreeItem(
         name,
         vscode.TreeItemCollapsibleState.Expanded
       );
       
-      treeItem.tooltip = `${element.path}`;
+      // Check if this Host app is running
+      const isRunning = this.isRootAppRunning(element.path);
       
-      // Set context value based on whether the Host app is running
-      if (element.isRunning) {
+      treeItem.description = element.path;
+      if (isRunning) {
+        treeItem.description += ' (Running)';
+      }
+      
+      let tooltip = `Host Folder: ${element.path}\nConfigurations: ${element.configs.length}`;
+      if (element.startCommand) {
+        tooltip += `\nStart Command: ${element.startCommand}`;
+        tooltip += `\nStatus: ${isRunning ? 'Running' : 'Stopped'}`;
+      } else {
+        tooltip += '\nStart Command: Not configured';
+      }
+      
+      treeItem.tooltip = tooltip;
+      
+      // Update context value based on whether it's running and has a start command
+      const hasStartCommand = !!element.startCommand;
+      if (isRunning) {
         treeItem.contextValue = 'runningRootApp';
-        treeItem.description = 'Running';
-        treeItem.iconPath = new vscode.ThemeIcon('vm-running');
-      } else if (element.startCommand) {
+      } else if (hasStartCommand) {
         treeItem.contextValue = 'configurableRootApp';
-        treeItem.description = 'Configured';
-        treeItem.iconPath = new vscode.ThemeIcon('server-process');
       } else {
         treeItem.contextValue = 'rootFolder';
-        treeItem.description = 'Not configured';
-        treeItem.iconPath = new vscode.ThemeIcon('folder');
       }
+      
+      // Update icon based on status
+      treeItem.iconPath = new vscode.ThemeIcon(
+        isRunning ? 'play-circle' : 'folder'
+      );
       
       return treeItem;
     } else if (isRemotesFolder(element)) {
-      // This is a remotes folder
-      treeItem = new vscode.TreeItem(
+      // This is a RemotesFolder
+      const treeItem = new vscode.TreeItem(
         'Remotes',
-        element.remotes.length > 0 
-          ? vscode.TreeItemCollapsibleState.Expanded 
-          : vscode.TreeItemCollapsibleState.Collapsed
+        element.remotes.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
       );
-      
-      treeItem.tooltip = `Remotes used by ${element.parentName}`;
-      treeItem.description = `(${element.remotes.length})`;
+      treeItem.iconPath = new vscode.ThemeIcon('remote');
       treeItem.contextValue = 'remotesFolder';
-      treeItem.iconPath = new vscode.ThemeIcon('cloud');
-      
+      treeItem.description = `(${element.remotes.length})`;
       return treeItem;
     } else if (isExposesFolder(element)) {
-      // This is an exposes folder
-      treeItem = new vscode.TreeItem(
-        'Exposed Modules',
-        element.exposes.length > 0 
-          ? vscode.TreeItemCollapsibleState.Collapsed 
-          : vscode.TreeItemCollapsibleState.None
+      // This is an ExposesFolder
+      const treeItem = new vscode.TreeItem(
+        'Exposes',
+        element.exposes.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
       );
-      
-      treeItem.tooltip = `Modules exposed by ${element.parentName}`;
-      treeItem.description = `(${element.exposes.length})`;
+      treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
       treeItem.contextValue = 'exposesFolder';
-      treeItem.iconPath = new vscode.ThemeIcon('package');
-      
+      treeItem.description = `(${element.exposes.length})`;
       return treeItem;
     } else if (isExposedModule(element)) {
-      // This is an exposed module
-      treeItem = new vscode.TreeItem(
+      // This is an ExposedModule
+      const treeItem = new vscode.TreeItem(
         element.name,
         vscode.TreeItemCollapsibleState.None
       );
       
-      treeItem.tooltip = `${element.path}`;
       treeItem.description = element.path;
+      treeItem.tooltip = `Exposed Module: ${element.name}\nPath: ${element.path}\nRemote: ${element.remoteName}`;
+      treeItem.iconPath = new vscode.ThemeIcon('file-code');
       treeItem.contextValue = 'exposedModule';
+      
+      // Add command to open the exposed path when clicking the tree item
       treeItem.command = {
         command: 'moduleFederation.openExposedPath',
-        title: 'Open Exposed Module',
+        title: `Open exposed path: ${element.path}`,
         arguments: [element]
       };
-      treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
       
       return treeItem;
     } else if (isRemote(element)) {
-      // This is a remote
-      treeItem = new vscode.TreeItem(
-        element.name,
-        vscode.TreeItemCollapsibleState.None
-      );
-      
-      treeItem.tooltip = element.folder 
-        ? `${element.folder}\n${element.url || ''}` 
-        : element.url || '';
-        
-      // Check if this remote is running
-      const isRunning = this.runningRemotes.has(`remote-${element.name}`);
-      
-      if (isRunning) {
-        treeItem.contextValue = 'runningRemote';
-        treeItem.description = 'Running';
-        treeItem.iconPath = new vscode.ThemeIcon('vm-running');
-      } else if (this.remoteHasValidFolder(element) && element.startCommand) {
-        treeItem.contextValue = 'remote';
-        treeItem.description = `Configured`;
-        treeItem.iconPath = new vscode.ThemeIcon('server-process');
-      } else {
-        treeItem.contextValue = 'unconfiguredRemote';
-        treeItem.description = 'Not configured';
-        treeItem.iconPath = new vscode.ThemeIcon('cloud');
-      }
-      
-      return treeItem;
-    }
-    
-    // Should never get here, but just in case
-    treeItem = new vscode.TreeItem("Unknown item", vscode.TreeItemCollapsibleState.None);
-    return treeItem;
-  }
-
-  // Method to check if Module Federation has been initialized
-  private isInitialized(): boolean {
-    return this.rootConfigs.size > 0;
-  }
-
-  /**
-   * Check if a configuration file exists but hasn't been loaded yet
-   */
-  private async configFileExists(): Promise<boolean> {
-    try {
-      // Check if there's a saved config path in the workspace state
-      const configPath = this.context.workspaceState.get<string>('mf-explorer.configPath');
-      if (configPath && await this.fileExists(configPath)) {
-        return true;
-      }
-      
-      // Check if there's a default config file in the .vscode folder
-      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-      if (!workspaceFolder) {
-        return false;
-      }
-      
-      const defaultConfigPath = path.join(
-        workspaceFolder.uri.fsPath, 
-        '.vscode', 
-        'mf-explorer.roots.json'
-      );
-      
-      return await this.fileExists(defaultConfigPath);
-    } catch (error) {
-      return false;
-    }
-  }
-  
-  /**
-   * Check if a file exists
-   */
-  private async fileExists(filePath: string): Promise<boolean> {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Get tree items
-   */
-  async getChildren(element?: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule): Promise<(FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule)[]> {
-    try {
-      // If no configuration has been loaded yet, show an initialization item
-      if (!element && !this.isInitialized()) {
-        const configExists = await this.configFileExists();
-        
-        return [{
-          name: 'Module Federation Explorer',
-          type: 'federationRoot',
-          path: 'Not initialized',
-          detail: configExists 
-            ? 'Configuration file found. Click to load it automatically.' 
-            : 'Click to initialize Module Federation Explorer',
-          description: configExists 
-            ? 'Existing configuration detected. Click the "Initialize" button to load it.' 
-            : 'Click the "Initialize" button in the toolbar to get started',
-          rootPath: '',
-          contextValue: 'needsInitialization',
-          command: {
-            command: 'moduleFederation.initialize',
-            title: 'Initialize Module Federation Explorer'
-          },
-          configs: []
-        }];
-      }
-
-      if (!element) {
-        // Root level - show all root folders
-        const rootFolders: RootFolder[] = [];
-        
-        // Get the Host configuration
-        const config = await this.rootConfigManager.loadRootConfig();
-        
-        for (const [rootPath, configs] of this.rootConfigs.entries()) {
-          const rootConfig = config.rootConfigs?.[rootPath];
-          
-          rootFolders.push({
-            type: 'rootFolder',
-            path: rootPath,
-            name: path.basename(rootPath),
-            configs: configs,
-            startCommand: rootConfig?.startCommand,
-            isRunning: this.isRootAppRunning(rootPath)
-          });
-        }
-        
-        return rootFolders;
-      } else if (isFederationRoot(element)) {
-        // Return all configured Host folders
-        return this.getRootFolders();
-      } else if (isRootFolder(element)) {
-        // Show remotes folder and exposes folder for this Host
-        const children: (RemotesFolder | ExposesFolder)[] = [];
-        
-        // Collect all remotes and exposes from this Host's configs
-        const allRemotes = element.configs.flatMap(config => config.remotes);
-        const allExposes = element.configs.flatMap(config => config.exposes);
-        
-        this.log(`Building tree for Host folder ${element.name}:`);
-        this.log(`- Found ${element.configs.length} configs with ${allRemotes.length} remotes and ${allExposes.length} exposes`);
-        
-        if (allRemotes.length > 0) {
-          this.log(`- Remotes to display: ${allRemotes.map(r => r.name).join(', ')}`);
-        } else {
-          this.log(`- No remotes found to display`);
-        }
-        
-        if (allExposes.length > 0) {
-          this.log(`- Exposes to display: ${allExposes.map(e => e.name).join(', ')}`);
-        } else {
-          this.log(`- No exposes found to display`);
-        }
-        
-        // Add remotes folder if there are remotes
-        if (allRemotes.length > 0) {
-          children.push({
-            type: 'remotesFolder',
-            parentName: element.name,
-            remotes: allRemotes
-          });
-        }
-        
-        // Add exposes folder if there are exposes
-        if (allExposes.length > 0) {
-          children.push({
-            type: 'exposesFolder',
-            parentName: element.name,
-            exposes: allExposes
-          });
-        }
-        
-        this.log(`- Generated ${children.length} tree folders for ${element.name}`);
-        
-        return Promise.resolve(children);
-      } else if (isRemotesFolder(element)) {
-        // RemotesFolder node - show all remotes
-        return Promise.resolve(element.remotes);
-      } else if (isExposesFolder(element)) {
-        // ExposesFolder node - show all exposes
-        return Promise.resolve(element.exposes);
-      } else if (isExposedModule(element)) {
-        // ExposedModule node - no children
-        return Promise.resolve([]);
-      } else if (isRemote(element)) {
-        // Remote node - show its exposes
-        // Find the config that contains this remote
-        let exposedModules: ExposedModule[] = [];
-        
-        for (const [rootPath, configs] of this.rootConfigs.entries()) {
-          for (const config of configs) {
-            if (config.remotes.some(r => r.name === element.name)) {
-              // Find exposed modules for this remote
-              const exposes = config.exposes.filter(e => e.remoteName === element.name);
-              exposedModules = [...exposedModules, ...exposes];
+      // This is a Remote
+      // Check if this remote has any exposed modules
+      let hasExposedModules = false;
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          if (config.remotes.some(r => r.name === element.name)) {
+            // Find exposed modules for this remote
+            const exposes = config.exposes.filter(e => e.remoteName === element.name);
+            if (exposes.length > 0) {
+              hasExposedModules = true;
+              break;
             }
           }
         }
-        
-        return Promise.resolve(exposedModules);
-      } else {
-        return Promise.resolve([]);
+        if (hasExposedModules) break;
       }
-    } catch (error) {
-      this.logError('Failed to get children', error);
+
+      const treeItem = new vscode.TreeItem(
+        element.name, 
+        hasExposedModules ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+      );
+      
+      // Check if this remote is running
+      const remoteKey = `remote-${element.name}`;
+      const isRunning = this.getRunningRemoteTerminal(remoteKey) !== undefined;
+      
+      // Resolve the proper folder path
+      const resolvedFolder = this.resolveRemoteFolderPath(element);
+      
+      // Check if the folder is configured
+      const isFolderConfigured = !!resolvedFolder && fsSync.existsSync(resolvedFolder);
+      
+      treeItem.description = isFolderConfigured 
+        ? `${element.url || ''} ${isRunning ? '(Running)' : ''}` 
+        : 'Not configured - click to set up';
+        
+      treeItem.tooltip = `Remote: ${element.name}\n` +
+        `URL: ${element.url || 'Not specified'}\n` +
+        `Folder: ${resolvedFolder || 'Not configured'}\n` +
+        `Status: ${isRunning ? 'Running' : (isFolderConfigured ? 'Stopped' : 'Not configured')}`;
+        
+      treeItem.iconPath = new vscode.ThemeIcon(
+        isRunning ? 'play-circle' : (isFolderConfigured ? 'server' : 'warning')
+      );
+      
+      treeItem.contextValue = isRunning 
+        ? 'runningRemote' 
+        : (isFolderConfigured ? 'remote' : 'unconfiguredRemote');
+      
+      // Add command to start/stop or configure the remote based on current status
+      treeItem.command = {
+        command: isRunning 
+          ? 'moduleFederation.stopRemote' 
+          : 'moduleFederation.startRemote',
+        title: isRunning 
+          ? `Stop ${element.name}` 
+          : (isFolderConfigured 
+              ? `Start ${element.name} (${element.packageManager || 'npm'})` 
+              : `Configure ${element.name}`),
+        arguments: [element]
+      };
+      
+      return treeItem;
+    } else {
+      throw new Error('Unknown element type');
+    }
+  }
+
+  getChildren(element?: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule): Thenable<(FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule)[]> {
+    if (!element) {
+      // Host level - create a federation Host node
+      const fedRoot: FederationRoot = {
+        type: 'federationRoot',
+        path: '',
+        name: 'Federation Explorer',
+        configs: []
+      };
+      return Promise.resolve([fedRoot]);
+    } else if (isFederationRoot(element)) {
+      // Return all configured Host folders
+      return this.getRootFolders();
+    } else if (isRootFolder(element)) {
+      // Show remotes folder and exposes folder for this Host
+      const children: (RemotesFolder | ExposesFolder)[] = [];
+      
+      // Collect all remotes and exposes from this Host's configs
+      const allRemotes = element.configs.flatMap(config => config.remotes);
+      const allExposes = element.configs.flatMap(config => config.exposes);
+      
+      this.log(`Building tree for Host folder ${element.name}:`);
+      this.log(`- Found ${element.configs.length} configs with ${allRemotes.length} remotes and ${allExposes.length} exposes`);
+      
+      if (allRemotes.length > 0) {
+        this.log(`- Remotes to display: ${allRemotes.map(r => r.name).join(', ')}`);
+      } else {
+        this.log(`- No remotes found to display`);
+      }
+      
+      if (allExposes.length > 0) {
+        this.log(`- Exposes to display: ${allExposes.map(e => e.name).join(', ')}`);
+      } else {
+        this.log(`- No exposes found to display`);
+      }
+      
+      // Add remotes folder if there are remotes
+      if (allRemotes.length > 0) {
+        children.push({
+          type: 'remotesFolder',
+          parentName: element.name,
+          remotes: allRemotes
+        });
+      }
+      
+      // Add exposes folder if there are exposes
+      if (allExposes.length > 0) {
+        children.push({
+          type: 'exposesFolder',
+          parentName: element.name,
+          exposes: allExposes
+        });
+      }
+      
+      this.log(`- Generated ${children.length} tree folders for ${element.name}`);
+      
+      return Promise.resolve(children);
+    } else if (isRemotesFolder(element)) {
+      // RemotesFolder node - show all remotes
+      return Promise.resolve(element.remotes);
+    } else if (isExposesFolder(element)) {
+      // ExposesFolder node - show all exposes
+      return Promise.resolve(element.exposes);
+    } else if (isExposedModule(element)) {
+      // ExposedModule node - no children
+      return Promise.resolve([]);
+    } else if (isRemote(element)) {
+      // Remote node - show its exposes
+      // Find the config that contains this remote
+      let exposedModules: ExposedModule[] = [];
+      
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          if (config.remotes.some(r => r.name === element.name)) {
+            // Find exposed modules for this remote
+            const exposes = config.exposes.filter(e => e.remoteName === element.name);
+            exposedModules = [...exposedModules, ...exposes];
+          }
+        }
+      }
+      
+      return Promise.resolve(exposedModules);
+    } else {
       return Promise.resolve([]);
     }
   }
@@ -1409,115 +1296,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     } catch (error) {
       this.logError(`Failed to resolve file extension for path: ${basePath}`, error);
       return basePath;
-    }
-  }
-
-  /**
-   * Creates a new configuration file with user input
-   */
-  async createNewConfiguration(): Promise<boolean> {
-    try {
-      // Ask the user to select a configuration path
-      const configPath = await this.rootConfigManager.selectOrCreateConfigPath();
-      
-      if (!configPath) {
-        return false;
-      }
-      
-      // Get initial configuration options
-      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-      if (!workspaceFolder) {
-        vscode.window.showErrorMessage('No workspace folder is open');
-        return false;
-      }
-      
-      const choice = await vscode.window.showQuickPick(
-        [
-          { 
-            label: `Use current workspace folder (${workspaceFolder.name})`, 
-            description: workspaceFolder.uri.fsPath 
-          },
-          { 
-            label: 'Select a different folder', 
-            description: 'Browse for a specific Module Federation project folder' 
-          },
-          {
-            label: 'Start with empty configuration', 
-            description: 'No roots will be added initially'
-          }
-        ],
-        { 
-          placeHolder: 'Choose initial Module Federation configuration', 
-          title: 'Module Federation Configuration' 
-        }
-      );
-      
-      if (!choice) {
-        return false;
-      }
-      
-      let config: { roots: string[] };
-      
-      if (choice.label.startsWith('Use current workspace')) {
-        // Use the current workspace folder as the initial root
-        config = {
-          roots: [workspaceFolder.uri.fsPath]
-        };
-      } else if (choice.label.startsWith('Select a different')) {
-        // Ask user to select a folder
-        const selectedFolder = await vscode.window.showOpenDialog({
-          canSelectFiles: false,
-          canSelectFolders: true,
-          canSelectMany: false,
-          title: 'Select Module Federation Project Folder'
-        });
-        
-        if (!selectedFolder || selectedFolder.length === 0) {
-          return false;
-        }
-        
-        config = {
-          roots: [selectedFolder[0].fsPath]
-        };
-      } else {
-        // Start with empty configuration
-        config = { roots: [] };
-      }
-      
-      // Save the configuration to the file
-      const dirname = path.dirname(configPath);
-      await fs.mkdir(dirname, { recursive: true });
-      await fs.writeFile(configPath, JSON.stringify(config, null, 2));
-      
-      // Save the path for future use
-      await this.rootConfigManager.setConfigPath(configPath);
-      
-      this.log(`Created new configuration at ${configPath}`);
-      
-      return true;
-    } catch (error) {
-      this.logError('Failed to create new configuration', error);
-      return false;
-    }
-  }
-
-  /**
-   * Check if a remote's folder actually exists on the filesystem
-   */
-  private remoteHasValidFolder(remote: Remote): boolean {
-    try {
-      // If folder path is not set or empty, it's not valid
-      if (!remote.folder || remote.folder.trim() === '') {
-        return false;
-      }
-      
-      // Resolve the folder path
-      const resolvedPath = this.resolveRemoteFolderPath(remote);
-      
-      // Check if it exists and is a directory
-      return fsSync.existsSync(resolvedPath) && fsSync.statSync(resolvedPath).isDirectory();
-    } catch (error) {
-      return false;
     }
   }
 }

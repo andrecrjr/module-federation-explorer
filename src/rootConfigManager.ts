@@ -44,8 +44,11 @@ export class RootConfigManager {
       return configPath;
     }
 
-    // No longer automatically returning a default path
-    return undefined;
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      return undefined;
+    }
+    return path.join(workspaceFolder.uri.fsPath, RootConfigManager.CONFIG_DIR, RootConfigManager.CONFIG_FILENAME);
   }
 
   /**
@@ -269,42 +272,90 @@ export class RootConfigManager {
    */
   async loadRootConfig(): Promise<UnifiedRootConfig> {
     try {
-      const configPath = this.getConfigPath();
+      let configPath = this.getConfigPath();
       
+      // If no configuration path is set, ask the user to select or create one
       if (!configPath) {
-        // No config path set, just return an empty config
-        return { roots: [] };
+        configPath = await this.selectOrCreateConfigPath();
+        
+        if (!configPath) {
+          this.log('No configuration path selected, using default');
+          return await this.createInitialConfig();
+        }
+        
+        // Save the selected path for future use
+        await this.setConfigPath(configPath);
       }
 
       try {
-        // Check if the file exists
         await fsPromises.access(configPath);
-        
-        // Read the file content
         const configContent = await fsPromises.readFile(configPath, 'utf-8');
+        let config: UnifiedRootConfig;
         
         try {
-          // Parse the JSON content
-          const config = JSON.parse(configContent) as UnifiedRootConfig;
+          config = JSON.parse(configContent) as UnifiedRootConfig;
           
           // Validate the config structure
           if (!config.roots || !Array.isArray(config.roots)) {
-            // Invalid structure, return empty config
-            this.log('Configuration file has incorrect format, returning empty config');
-            return { roots: [] };
+            // Try to convert the file to the expected format
+            this.log('Configuration file has incorrect format, attempting to convert');
+            
+            // Create a proper config with the loaded content as a root if possible
+            try {
+              const parsedContent = JSON.parse(configContent);
+              
+              // If it's an object with paths or roots, try to extract values
+              if (typeof parsedContent === 'object') {
+                const possibleRoots: string[] = [];
+                
+                // Check for common properties that might contain paths
+                if (Array.isArray(parsedContent.roots)) {
+                  possibleRoots.push(...parsedContent.roots);
+                } else if (Array.isArray(parsedContent.paths)) {
+                  possibleRoots.push(...parsedContent.paths);
+                } else if (Array.isArray(parsedContent.directories)) {
+                  possibleRoots.push(...parsedContent.directories);
+                } else {
+                  // Try to use the keys or values as paths
+                  for (const key in parsedContent) {
+                    if (typeof parsedContent[key] === 'string' && 
+                        (parsedContent[key].includes('/') || parsedContent[key].includes('\\'))) {
+                      possibleRoots.push(parsedContent[key]);
+                    } else if (typeof key === 'string' && 
+                               (key.includes('/') || key.includes('\\'))) {
+                      possibleRoots.push(key);
+                    }
+                  }
+                }
+                
+                if (possibleRoots.length > 0) {
+                  config = { roots: possibleRoots };
+                  this.log(`Converted configuration with ${possibleRoots.length} potential roots`);
+                } else {
+                  // Just create a new config with current directory as root
+                  config = { roots: [] };
+                }
+              } else {
+                config = { roots: [] };
+              }
+            } catch {
+              config = { roots: [] };
+            }
+            
+            // Save the converted configuration
+            await this.saveRootConfig(config);
           }
           
           this.log(`Loaded root config with ${config.roots.length} roots from ${configPath}`);
           return config;
         } catch (parseError) {
-          // Failed to parse, return empty config
           this.logError('Failed to parse configuration file', parseError);
-          return { roots: [] };
+          return await this.createInitialConfig(configPath);
         }
       } catch (error) {
-        // File doesn't exist, return empty config
-        this.log(`Configuration file not found at ${configPath}`);
-        return { roots: [] };
+        // File doesn't exist or is invalid, create initial config
+        this.log(`Configuration file not found or invalid at ${configPath}, creating default config`);
+        return await this.createInitialConfig(configPath);
       }
     } catch (error) {
       this.logError('Failed to load root configuration', error);
@@ -323,60 +374,10 @@ export class RootConfigManager {
         return { roots: [] };
       }
 
-      // Ask the user if they want to use the current workspace folder or select a different one
-      const choice = await vscode.window.showQuickPick(
-        [
-          { 
-            label: `Use current workspace folder (${workspaceFolder.name})`, 
-            description: workspaceFolder.uri.fsPath 
-          },
-          { 
-            label: 'Select a different folder', 
-            description: 'Browse for a specific Module Federation project folder' 
-          },
-          {
-            label: 'Start with empty configuration', 
-            description: 'No roots will be added initially'
-          }
-        ],
-        { 
-          placeHolder: 'Choose initial Module Federation configuration', 
-          title: 'Module Federation Configuration' 
-        }
-      );
-
-      if (!choice) {
-        return { roots: [] }; // User cancelled
-      }
-
-      let config: UnifiedRootConfig;
-
-      if (choice.label.startsWith('Use current workspace')) {
-        // Use the current workspace folder as the initial root
-        config = {
-          roots: [workspaceFolder.uri.fsPath]
-        };
-      } else if (choice.label.startsWith('Select a different')) {
-        // Let the user select a folder
-        const selectedFolder = await vscode.window.showOpenDialog({
-          canSelectFiles: false,
-          canSelectFolders: true,
-          canSelectMany: false,
-          title: 'Select Module Federation Project Folder'
-        });
-
-        if (!selectedFolder || selectedFolder.length === 0) {
-          // User cancelled folder selection
-          return { roots: [] };
-        }
-
-        config = {
-          roots: [selectedFolder[0].fsPath]
-        };
-      } else {
-        // Start with empty configuration
-        config = { roots: [] };
-      }
+      // Use the current workspace folder as the initial root
+      const config: UnifiedRootConfig = {
+        roots: [workspaceFolder.uri.fsPath]
+      };
 
       // If configPath is provided, use it, otherwise use the default
       if (!configPath) {

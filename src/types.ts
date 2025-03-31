@@ -54,14 +54,6 @@ export interface FederationRoot {
   path: string;
   name: string;
   configs: ModuleFederationConfig[];
-  description?: string;
-  detail?: string;
-  rootPath?: string;
-  contextValue?: string;
-  command?: {
-    command: string;
-    title: string;
-  };
 }
 
 /**

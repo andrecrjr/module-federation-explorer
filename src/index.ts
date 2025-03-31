@@ -17,11 +17,9 @@ export function activate(context: vscode.ExtensionContext) {
     // Clear any previously running remotes (in case of extension restart)
     provider.clearAllRunningApps();
     
-    // Log activation
+    // Show initial welcome message
+    vscode.window.showInformationMessage('Module Federation Explorer is now active! Loading configurations from all roots...');
     provider.log('Extension activated successfully');
-
-    // Check for existing configuration and initialize automatically
-    provider.checkAndAutoInitialize();
 
     // Register the tree data provider
     vscode.window.registerTreeDataProvider('moduleFederation', provider);
@@ -29,9 +27,6 @@ export function activate(context: vscode.ExtensionContext) {
     // Register commands and watchers
     const disposables = [
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.reloadConfigurations()),
-      
-      // Add initialize command - this will be the entry point for users instead of auto-loading
-      vscode.commands.registerCommand('moduleFederation.initialize', () => provider.initialize()),
       
       // Root management commands
       vscode.commands.registerCommand('moduleFederation.addRoot', () => provider.addRoot()),
@@ -566,7 +561,7 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
                     <div class="card">
                         <h4>Dependency Graph</h4>
                         <p>Understanding the relationships between your micro frontends is crucial for effective management. The Dependency Graph visualizes how different modules and remotes interact with each other, helping you identify dependencies and potential issues.</p>
-                        <img src="${graphImageUri}" alt="Dependency Graph" width="80%" style="margin-top: 10px;">
+                        <img src="${graphImageUri}" alt="Dependency Graph" width="50%" style="margin-top: 10px;">
                         <p>This visualization allows you to see which modules are dependent on others, making it easier to manage updates and changes across your micro frontend architecture.</p>
                     </div>
                     

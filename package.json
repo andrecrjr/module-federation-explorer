@@ -2,11 +2,6 @@
     "name": "mfe-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore and manage Module Federation remotes in VS Code",
-    "author": {
-        "name": "André Carlos Jr.",
-        "email": "andre-carlos@live.com"
-    },
-    "publisher": "acjr",
     "version": "1.0.0",
     "engines": {
         "vscode": "^1.80.0"
@@ -15,6 +10,9 @@
         "Other"
     ],
     "activationEvents": [
+        "workspaceContains:**/webpack.config.js",
+        "workspaceContains:**/vite.config.js",
+        "workspaceContains:**/module-federation.config.js",
         "workspaceContains:**/.vscode/mf-explorer.roots.json"
     ],
     "main": "./dist/extension.js",
@@ -28,11 +26,6 @@
             ]
         },
         "commands": [
-            {
-                "command": "moduleFederation.initialize",
-                "title": "Initialize Module Federation Explorer",
-                "icon": "$(debug-start)"
-            },
             {
                 "command": "moduleFederation.refresh",
                 "title": "Refresh",
@@ -75,8 +68,7 @@
             },
             {
                 "command": "moduleFederation.startRemote",
-                "title": "Start Remote",
-                "icon": "$(play)"
+                "title": "Start Remote"
             },
             {
                 "command": "moduleFederation.stopRemote",
@@ -95,51 +87,24 @@
         "menus": {
             "view/title": [
                 {
-                    "command": "moduleFederation.initialize",
+                    "command": "moduleFederation.refresh",
                     "when": "view == moduleFederation",
-                    "group": "navigation@1"
-                },
-                {
-                    "command": "moduleFederation.refresh",
-                    "when": "view == moduleFederation && viewItem != needsInitialization",
                     "group": "navigation"
                 },
                 {
                     "command": "moduleFederation.addRoot",
-                    "when": "view == moduleFederation && viewItem != needsInitialization",
+                    "when": "view == moduleFederation",
                     "group": "navigation"
                 },
                 {
                     "command": "moduleFederation.showDependencyGraph",
-                    "when": "view == moduleFederation && viewItem != needsInitialization",
+                    "when": "view == moduleFederation",
                     "group": "navigation"
                 },
                 {
                     "command": "moduleFederation.changeConfigFile",
-                    "when": "view == moduleFederation && viewItem != needsInitialization",
+                    "when": "view == moduleFederation",
                     "group": "navigation"
-                }
-            ],
-            "commandPalette": [
-                {
-                    "command": "moduleFederation.initialize",
-                    "group": "Module Federation Explorer"
-                },
-                {
-                    "command": "moduleFederation.refresh",
-                    "when": "view == moduleFederation && viewItem != needsInitialization"
-                },
-                {
-                    "command": "moduleFederation.addRoot",
-                    "when": "view == moduleFederation && viewItem != needsInitialization"
-                },
-                {
-                    "command": "moduleFederation.changeConfigFile",
-                    "when": "view == moduleFederation && viewItem != needsInitialization"
-                },
-                {
-                    "command": "moduleFederation.showDependencyGraph",
-                    "when": "view == moduleFederation && viewItem != needsInitialization"
                 }
             ],
             "view/item/context": [
