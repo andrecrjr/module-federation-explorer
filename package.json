@@ -63,7 +63,7 @@
             {
                 "command": "moduleFederation.showDependencyGraph",
                 "title": "Show Dependency Graph",
-                "icon": "$(references)"
+                "icon": "$(graph)"
             },
             {
                 "command": "moduleFederation.startRemote",
