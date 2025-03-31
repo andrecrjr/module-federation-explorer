@@ -17,9 +17,11 @@ export function activate(context: vscode.ExtensionContext) {
     // Clear any previously running remotes (in case of extension restart)
     provider.clearAllRunningApps();
     
-    // Show initial welcome message
-    vscode.window.showInformationMessage('Module Federation Explorer is now active! Loading configurations from all roots...');
+    // Log activation
     provider.log('Extension activated successfully');
+
+    // Check for existing configuration and initialize automatically
+    provider.checkAndAutoInitialize();
 
     // Register the tree data provider
     vscode.window.registerTreeDataProvider('moduleFederation', provider);
@@ -27,6 +29,9 @@ export function activate(context: vscode.ExtensionContext) {
     // Register commands and watchers
     const disposables = [
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.reloadConfigurations()),
+      
+      // Add initialize command - this will be the entry point for users instead of auto-loading
+      vscode.commands.registerCommand('moduleFederation.initialize', () => provider.initialize()),
       
       // Root management commands
       vscode.commands.registerCommand('moduleFederation.addRoot', () => provider.addRoot()),
@@ -449,6 +454,8 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
   const logoUri = webview.asWebviewUri(logoPath);
   const explorerImagePath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mfe-explorer-tree.png');
   const explorerImageUri = webview.asWebviewUri(explorerImagePath);
+  const graphImagePath = vscode.Uri.joinPath(context.extensionUri, 'media', 'dependency-graph.png');
+  const graphImageUri = webview.asWebviewUri(graphImagePath);
 
   return `<!DOCTYPE html>
     <html lang="en">
@@ -545,6 +552,24 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
             <section class="content">
                 
                 <div class="feature-section">
+                    <h2>Key Concepts</h2>
+                    <div class="card">
+                        <h4>Root Host vs Host</h4>
+                        <p>In Module Federation, there are two important concepts to understand:</p>
+                        <ul>
+                            <li><strong>Root Host</strong>: The primary application that serves as the container or shell for other micro frontends. It's the main entry point that orchestrates and loads other federated modules. In your workspace, this is typically the application where users first land.</li>
+                            <li><strong>Host</strong>: Any application that can consume or expose modules using Module Federation. All Root Hosts are also Hosts, but not all Hosts are Root Hosts. A Host can both consume remotes and expose modules to other applications.</li>
+                        </ul>
+                        <p>The Module Federation Explorer helps you manage both Root Hosts and regular Hosts, allowing you to start, stop, and configure them from within VS Code.</p>
+                    </div>
+
+                    <div class="card">
+                        <h4>Dependency Graph</h4>
+                        <p>Understanding the relationships between your micro frontends is crucial for effective management. The Dependency Graph visualizes how different modules and remotes interact with each other, helping you identify dependencies and potential issues.</p>
+                        <img src="${graphImageUri}" alt="Dependency Graph" width="80%" style="margin-top: 10px;">
+                        <p>This visualization allows you to see which modules are dependent on others, making it easier to manage updates and changes across your micro frontend architecture.</p>
+                    </div>
+                    
                     <h2>Key Features</h2>
                     <div class="card">
                         <h4>Multi-Root Support</h4>

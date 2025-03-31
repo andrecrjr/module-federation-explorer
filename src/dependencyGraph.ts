@@ -105,7 +105,7 @@ export class DependencyGraphManager {
       // Otherwise, create a new panel
       this._panel = vscode.window.createWebviewPanel(
         'moduleFederationGraph',
-        'Module Federation Dependency Graph',
+        'Module Federation Explorer Graph',
         columnToShowIn || vscode.ViewColumn.One,
         {
           enableScripts: true,
