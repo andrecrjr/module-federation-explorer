@@ -9,6 +9,11 @@
     "categories": [
         "Other"
     ],
+    "author": {
+        "name": "André Carlos Jr.",
+        "email": "andre-carlos@live.com"
+    },
+    "publisher": "acjr",
     "activationEvents": [
         "workspaceContains:**/webpack.config.js",
         "workspaceContains:**/vite.config.js",
