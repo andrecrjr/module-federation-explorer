@@ -81,4 +81,31 @@ export interface RootFolder {
   configs: ModuleFederationConfig[];
   startCommand?: string;
   isRunning?: boolean;
+}
+
+/**
+ * Represents a node in the Module Federation dependency graph
+ */
+export interface DependencyGraphNode {
+  id: string;
+  label: string;
+  type: 'host' | 'remote';
+  configType: 'webpack' | 'vite' | 'modernjs';
+}
+
+/**
+ * Represents an edge in the Module Federation dependency graph
+ */
+export interface DependencyGraphEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+/**
+ * Represents the complete Module Federation dependency graph
+ */
+export interface DependencyGraph {
+  nodes: DependencyGraphNode[];
+  edges: DependencyGraphEdge[];
 } 

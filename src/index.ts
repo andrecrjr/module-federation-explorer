@@ -38,6 +38,9 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('moduleFederation.stopRootApp', (rootFolder) => provider.stopRootApp(rootFolder)),
       vscode.commands.registerCommand('moduleFederation.configureRootApp', (rootFolder) => provider.configureRootAppStartCommand(rootFolder)),
       
+      // New Dependency Graph command
+      vscode.commands.registerCommand('moduleFederation.showDependencyGraph', () => provider.showDependencyGraph()),
+      
       // Remote commands
       vscode.commands.registerCommand('moduleFederation.stopRemote', async (remote: Remote) => {
         try {

@@ -16,6 +16,7 @@ import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModer
 import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
 import { outputChannel, log, show, clear } from './outputChannel';
+import { DependencyGraphManager } from './dependencyGraph';
 
 // Type guard functions to narrow down types
 function isFederationRoot(element: any): element is FederationRoot {
@@ -56,8 +57,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   // Store running root app information
   private runningRootApps: Map<string, { terminal: vscode.Terminal }> = new Map();
   
+  private dependencyGraphManager: DependencyGraphManager;
+  
   constructor(private readonly workspaceRoot: string | undefined, private readonly context: vscode.ExtensionContext) {
     this.rootConfigManager = new RootConfigManager(context);
+    this.dependencyGraphManager = new DependencyGraphManager(context);
     this.log('Initializing Unified Module Federation Explorer...');
     this.loadConfigurations();
   }
@@ -1018,6 +1022,50 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log('Loaded remote configurations from unified config');
     } catch (error) {
       this.logError('Failed to load remote configurations', error);
+    }
+  }
+
+  /**
+   * Shows the dependency graph visualization
+   */
+  async showDependencyGraph(): Promise<void> {
+    try {
+      this.log('Generating dependency graph...');
+      
+      // Check if we have any configurations loaded
+      if (this.rootConfigs.size === 0) {
+        this.log('No root configurations found for dependency graph');
+        vscode.window.showInformationMessage('No Module Federation configurations found. Please add a root folder first.');
+        return;
+      }
+      
+      // Debug log the currently loaded configurations
+      let totalRemotes = 0;
+      let totalExposes = 0;
+      
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          totalRemotes += config.remotes.length;
+          totalExposes += config.exposes.length;
+          this.log(`Configuration: ${config.name}, Remotes: ${config.remotes.length}, Exposes: ${config.exposes.length}`);
+          
+          if (config.remotes.length > 0) {
+            this.log(`Remotes in ${config.name}: ${config.remotes.map(r => r.name).join(', ')}`);
+          }
+        }
+      }
+      
+      this.log(`Total configurations: ${this.rootConfigs.size}, Total remotes: ${totalRemotes}, Total exposes: ${totalExposes}`);
+      
+      const graph = this.dependencyGraphManager.generateDependencyGraph(this.rootConfigs);
+      this.log(`Generated graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges`);
+      
+      // Show the graph
+      this.dependencyGraphManager.showDependencyGraph(graph);
+      this.log('Dependency graph opened');
+    } catch (error) {
+      this.logError('Failed to generate dependency graph', error);
+      vscode.window.showErrorMessage(`Failed to generate dependency graph: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
