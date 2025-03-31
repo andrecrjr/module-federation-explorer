@@ -439,7 +439,7 @@ export class RootConfigManager {
       config.roots.push(rootPath);
       await this.saveRootConfig(config);
       
-      vscode.window.showInformationMessage(`Added root ${rootPath} to configuration`);
+      vscode.window.showInformationMessage(`Saved ${rootPath} to configuration`);
     } catch (error) {
       this.logError(`Failed to add root ${rootPath}`, error);
     }

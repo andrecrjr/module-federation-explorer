@@ -8,11 +8,44 @@ const { parse } = require('@typescript-eslint/parser');
 // Define custom fallback for TypeScript AST node types that estraverse doesn't know
 const fallback = (node: any) => {
   // Return the keys that should be traversed for this node
-  if (node.type === 'TSNonNullExpression') {
-    return ['expression'];
+  if (!node || !node.type) {
+    return [];
   }
-  // Add other TypeScript node types as needed
-  if (node.type?.startsWith('TS')) {
+
+  // Handle specific TypeScript node types
+  switch (node.type) {
+    case 'TSNonNullExpression':
+      return ['expression'];
+    case 'TSAsExpression':
+    case 'TSTypeAssertion':
+      return ['expression']; // The part being asserted
+    case 'TSTypeReference':
+      return ['typeName', 'typeParameters']; // Type name and any generic parameters
+    case 'TSParameterProperty':
+      return ['parameter']; // The parameter
+    case 'TSArrayType':
+      return ['elementType']; // The element type
+    case 'TSTypeAnnotation':
+      return ['typeAnnotation']; // The type annotation
+    case 'TSTypeParameterDeclaration':
+    case 'TSTypeParameterInstantiation':
+      return ['params']; // Type parameters
+    case 'TSQualifiedName': 
+      return ['left', 'right']; // Namespace qualified names
+    case 'TSEnumDeclaration':
+      return ['id', 'members']; // Enum name and members
+    case 'TSInterfaceDeclaration':
+      return ['id', 'body', 'extends']; // Interface name, body, and extended interfaces
+    case 'TSTypeAliasDeclaration': 
+      return ['id', 'typeParameters', 'typeAnnotation']; // Type alias name, parameters, and type
+    case 'TSPropertySignature':
+      return ['key', 'typeAnnotation', 'initializer']; // Property signature components
+    case 'TSMethodSignature':
+      return ['key', 'parameters', 'returnType']; // Method signature components
+  }
+
+  // Generic handling for other TS node types
+  if (typeof node.type === 'string' && node.type.startsWith('TS')) {
     return Object.keys(node).filter(key => 
       typeof node[key] === 'object' && 
       node[key] !== null && 
@@ -22,7 +55,8 @@ const fallback = (node: any) => {
       key !== 'range'
     );
   }
-  // Use a type assertion to avoid TypeScript error
+  
+  // For non-TS nodes, use estraverse's built-in visitor keys
   return (estraverse.VisitorKeys as any)[node.type] || [];
 };
 
@@ -427,9 +461,20 @@ function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
     return extractRemoteUrlFromExpression(valueNode.expression);
   }
 
+  // Handle type assertions (as Type or <Type>)
+  if (valueNode.type === 'TSAsExpression' || valueNode.type === 'TSTypeAssertion') {
+    // Process the expression without the type assertion
+    return extractRemoteUrlFromExpression(valueNode.expression);
+  }
+
   // Simple string literal
   if (valueNode.type === 'Literal' && typeof valueNode.value === 'string') {
     return valueNode.value;
+  }
+
+  // Identifier - could be an imported variable or constant
+  if (valueNode.type === 'Identifier') {
+    return `[VAR: ${valueNode.name}]`;
   }
 
   // Environment variable like env.VAR_NAME or process.env.VAR_NAME
@@ -439,8 +484,8 @@ function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
     if (valueNode.object.type === 'Identifier') {
       objectName = valueNode.object.name;
     } else if (valueNode.object.type === 'MemberExpression' && 
-              valueNode.object.object.type === 'Identifier' && 
-              valueNode.object.property.type === 'Identifier') {
+               valueNode.object.object.type === 'Identifier' && 
+               valueNode.object.property.type === 'Identifier') {
       objectName = `${valueNode.object.object.name}.${valueNode.object.property.name}`;
     }
     
@@ -462,6 +507,31 @@ function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
       }
     }
     return result;
+  }
+
+  // Function calls like getRemoteUrl() or getUrl(param)
+  if (valueNode.type === 'CallExpression') {
+    let functionName = '';
+    if (valueNode.callee.type === 'Identifier') {
+      functionName = valueNode.callee.name;
+    } else if (valueNode.callee.type === 'MemberExpression' && valueNode.callee.property.type === 'Identifier') {
+      let objectPart = '';
+      if (valueNode.callee.object.type === 'Identifier') {
+        objectPart = valueNode.callee.object.name;
+      }
+      functionName = objectPart ? `${objectPart}.${valueNode.callee.property.name}` : valueNode.callee.property.name;
+    }
+    return `[FUNC: ${functionName}()]`;
+  }
+
+  // Conditional expressions (ternary) like condition ? valueA : valueB
+  if (valueNode.type === 'ConditionalExpression') {
+    return '[CONDITIONAL]';
+  }
+
+  // Binary expressions like 'prefix-' + someVar
+  if (valueNode.type === 'BinaryExpression') {
+    return '[EXPR]';
   }
 
   // For any other types, return a generic placeholder
