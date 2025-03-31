@@ -140,7 +140,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    */
   private async processRoot(rootPath: string): Promise<void> {
     try {
-      this.log(`Processing Host: ${rootPath}`);
+      this.log(`Processing Root Host: ${rootPath}`);
       
       // Check if the directory exists
       try {
@@ -150,7 +150,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           return;
         }
       } catch (error) {
-        this.logError(`Cannot access Host directory`, rootPath);
+        this.logError(`Cannot access Root Host directory`, rootPath);
         return;
       }
 
@@ -211,7 +211,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         this.log(`No Module Federation configurations found in ${rootPath}`);
       }
     } catch (error) {
-      this.logError(`Failed to process Host ${rootPath}`, error);
+      this.logError(`Failed to process Root Host ${rootPath}`, error);
     }
   }
 
@@ -347,7 +347,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // This is a RemotesFolder
       const treeItem = new vscode.TreeItem(
         'Remotes',
-        vscode.TreeItemCollapsibleState.Expanded
+        element.remotes.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
       );
       treeItem.iconPath = new vscode.ThemeIcon('remote');
       treeItem.contextValue = 'remotesFolder';
@@ -357,7 +357,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // This is an ExposesFolder
       const treeItem = new vscode.TreeItem(
         'Exposes',
-        vscode.TreeItemCollapsibleState.Expanded
+        element.exposes.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
       );
       treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
       treeItem.contextValue = 'exposesFolder';
@@ -385,9 +385,25 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       return treeItem;
     } else if (isRemote(element)) {
       // This is a Remote
+      // Check if this remote has any exposed modules
+      let hasExposedModules = false;
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          if (config.remotes.some(r => r.name === element.name)) {
+            // Find exposed modules for this remote
+            const exposes = config.exposes.filter(e => e.remoteName === element.name);
+            if (exposes.length > 0) {
+              hasExposedModules = true;
+              break;
+            }
+          }
+        }
+        if (hasExposedModules) break;
+      }
+
       const treeItem = new vscode.TreeItem(
         element.name, 
-        vscode.TreeItemCollapsibleState.Collapsed
+        hasExposedModules ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
       );
       
       // Check if this remote is running
