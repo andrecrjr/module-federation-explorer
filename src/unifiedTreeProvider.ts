@@ -459,7 +459,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       }
       
       if (element.startCommand) {
-        tooltip.appendMarkdown(`\n**Start command:** \`${element.startCommand}\``);
+        tooltip.appendMarkdown(`\n**Serve build command:** \`${element.startCommand}\``);
       }
       
       if (element.isRunning) {
@@ -527,7 +527,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       }
       
       if (element.startCommand) {
-        tooltip.appendMarkdown(`**Start command:** \`${element.startCommand}\`\n\n`);
+        tooltip.appendMarkdown(`**Serve build command:** \`${element.startCommand}\`\n\n`);
       }
       
       if (element.buildCommand) {
@@ -936,9 +936,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Ask user for the start command
       const startCommand = await vscode.window.showInputBox({
-        prompt: `Configure start command for ${rootFolder.name}`,
+        prompt: `Configure serve build command for ${rootFolder.name}`,
         value: currentCommand || defaultCommand,
-        placeHolder: 'e.g., npm run start, yarn dev, etc.',
+        placeHolder: 'e.g., npm run start, yarn dev, etc. the command to start the app builded',
       });
       
       if (!startCommand) {
@@ -954,10 +954,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Configured start command for ${rootFolder.name}: ${startCommand}`);
+      vscode.window.showInformationMessage(`Configured serve build command for ${rootFolder.name}: ${startCommand}`);
       return startCommand;
     } catch (error) {
-      this.logError(`Failed to configure start command for Host app: ${rootFolder.name}`, error);
+      this.logError(`Failed to configure serve build command for ${rootFolder.name}`, error);
       return undefined;
     }
   }

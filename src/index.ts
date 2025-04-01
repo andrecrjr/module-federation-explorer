@@ -215,13 +215,13 @@ export function activate(context: vscode.ExtensionContext) {
             // Ask user for start command
             const defaultStartCommand = `${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`;
             const startCommand = await vscode.window.showInputBox({
-              prompt: 'Enter the start command',
+              prompt: 'Enter the serve build command',
               value: remote.startCommand || defaultStartCommand,
-              title: 'Configure Start Command'
+              title: 'Configure Serve Build Command'
             });
             
             if (!startCommand) {
-              vscode.window.showInformationMessage('Start command not provided, remote configuration canceled.');
+              vscode.window.showInformationMessage('Serve build command not provided, remote configuration canceled.');
               return;
             }
             
@@ -514,6 +514,7 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
   const extensionUri = context.extensionUri;
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles.css'));
   const logoUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'module-federation-logo.svg'));
+  const graphPngUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'dependency-graph.png'));
 
   return `<!DOCTYPE html>
     <html lang="en">
@@ -643,7 +644,13 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
                     </div>
                 </div>
                 
-                <h2>Getting Started</h2>
+        <h2>Dependency Graph Visualization</h2>
+        <div style="margin: 20px 0; text-align: center;">
+          <img src="${graphPngUri}" alt="Module Federation Dependency Graph Example" style="max-width: 70%; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);" />
+          <p style="margin-top: 10px; font-style: italic;">Example of a Module Federation dependency graph</p>
+        </div>
+
+      <h2>Getting Started</h2>
       
       <div style="max-width: 700px; margin: 0 auto;">
         <div class="step">
@@ -689,9 +696,10 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
         <a href="#" id="directViewLink">Module Federation in the Explorer view</a>.
       </p>
 
-      <p style="margin-top: 30px; font-size: 0.9em;">
-        Support this project: <a href="https://ko-fi.com/andrecrjr" target="_blank" style="color: var(--vscode-textLink-foreground);">Ko-fi ☕</a>
-      </p>
+      <a href="https://ko-fi.com/andrecrjr">
+        <img src="https://cdn.prod.website-files.com/5c14e387dab576fe667689cf/670f5a01c01ea9191809398c_support_me_on_kofi_blue-p-500.png" alt="KoFi Donation" width="200"/>
+      </a>
+
     </div>
 
     <script>
