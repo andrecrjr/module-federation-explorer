@@ -209,6 +209,8 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           const rootConfig = await this.rootConfigManager.loadRootConfig();
           if (!rootConfig.roots || rootConfig.roots.length === 0) {
             this.log('No roots configured. Configure at least one Host directory.');
+            // Set context to show welcome view when no roots are configured
+            vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', false);
             return;
           }
 
@@ -231,6 +233,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           // Load remote configurations
           await this.loadRemoteConfigurations();
 
+          // Set context based on whether any roots were found
+          vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', this.rootConfigs.size > 0);
+          
           this.log('Finished loading configurations from all roots');
         }
       );
@@ -586,12 +591,8 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       if (!element) {
         return this.getRootFolders().then(rootFolders => {
           if (rootFolders.length === 0) {
-            // Show helpful empty state message
-            return [{
-              type: 'emptyState',
-              name: 'No Module Federation Hosts found',
-              description: 'Click the "+" button to add a Host folder'
-            } as EmptyState];
+            // Return empty array to allow viewsWelcome to be shown instead
+            return [];
           }
           return rootFolders;
         });
@@ -698,6 +699,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       });
     }
     
+    // Set context variable to show/hide the welcome view
+    vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', rootFolders.length > 0);
+    
     return rootFolders;
   }
 
@@ -766,12 +770,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Process the new Host
       await this.processRoot(rootPath);
       
+      // Update context to reflect that there are roots
+      vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', true);
+      
       // Refresh the tree view
       this._onDidChangeTreeData.fire(undefined);
       
       vscode.window.showInformationMessage(`Added Host ${rootPath} to configuration`);
     } catch (error) {
-      this.logError('Failed to add Host', error);
+      this.logError(`Failed to add Host`, error);
+      vscode.window.showErrorMessage(`Failed to add Host: ${error}`);
     }
   }
 
@@ -780,11 +788,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    */
   async removeRoot(rootFolder: RootFolder): Promise<void> {
     try {
-      const rootPath = rootFolder.path;
+      this.log(`Removing Host ${rootFolder.path}`);
       
       // Confirm with user
       const confirmed = await vscode.window.showWarningMessage(
-        `Are you sure you want to remove "${rootPath}" from the configuration?`,
+        `Are you sure you want to remove "${rootFolder.path}" from the configuration?`,
         { modal: true },
         'Yes'
       );
@@ -792,18 +800,23 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       if (!confirmed) {
         return;
       }
-
-      await this.rootConfigManager.removeRoot(rootPath);
       
-      // Remove from our local map
-      this.rootConfigs.delete(rootPath);
+      // Remove this Host from the configuration
+      await this.rootConfigManager.removeRoot(rootFolder.path);
+      
+      // Remove this Host from the configs map
+      this.rootConfigs.delete(rootFolder.path);
+      
+      // Update context based on remaining roots
+      vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', this.rootConfigs.size > 0);
       
       // Refresh the tree view
       this._onDidChangeTreeData.fire(undefined);
       
-      vscode.window.showInformationMessage(`Removed Host ${rootPath} from configuration`);
+      vscode.window.showInformationMessage(`Removed Host ${rootFolder.path} from configuration`);
     } catch (error) {
-      this.logError('Failed to remove Host', error);
+      this.logError(`Failed to remove Host ${rootFolder.path}`, error);
+      vscode.window.showErrorMessage(`Failed to remove Host: ${error}`);
     }
   }
 

@@ -42,7 +42,8 @@
         "viewsWelcome": [
             {
                 "view": "moduleFederation",
-                "contents": "No Module Federation hosts found.\n[Add Host Folder](command:moduleFederation.addRoot)\nLearn more about [Module Federation](https://github.com/andrecrjr/module-federation-explorer)."
+                "contents": "No Module Federation hosts found.\n\nClick below to add a host folder containing Module Federation configurations:\n[Add Host Folder](command:moduleFederation.addRoot)\n\nLearn more about [Module Federation](https://github.com/andrecrjr/module-federation-explorer).",
+                "when": "!moduleFederation.hasRoots"
             }
         ],
         "commands": [
