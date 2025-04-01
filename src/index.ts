@@ -31,11 +31,33 @@ export function activate(context: vscode.ExtensionContext) {
     provider.log('Extension activated successfully');
 
     // Register the tree data provider and create tree view
-    const treeView = vscode.window.createTreeView('moduleFederation', {
+    const viewId = 'moduleFederation';
+    vscode.window.registerTreeDataProvider(viewId, provider);
+    
+    // Create a tree view that will be shown in the explorer
+    const treeView = vscode.window.createTreeView(viewId, {
       treeDataProvider: provider,
       showCollapseAll: true
     });
     context.subscriptions.push(treeView);
+    
+    // Register the reveal command to show the Module Federation Explorer view
+    context.subscriptions.push(
+      vscode.commands.registerCommand('moduleFederation.reveal', () => {
+        // This command opens the Explorer view and then focuses on our view
+        vscode.commands.executeCommand('workbench.view.explorer');
+        // Directly open the Module Federation view by ID
+        vscode.commands.executeCommand('moduleFederation.focus');
+      })
+    );
+    
+    // Register focus command to focus the Module Federation view
+    context.subscriptions.push(
+      vscode.commands.registerCommand('moduleFederation.focus', () => {
+        // Simply open the explorer view where our view is contained
+        vscode.commands.executeCommand('workbench.view.explorer');
+      })
+    );
 
     // Register welcome command explicitly
     const welcomeCommand = vscode.commands.registerCommand('moduleFederation.showWelcome', () => {
@@ -43,22 +65,6 @@ export function activate(context: vscode.ExtensionContext) {
     });
     context.subscriptions.push(welcomeCommand);
     
-    // Register reveal command
-    const revealCommand = vscode.commands.registerCommand('moduleFederation.reveal', () => {
-      vscode.commands.executeCommand('workbench.view.explorer');
-      setTimeout(() => {
-        // Focus the Module Federation view within the explorer viewlet
-        vscode.commands.executeCommand('workbench.view.explorer.moduleFederation.focus');
-      }, 300); // Small delay to ensure explorer view is active
-    });
-    context.subscriptions.push(revealCommand);
-    
-    // Register focus command
-    const focusCommand = vscode.commands.registerCommand('moduleFederation.focus', () => {
-      vscode.commands.executeCommand('workbench.view.explorer.moduleFederation.focus');
-    });
-    context.subscriptions.push(focusCommand);
-
     // Register commands and watchers
     const disposables = [
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.reloadConfigurations()),
@@ -472,11 +478,9 @@ function showWelcomePage(context: vscode.ExtensionContext) {
     message => {
       switch (message.command) {
         case 'openExtensionExplorer':
-          // Focus the Module Federation view
+          // Instead of trying to focus our view which is having issues, 
+          // just open the explorer view (where our treeview is shown)
           vscode.commands.executeCommand('workbench.view.explorer');
-          setTimeout(() => {
-            vscode.commands.executeCommand('moduleFederation.focus');
-          }, 300);
           return;
         case 'openDocs':
           vscode.env.openExternal(vscode.Uri.parse('https://github.com/andrecrjr/module-federation-explorer'));
