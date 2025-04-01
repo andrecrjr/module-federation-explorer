@@ -22,7 +22,12 @@
         "workspaceContains:**/webpack.config.js",
         "workspaceContains:**/vite.config.js",
         "workspaceContains:**/module-federation.config.js",
-        "workspaceContains:**/.vscode/mf-explorer.roots.json"
+        "workspaceContains:**/.vscode/mf-explorer.roots.json",
+        "onView:moduleFederation",
+        "onCommand:moduleFederation.openView",
+        "onCommand:moduleFederation.reveal",
+        "onCommand:moduleFederation.focus",
+        "onCommand:moduleFederation.showWelcome"
     ],
     "main": "./dist/extension.js",
     "contributes": {
@@ -34,6 +39,12 @@
                 }
             ]
         },
+        "viewsWelcome": [
+            {
+                "view": "moduleFederation",
+                "contents": "No Module Federation hosts found.\n[Add Host Folder](command:moduleFederation.addRoot)\nLearn more about [Module Federation](https://github.com/andrecrjr/module-federation-explorer)."
+            }
+        ],
         "commands": [
             {
                 "command": "moduleFederation.refresh",
@@ -99,6 +110,10 @@
             {
                 "command": "moduleFederation.focus",
                 "title": "Module Federation Explorer: Focus View"
+            },
+            {
+                "command": "moduleFederation.openView",
+                "title": "Module Federation Explorer: Open View"
             }
         ],
         "menus": {

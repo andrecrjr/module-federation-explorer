@@ -51,6 +51,20 @@ export function activate(context: vscode.ExtensionContext) {
       })
     );
     
+    // Add a direct command to open the view within explorer
+    context.subscriptions.push(
+      vscode.commands.registerCommand('moduleFederation.openView', () => {
+        // First show the explorer
+        vscode.commands.executeCommand('workbench.view.explorer');
+        // Try to focus specifically on our view using its id
+        setTimeout(() => {
+          // Try multiple approaches to ensure compatibility across different VS Code versions
+          const viewId = 'moduleFederationExplorer';
+          vscode.commands.executeCommand(`${viewId}.focus`);
+        }, 300);
+      })
+    );
+    
     // Register focus command to focus the Module Federation view
     context.subscriptions.push(
       vscode.commands.registerCommand('moduleFederation.focus', () => {
@@ -478,9 +492,8 @@ function showWelcomePage(context: vscode.ExtensionContext) {
     message => {
       switch (message.command) {
         case 'openExtensionExplorer':
-          // Instead of trying to focus our view which is having issues, 
-          // just open the explorer view (where our treeview is shown)
-          vscode.commands.executeCommand('workbench.view.explorer');
+          // Use the direct view opener command
+          vscode.commands.executeCommand('moduleFederation.openView');
           return;
         case 'openDocs':
           vscode.env.openExternal(vscode.Uri.parse('https://github.com/andrecrjr/module-federation-explorer'));
@@ -666,21 +679,31 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
       </div>
 
       <div style="margin-top: 30px;">
-        <button class="button" onclick="openExtensionExplorer()">Open Module Federation Explorer</button>
-        <button class="button" onclick="openDocs()">Documentation</button>
+        <button class="button" id="openExplorerBtn">Open Module Federation Explorer</button>
+        <button class="button" id="openDocsBtn">Documentation</button>
       </div>
+      
+      <p style="margin-top: 20px; font-size: 0.9em;">
+        You can also open the Module Federation Explorer view by clicking on
+        <a href="#" id="directViewLink">Module Federation in the Explorer view</a>.
+      </p>
     </div>
 
     <script>
       const vscode = acquireVsCodeApi();
       
-      function openExtensionExplorer() {
+      document.getElementById('openExplorerBtn').addEventListener('click', () => {
         vscode.postMessage({ command: 'openExtensionExplorer' });
-      }
+      });
       
-      function openDocs() {
+      document.getElementById('openDocsBtn').addEventListener('click', () => {
         vscode.postMessage({ command: 'openDocs' });
-      }
+      });
+      
+      document.getElementById('directViewLink').addEventListener('click', (e) => {
+        e.preventDefault();
+        vscode.postMessage({ command: 'openExtensionExplorer' });
+      });
     </script>
     </body>
     </html>`;
