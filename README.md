@@ -103,7 +103,9 @@ The extension automatically detects and processes Module Federation configuratio
 
 If you find this extension helpful, you can support the developer:
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/andrecrjr)
+<a href="https://ko-fi.com/andrecrjr">
+  <img src="https://cdn.prod.website-files.com/5c14e387dab576fe667689cf/670f5a01c01ea9191809398c_support_me_on_kofi_blue-p-500.png" alt="KoFi Donation" width="200"/>
+</a>
 
 ## Contributing
 
