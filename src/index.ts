@@ -11,6 +11,15 @@ export function activate(context: vscode.ExtensionContext) {
   try {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     
+    // Check if this is the first time the extension is being activated
+    const hasShownWelcomePage = context.globalState.get('mfExplorer.hasShownWelcomePage', false);
+    if (!hasShownWelcomePage) {
+      // Show welcome page
+      showWelcomePage(context);
+      // Mark as shown
+      context.globalState.update('mfExplorer.hasShownWelcomePage', true);
+    }
+    
     // Create the unified provider instead of the old one
     const provider = new UnifiedModuleFederationProvider(workspaceRoot, context);
     
@@ -21,8 +30,34 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('Module Federation Explorer is now active! Loading configurations from all roots...');
     provider.log('Extension activated successfully');
 
-    // Register the tree data provider
-    vscode.window.registerTreeDataProvider('moduleFederation', provider);
+    // Register the tree data provider and create tree view
+    const treeView = vscode.window.createTreeView('moduleFederation', {
+      treeDataProvider: provider,
+      showCollapseAll: true
+    });
+    context.subscriptions.push(treeView);
+
+    // Register welcome command explicitly
+    const welcomeCommand = vscode.commands.registerCommand('moduleFederation.showWelcome', () => {
+      showWelcomePage(context);
+    });
+    context.subscriptions.push(welcomeCommand);
+    
+    // Register reveal command
+    const revealCommand = vscode.commands.registerCommand('moduleFederation.reveal', () => {
+      vscode.commands.executeCommand('workbench.view.explorer');
+      setTimeout(() => {
+        // Focus the Module Federation view within the explorer viewlet
+        vscode.commands.executeCommand('workbench.view.explorer.moduleFederation.focus');
+      }, 300); // Small delay to ensure explorer view is active
+    });
+    context.subscriptions.push(revealCommand);
+    
+    // Register focus command
+    const focusCommand = vscode.commands.registerCommand('moduleFederation.focus', () => {
+      vscode.commands.executeCommand('workbench.view.explorer.moduleFederation.focus');
+    });
+    context.subscriptions.push(focusCommand);
 
     // Register commands and watchers
     const disposables = [
@@ -292,11 +327,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }),
 
-      vscode.commands.registerCommand('moduleFederation.showWelcome', () => {
-        // Create and show welcome page instead of just an information message
-        showWelcomePage(context);
-      }),
-
       // Add command to open the exposed module path
       vscode.commands.registerCommand('moduleFederation.openExposedPath', async (exposedModule) => {
         try {
@@ -421,220 +451,233 @@ export function activate(context: vscode.ExtensionContext) {
  * Shows a welcome page explaining how Module Federation Explorer works
  */
 function showWelcomePage(context: vscode.ExtensionContext) {
-  // Create and show panel
+  // Create and show welcome panel
   const panel = vscode.window.createWebviewPanel(
     'moduleFederationWelcome',
     'Welcome to Module Federation Explorer',
     vscode.ViewColumn.One,
     {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
+      localResourceRoots: [
+        vscode.Uri.joinPath(context.extensionUri, 'media')
+      ]
     }
   );
 
   // Set HTML content
   panel.webview.html = getWelcomePageHtml(context, panel.webview);
+  
+  // Handle webview messages
+  panel.webview.onDidReceiveMessage(
+    message => {
+      switch (message.command) {
+        case 'openExtensionExplorer':
+          // Focus the Module Federation view
+          vscode.commands.executeCommand('workbench.view.explorer');
+          setTimeout(() => {
+            vscode.commands.executeCommand('moduleFederation.focus');
+          }, 300);
+          return;
+        case 'openDocs':
+          vscode.env.openExternal(vscode.Uri.parse('https://github.com/andrecrjr/module-federation-explorer'));
+          return;
+      }
+    },
+    undefined,
+    context.subscriptions
+  );
 }
 
 /**
  * Returns the HTML content for the welcome page
  */
 function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.Webview): string {
-  // You can add CSS styles and even images from your extension's media folder
-  const stylePath = vscode.Uri.joinPath(context.extensionUri, 'media', 'welcome.css');
-  const styleUri = webview.asWebviewUri(stylePath);
-  
-  // You could also add a logo image
-  const logoPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'logo.png');
-  const logoUri = webview.asWebviewUri(logoPath);
-  const explorerImagePath = vscode.Uri.joinPath(context.extensionUri, 'media', 'mfe-explorer-tree.png');
-  const explorerImageUri = webview.asWebviewUri(explorerImagePath);
-  const graphImagePath = vscode.Uri.joinPath(context.extensionUri, 'media', 'dependency-graph.png');
-  const graphImageUri = webview.asWebviewUri(graphImagePath);
+  // Get path to the extension media assets
+  const extensionUri = context.extensionUri;
+  const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles.css'));
+  const logoUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'module-federation-logo.svg'));
 
   return `<!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Welcome to Module Federation Explorer</title>
-        <link rel="stylesheet" href="${styleUri}">
+    <title>Module Federation Explorer</title>
         <style>
           body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; 
-            line-height: 1.6; 
             color: var(--vscode-foreground);
-            background-color: var(--vscode-editor-background);
-            max-width: 800px; 
+        padding: 20px;
+        max-width: 900px;
             margin: 0 auto; 
-            padding: 20px; 
+        line-height: 1.5;
           }
           .container { 
-            padding: 20px; 
-            border-radius: 6px; 
-          }
-          h1, h2, h3, h4 { 
-            color: var(--vscode-foreground); 
-            font-weight: 600;
-          }
-          .content { 
-            margin: 20px 0; 
-          }
-          .tip { 
-            background-color: var(--vscode-notifications-background);
-            color: var(--vscode-notifications-foreground); 
-            border-left: 4px solid var(--vscode-notificationLink-foreground); 
-            padding: 10px 16px; 
-            margin: 20px 0; 
-          }
-          .feature-section { 
-            margin-bottom: 24px; 
-          }
-          code { 
-            background-color: var(--vscode-textPreformat-background); 
-            color: var(--vscode-textPreformat-foreground);
-            padding: 2px 4px; 
-            border-radius: 3px; 
-            font-family: 'Courier New', monospace; 
-          }
-          .card { 
-            border: 1px solid var(--vscode-widget-border); 
-            background-color: var(--vscode-editor-background);
-            border-radius: 6px; 
-            padding: 16px; 
-            margin-bottom: 16px; 
-          }
-          .card h4 { 
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      .logo {
+        max-width: 150px;
+        margin-bottom: 20px;
+      }
+      h1 {
+        font-size: 2em;
+        margin-bottom: 0.5em;
+        color: var(--vscode-editor-foreground);
+      }
+      h2 {
+        font-size: 1.5em;
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+        color: var(--vscode-editor-foreground);
+      }
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin: 30px 0;
+        text-align: left;
+      }
+      .feature-card {
+        background-color: var(--vscode-editor-background);
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+      }
+      .feature-card:hover {
+        transform: translateY(-5px);
+      }
+      .feature-card h3 {
             margin-top: 0; 
-            color: var(--vscode-editor-foreground);
-          }
-          ul, ol {
-            color: var(--vscode-foreground);
-          }
-          a {
-            color: var(--vscode-textLink-foreground);
+        margin-bottom: 10px;
+        color: var(--vscode-textLink-foreground);
+      }
+      .button {
+        display: inline-block;
+        padding: 8px 16px;
+        margin: 10px;
+        background-color: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
             text-decoration: none;
-          }
-          a:hover {
-            text-decoration: underline;
-            color: var(--vscode-textLink-activeForeground);
-          }
-          p, li {
-            color: var(--vscode-foreground);
-          }
-          footer {
-            margin-top: 30px;
-            border-top: 1px solid var(--vscode-widget-border);
-            padding-top: 16px;
-          }
-          .header {
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        font-weight: 500;
+      }
+      .button:hover {
+        background-color: var(--vscode-button-hoverBackground);
+      }
+      .step {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 15px;
+        text-align: left;
+      }
+      .step-number {
             display: flex;
-            flex-direction: column;
+        justify-content: center;
             align-items: center;
-            justify-content: center;
+        width: 30px;
+        height: 30px;
+        background-color: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+        border-radius: 50%;
+        margin-right: 15px;
+        flex-shrink: 0;
+      }
+      .step-content {
+        flex: 1;
+      }
+      code {
+        font-family: 'Courier New', Courier, monospace;
+        background-color: var(--vscode-textCodeBlock-background);
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 0.9em;
           }
         </style>
     </head>
     <body>
         <div class="container">
-            <header class="header">
-                <img src="${logoUri}" alt="Module Federation Logo" width="80" height="80">
+      <img src="${logoUri}" alt="Module Federation Logo" class="logo" />
                 <h1>Welcome to Module Federation Explorer</h1>
-                <p>This extension helps you visualize, configure, and manage Module Federation setups across multiple projects, supporting webpack, Vite, and ModernJS configurations.</p>
-                <img src="${explorerImageUri}" alt="Module Federation Explorer Image" width="50%" height="auto" style="margin-top: 20px; margin:0 auto;">
-            </header>
-            
-            <section class="content">
-                
-                <div class="feature-section">
-                    <h2>Key Concepts</h2>
-                    <div class="card">
-                        <h4>Root Host vs Host</h4>
-                        <p>In Module Federation, there are two important concepts to understand:</p>
-                        <ul>
-                            <li><strong>Root Host</strong>: The primary application that serves as the container or shell for other micro frontends. It's the main entry point that orchestrates and loads other federated modules. In your workspace, this is typically the application where users first land.</li>
-                            <li><strong>Host</strong>: Any application that can consume or expose modules using Module Federation. All Root Hosts are also Hosts, but not all Hosts are Root Hosts. A Host can both consume remotes and expose modules to other applications.</li>
-                        </ul>
-                        <p>The Module Federation Explorer helps you manage both Root Hosts and regular Hosts, allowing you to start, stop, and configure them from within VS Code.</p>
+      <p>A powerful tool to visualize, manage, and interact with your Module Federation architecture.</p>
+      
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h3>📦 Discover MFE Modules</h3>
+          <p>Automatically detect and visualize Module Federation configurations in your workspace.</p>
                     </div>
-
-                    <div class="card">
-                        <h4>Dependency Graph</h4>
-                        <p>Understanding the relationships between your micro frontends is crucial for effective management. The Dependency Graph visualizes how different modules and remotes interact with each other, helping you identify dependencies and potential issues.</p>
-                        <img src="${graphImageUri}" alt="Dependency Graph" width="50%" style="margin-top: 10px;">
-                        <p>This visualization allows you to see which modules are dependent on others, making it easier to manage updates and changes across your micro frontend architecture.</p>
+        <div class="feature-card">
+          <h3>🔄 Start/Stop Remotes</h3>
+          <p>Launch and manage remote applications directly from VS Code.</p>
                     </div>
-                    
-                    <h2>Key Features</h2>
-                    <div class="card">
-                        <h4>Multi-Root Support</h4>
-                        <p>Manage Module Federation across multiple project roots in your workspace:</p>
-                        <ul>
-                            <li>Add or remove project roots</li>
-                            <li>Automatically discovers webpack, Vite, and ModernJS configurations</li>
-                            <li>Configured roots are saved in <code>.vscode/mf-explorer.roots.json</code></li>
-                        </ul>
+        <div class="feature-card">
+          <h3>🔍 Dependency Graph</h3>
+          <p>Visualize the relationships between hosts and remotes with an interactive graph.</p>
                     </div>
-                    
-                    <div class="card">
-                        <h4>Remote Management</h4>
-                        <p>Start and manage your Module Federation remotes:</p>
-                        <ul>
-                            <li>Configure build and start commands for each remote</li>
-                            <li>Start and stop remotes directly from VS Code</li>
-                            <li>Automatically detects package manager (npm, yarn, pnpm)</li>
-                            <li>Navigate to exposed module source files</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="card">
-                        <h4>Configuration Visualization</h4>
-                        <p>Explore your Module Federation configurations:</p>
-                        <ul>
-                            <li>View all exposed modules</li>
-                            <li>See which remotes are currently running</li>
-                            <li>Auto-detects configuration changes</li>
-                        </ul>
+        <div class="feature-card">
+          <h3>⚙️ Auto-Configuration</h3>
+          <p>Supports Webpack, Vite, and ModernJS Module Federation configurations.</p>
                     </div>
                 </div>
                 
                 <h2>Getting Started</h2>
-                <ol>
-                    <li>Open the Module Federation Explorer view in the sidebar</li>
-                    <li>Use the "Add Root" command to add your first project root</li>
-                    <li>The extension will automatically scan for Module Federation configurations</li>
-                    <li>Right-click on remotes to start, stop, or configure them</li>
-                    <li>Click on exposed modules to navigate to their source code</li>
-                </ol>
-                
-                <div class="tip">
-                    <h4>Commands You Can Use:</h4>
-                    <ul>
-                        <li><code>moduleFederation.refresh</code> - Reload all configurations</li>
-                        <li><code>moduleFederation.addRoot</code> - Add a new project root</li>
-                        <li><code>moduleFederation.removeRoot</code> - Remove a project root</li>
-                        <li><code>moduleFederation.startRemote</code> - Start a remote app</li>
-                        <li><code>moduleFederation.stopRemote</code> - Stop a running remote</li>
-                        <li><code>moduleFederation.configureRemote</code> - Set build and start commands</li>
-                    </ul>
-                </div>
-                
-                <div class="tip">
-                    <h4>Automatic Updates:</h4>
-                    <p>The extension automatically watches for changes in your configuration files:</p>
-                    <ul>
-                        <li>webpack.config.js/ts</li>
-                        <li>vite.config.js/ts</li>
-                        <li>module-federation.config.js/ts</li>
-                        <li>.vscode/mf-explorer.roots.json</li>
-                    </ul>
-                </div>
-            </section>
-            
-            <footer>
-                <p>For issues or feature requests, please visit the <a href="https://github.com/your-repo/module-federation-explorer">GitHub repository</a>.</p>
-            </footer>
+      
+      <div style="max-width: 700px; margin: 0 auto;">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <strong>Open the Module Federation Explorer view</strong>
+            <p>You can find it in the Explorer sidebar or by running the command <code>Module Federation: Show Explorer</code>.</p>
+          </div>
         </div>
+        
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <strong>Add a Host folder</strong>
+            <p>Click the "+" button in the extension view to add your first Module Federation host folder.</p>
+          </div>
+                </div>
+                
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <strong>Configure and start remotes</strong>
+            <p>Click on any detected remote to set up its folder location and start commands.</p>
+          </div>
+                </div>
+        
+        <div class="step">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <strong>View the dependency graph</strong>
+            <p>Click the graph icon in the toolbar to visualize your Module Federation architecture.</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 30px;">
+        <button class="button" onclick="openExtensionExplorer()">Open Module Federation Explorer</button>
+        <button class="button" onclick="openDocs()">Documentation</button>
+      </div>
+    </div>
+
+    <script>
+      const vscode = acquireVsCodeApi();
+      
+      function openExtensionExplorer() {
+        vscode.postMessage({ command: 'openExtensionExplorer' });
+      }
+      
+      function openDocs() {
+        vscode.postMessage({ command: 'openDocs' });
+      }
+    </script>
     </body>
     </html>`;
 }

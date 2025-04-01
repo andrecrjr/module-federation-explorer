@@ -91,6 +91,14 @@
             {
                 "command": "moduleFederation.showWelcome",
                 "title": "Module Federation Explorer: Show Welcome"
+            },
+            {
+                "command": "moduleFederation.reveal",
+                "title": "Module Federation Explorer: Show View"
+            },
+            {
+                "command": "moduleFederation.focus",
+                "title": "Module Federation Explorer: Focus View"
             }
         ],
         "menus": {

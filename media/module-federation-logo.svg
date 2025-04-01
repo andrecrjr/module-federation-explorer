@@ -1,0 +1,7 @@
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="200" fill="#28374B" />
+  <text x="100" y="100" font-family="Arial" font-size="24" fill="white" text-anchor="middle" dominant-baseline="middle">Explorer</text>
+  <circle cx="100" cy="50" r="30" fill="#61DAFB" />
+  <circle cx="50" cy="150" r="30" fill="#764ABC" />
+  <circle cx="150" cy="150" r="30" fill="#F1502F" />
+</svg>
