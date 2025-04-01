@@ -10,6 +10,7 @@
         "type": "git",
         "url": "https://github.com/andrecrjr/module-federation-explorer"
     },
+    "icon": "/media/mf-explorer-logo.png",
     "categories": [
         "Other"
     ],
