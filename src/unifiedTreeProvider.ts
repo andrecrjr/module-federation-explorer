@@ -63,13 +63,18 @@ interface EmptyState {
   description: string;
 }
 
-export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState> {
+export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState>, 
+  vscode.TreeDragAndDropController<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState> {
   private _onDidChangeTreeData: vscode.EventEmitter<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
     new vscode.EventEmitter<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined>();
   
   readonly onDidChangeTreeData: vscode.Event<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
     this._onDidChangeTreeData.event;
   
+  // DragAndDrop properties required for the controller
+  readonly dragMimeTypes = ['application/vnd.code.tree.moduleFederation'];
+  readonly dropMimeTypes = ['application/vnd.code.tree.moduleFederation'];
+
   private rootConfigs: Map<string, ModuleFederationConfig[]> = new Map();
   private rootConfigManager: RootConfigManager;
   private isLoading = false;
@@ -1428,6 +1433,90 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     } catch (error) {
       this.logError(`Failed to resolve file extension for path: ${basePath}`, error);
       return basePath;
+    }
+  }
+
+  /**
+   * Handles the drag event when an item is dragged in the tree view
+   */
+  handleDrag(source: readonly (FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[], 
+    dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void | Thenable<void> {
+    // Only allow dragging root folders
+    if (source.length === 1 && isRootFolder(source[0])) {
+      // Set the drag data
+      dataTransfer.set('application/vnd.code.tree.moduleFederation', 
+        new vscode.DataTransferItem(source[0]));
+    }
+  }
+
+  /**
+   * Handles the drop event when an item is dropped in the tree view
+   */
+  async handleDrop(target: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined, 
+    dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+    const draggedItem = dataTransfer.get('application/vnd.code.tree.moduleFederation')?.value;
+    
+    // Only allow reordering of root folders
+    if (!draggedItem || !isRootFolder(draggedItem)) {
+      return;
+    }
+
+    // Only allow dropping at the root level or onto another root folder
+    if (target && !isRootFolder(target)) {
+      return;
+    }
+
+    try {
+      this.log(`Reordering root folder ${draggedItem.name}`);
+      
+      // Load the current configuration
+      const rootConfig = await this.rootConfigManager.loadRootConfig();
+      const rootPaths = [...rootConfig.roots];
+      
+      // Get the current indices
+      const sourceIndex = rootPaths.findIndex(path => path === draggedItem.path);
+      
+      if (sourceIndex === -1) {
+        this.log(`Cannot find the source root folder ${draggedItem.name} in configuration`);
+        return;
+      }
+
+      // If target is undefined, move to the end
+      let targetIndex = rootPaths.length - 1;
+      
+      // If target is defined, find its index
+      if (target) {
+        const newTargetIndex = rootPaths.findIndex(path => path === (target as RootFolder).path);
+        if (newTargetIndex !== -1) {
+          targetIndex = newTargetIndex;
+        }
+      }
+      
+      // Remove the item from the source position
+      const [removedItem] = rootPaths.splice(sourceIndex, 1);
+      
+      // Adjust the target position if needed
+      // If source was before target, the target index needs to be reduced by 1
+      if (sourceIndex < targetIndex) {
+        targetIndex--;
+      }
+      
+      // Insert the item at the target position
+      rootPaths.splice(targetIndex + 1, 0, removedItem);
+      
+      // Update the configuration
+      rootConfig.roots = rootPaths;
+      
+      // Save the updated configuration
+      await this.rootConfigManager.saveRootConfig(rootConfig);
+      
+      // Reload the configurations to reflect the changes
+      await this.reloadConfigurations();
+      
+      this.log(`Root folder ${draggedItem.name} moved to position ${targetIndex + 1}`);
+    } catch (error) {
+      this.logError('Failed to reorder root folders', error);
+      vscode.window.showErrorMessage('Failed to reorder root folders. See output panel for details.');
     }
   }
 }

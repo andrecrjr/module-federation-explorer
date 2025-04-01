@@ -37,7 +37,8 @@ export function activate(context: vscode.ExtensionContext) {
     // Create a tree view that will be shown in the explorer
     const treeView = vscode.window.createTreeView(viewId, {
       treeDataProvider: provider,
-      showCollapseAll: true
+      showCollapseAll: true,
+      dragAndDropController: provider
     });
     context.subscriptions.push(treeView);
     
