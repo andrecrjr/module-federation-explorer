@@ -1,5 +1,5 @@
 {
-    "name": "mfe-explorer",
+    "name": "mf-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore and manage Module Federation remotes in VS Code",
     "version": "1.0.0",
