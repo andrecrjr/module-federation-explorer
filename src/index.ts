@@ -688,6 +688,10 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
         You can also open the Module Federation Explorer view by clicking on
         <a href="#" id="directViewLink">Module Federation in the Explorer view</a>.
       </p>
+
+      <p style="margin-top: 30px; font-size: 0.9em;">
+        Support this project: <a href="https://ko-fi.com/andrecrjr" target="_blank" style="color: var(--vscode-textLink-foreground);">Ko-fi ☕</a>
+      </p>
     </div>
 
     <script>

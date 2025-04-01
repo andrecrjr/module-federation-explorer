@@ -22,12 +22,7 @@
         "workspaceContains:**/webpack.config.js",
         "workspaceContains:**/vite.config.js",
         "workspaceContains:**/module-federation.config.js",
-        "workspaceContains:**/.vscode/mf-explorer.roots.json",
-        "onView:moduleFederation",
-        "onCommand:moduleFederation.openView",
-        "onCommand:moduleFederation.reveal",
-        "onCommand:moduleFederation.focus",
-        "onCommand:moduleFederation.showWelcome"
+        "workspaceContains:**/.vscode/mf-explorer.roots.json"
     ],
     "main": "./dist/extension.js",
     "contributes": {
