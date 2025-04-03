@@ -733,20 +733,25 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
 function showSetupGuide(provider: UnifiedModuleFederationProvider) {
   // Check if configuration exists and has any roots
   (provider as any).rootConfigManager.hasConfiguredRoots().then((hasRoots: boolean) => {
+    // Only show the guide if there are no configured roots
     if (!hasRoots) {
-      // Show guide message to help users get started
-      vscode.window.showInformationMessage(
-        'To get started with Module Federation Explorer, you need to configure your settings first.',
-        'Configure Settings',
-        'Show Welcome Page',
-        'Later'
-      ).then(selection => {
-        if (selection === 'Configure Settings') {
-          vscode.commands.executeCommand('moduleFederation.changeConfigFile');
-        } else if (selection === 'Show Welcome Page') {
-          vscode.commands.executeCommand('moduleFederation.showWelcome');
-        }
-      });
+      // Check if the config file exists at all
+      const configPath = (provider as any).rootConfigManager.getConfigPath();
+      if (!configPath || !fs.existsSync(configPath)) {
+        // Show guide message to help users get started
+        vscode.window.showInformationMessage(
+          'To get started with Module Federation Explorer, you need to add your settings first.',
+          'Create Settings',
+          'Show Welcome Page',
+          'Later'
+        ).then(selection => {
+          if (selection === 'Create Settings') {
+            vscode.commands.executeCommand('moduleFederation.changeConfigFile');
+          } else if (selection === 'Show Welcome Page') {
+            vscode.commands.executeCommand('moduleFederation.showWelcome');
+          }
+        });
+      }
     }
   }).catch((error: unknown) => {
     console.error('[Module Federation] Failed to check for configured roots:', error);

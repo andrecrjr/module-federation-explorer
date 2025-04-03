@@ -151,6 +151,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         action: async () => {
           // Find and show all configured roots to allow user to remove the invalid one
           const rootConfig = await this.rootConfigManager.loadRootConfig();
+          if (!rootConfig) {
+            this.log('Failed to load root configuration for tree view');
+            return;
+          }
           const rootItems = rootConfig.roots.map(root => ({
             label: path.basename(root),
             description: root,
@@ -218,7 +222,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           
           // Load Host configuration from settings
           const rootConfig = await this.rootConfigManager.loadRootConfig();
-          if (!rootConfig.roots || rootConfig.roots.length === 0) {
+          if (!rootConfig) {
+            this.log('Failed to load root configuration');
+            return;
+          }
+          if (rootConfig.roots.length === 0) {
             this.log('No Host directories configured. Configure at least one Host directory.');
             // Set context to show welcome view when no roots are configured
             vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', false);
@@ -709,16 +717,20 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     
     // Get the Host configuration
     const config = await this.rootConfigManager.loadRootConfig();
+    if (!config) {
+      this.log('Failed to load root configuration for tree view');
+      return [];
+    }
     
     for (const [rootPath, configs] of this.rootConfigs.entries()) {
-      const rootConfig = config.rootConfigs?.[rootPath];
+      const rootFolderConfig = config.rootConfigs?.[rootPath];
       
       rootFolders.push({
         type: 'rootFolder',
         path: rootPath,
         name: path.basename(rootPath),
         configs: configs,
-        startCommand: rootConfig?.startCommand,
+        startCommand: rootFolderConfig?.startCommand,
         isRunning: this.isRootAppRunning(rootPath)
       });
     }
@@ -1014,6 +1026,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Get current config
       const config = await this.rootConfigManager.loadRootConfig();
+      if (!config) {
+        this.logError(`Failed to save Host folder config for ${rootFolder.name}`, 'No configuration found');
+        return;
+      }
       
       // Create or update the configs property if it doesn't exist
       if (!config.rootConfigs) {
@@ -1042,21 +1058,21 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const config = await this.rootConfigManager.loadRootConfig();
       
       // If no Host configs property, nothing to load
-      if (!config.rootConfigs) {
+      if (!config?.rootConfigs) {
         return;
       }
       
       // Update Host folder configurations
       for (const [rootPath, configs] of this.rootConfigs.entries()) {
-        const rootConfig = config.rootConfigs[rootPath];
-        if (rootConfig) {
+        const rootFolderConfig = config?.rootConfigs[rootPath];
+        if (rootFolderConfig) {
           // Update the Host folder in the tree view
           const rootFolder: RootFolder = {
             type: 'rootFolder',
             path: rootPath,
             name: path.basename(rootPath),
             configs: configs,
-            startCommand: rootConfig.startCommand,
+            startCommand: rootFolderConfig.startCommand,
             isRunning: this.isRootAppRunning(rootPath)
           };
           
@@ -1129,6 +1145,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Get current config
       const config = await this.rootConfigManager.loadRootConfig();
+      if (!config) {
+        this.logError(`Failed to save configuration for remote ${remote.name}`, 'No configuration found');
+        return;
+      }
       
       // Find the appropriate Host for this remote
       const resolvedFolderPath = this.resolveRemoteFolderPath(remote);
@@ -1189,15 +1209,22 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     try {
       // Get current config
       const config = await this.rootConfigManager.loadRootConfig();
+      if (!config) {
+        this.log('No root configuration found');
+        return;
+      }
+      
+      // Non-null assertion to help TypeScript understand
+      const safeConfig: NonNullable<typeof config> = config;
       
       // Check if rootConfigs section exists
-      if (!config.rootConfigs) {
+      if (!safeConfig.rootConfigs) {
         this.log('No saved Host configurations found');
         return;
       }
       
       // Go through each Host configuration
-      for (const [rootPath, rootConfig] of Object.entries(config.rootConfigs)) {
+      for (const [rootPath, rootConfig] of Object.entries(safeConfig.rootConfigs)) {
         // Skip if no remotes section
         if (!rootConfig.remotes) {
           continue;
@@ -1523,6 +1550,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Load the current configuration
       const rootConfig = await this.rootConfigManager.loadRootConfig();
+      if (!rootConfig) {
+        this.logError('Failed to load root configuration for reordering', 'Configuration not found');
+        return;
+      }
       const rootPaths = [...rootConfig.roots];
       
       // Get the current indices

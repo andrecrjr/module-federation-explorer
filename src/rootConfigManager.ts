@@ -270,15 +270,15 @@ export class RootConfigManager {
   /**
    * Load the unified root configuration
    */
-  async loadRootConfig(): Promise<UnifiedRootConfig> {
+  async loadRootConfig(): Promise<UnifiedRootConfig | null> {
     try {
       let configPath = this.getConfigPath();
       
-      // If no configuration path is set, return empty config
+      // If no configuration path is set, return null
       // User will need to explicitly set up configuration using changeConfigFile
       if (!configPath) {
         this.log('No configuration path set yet. User needs to configure settings first.');
-        return { roots: [] };
+        return null;
       }
 
       try {
@@ -343,14 +343,14 @@ export class RootConfigManager {
           this.log(`Loaded root config with ${config.roots.length} roots from ${configPath}`);
           return config;
         } catch (parseError) {
-          this.logError('Failed to parse configuration file', parseError);
-          // Just return empty config instead of creating a new one
+          this.logError('Failed to parse configuration file, please remove the settings file and try again', parseError);
+          // Return empty config instead of null
           return { roots: [] };
         }
       } catch (error) {
         // File doesn't exist or is invalid
         this.log(`Configuration file not found or invalid at ${configPath}`);
-        // Return empty config instead of creating a new one
+        // Return empty config instead of null
         return { roots: [] };
       }
     } catch (error) {
@@ -391,6 +391,14 @@ export class RootConfigManager {
 
       const config = await this.loadRootConfig();
       
+      // Create a new config if none exists
+      if (!config) {
+        const newConfig: UnifiedRootConfig = { roots: [rootPath] };
+        await this.saveRootConfig(newConfig);
+        vscode.window.showInformationMessage(`Saved ${rootPath} to new configuration`);
+        return;
+      }
+      
       // Check if the root already exists
       if (config.roots.includes(rootPath)) {
         this.log(`Root ${rootPath} already exists in configuration`);
@@ -412,6 +420,12 @@ export class RootConfigManager {
   async removeRoot(rootPath: string): Promise<void> {
     try {
       const config = await this.loadRootConfig();
+      
+      if (!config) {
+        this.log(`No configuration exists, cannot remove root ${rootPath}`);
+        return;
+      }
+      
       const index = config.roots.indexOf(rootPath);
       
       if (index === -1) {
@@ -429,7 +443,6 @@ export class RootConfigManager {
       
       await this.saveRootConfig(config);
       
-      vscode.window.showInformationMessage(`Removed root ${rootPath} from configuration`);
     } catch (error) {
       this.logError(`Failed to remove root ${rootPath}`, error);
     }
@@ -441,6 +454,11 @@ export class RootConfigManager {
   async hasConfiguredRoots(): Promise<boolean> {
     try {
       const config = await this.loadRootConfig();
+      
+      // If config is null, no roots are configured
+      if (config === null) {
+        return false;
+      }
       
       // Check if we have any roots configured
       return config.roots && config.roots.length > 0;
