@@ -88,7 +88,18 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     this.rootConfigManager = new RootConfigManager(context);
     this.dependencyGraphManager = new DependencyGraphManager(context);
     this.log('Initializing Unified Module Federation Explorer...');
-    this.loadConfigurations();
+    
+    // Check if root configuration exists with hosts first
+    this.rootConfigManager.hasConfiguredRoots().then(hasRoots => {
+      if (hasRoots) {
+        // If we have roots configured, proceed with loading configurations
+        this.loadConfigurations();
+      } else {
+        // Set context to show welcome view when no roots are configured
+        vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', false);
+        this.log('No host directories configured yet. Waiting for user to set up configuration.');
+      }
+    });
   }
 
   /**
@@ -208,9 +219,22 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           // Load Host configuration from settings
           const rootConfig = await this.rootConfigManager.loadRootConfig();
           if (!rootConfig.roots || rootConfig.roots.length === 0) {
-            this.log('No roots configured. Configure at least one Host directory.');
+            this.log('No Host directories configured. Configure at least one Host directory.');
             // Set context to show welcome view when no roots are configured
             vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', false);
+            
+            // Show informational message after a short delay
+            setTimeout(() => {
+              vscode.window.showInformationMessage(
+                'No Host directories are configured. Use the Add Host button to configure your first Host, then add more Hosts.',
+                'Add Host', 'Later'
+              ).then(selection => {
+                if (selection === 'Add Host') {
+                  vscode.commands.executeCommand('moduleFederation.addRoot');
+                }
+              });
+            }, 1000);
+            
             return;
           }
 
@@ -752,6 +776,29 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    */
   async addRoot(): Promise<void> {
     try {
+      // Make sure configuration is set up first
+      if (!this.rootConfigManager.getConfigPath()) {
+        // Configuration isn't set up, prompt user
+        const result = await vscode.window.showInformationMessage(
+          'You need to set up your configuration file before adding hosts.',
+          'Configure Settings',
+          'Cancel'
+        );
+        
+        if (result === 'Configure Settings') {
+          // Open configuration setup
+          await this.changeConfigFile();
+          
+          // If still no config path, user cancelled
+          if (!this.rootConfigManager.getConfigPath()) {
+            return;
+          }
+        } else {
+          return; // User cancelled
+        }
+      }
+
+      // Now we should have a valid config path, ask user to select a host folder
       const selectedFolder = await vscode.window.showOpenDialog({
         canSelectFiles: false,
         canSelectFolders: true,
@@ -767,19 +814,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const rootPath = selectedFolder[0].fsPath;
       await this.rootConfigManager.addRoot(rootPath);
       
-      // Process the new Host
-      await this.processRoot(rootPath);
-      
-      // Update context to reflect that there are roots
-      vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', true);
-      
-      // Refresh the tree view
-      this._onDidChangeTreeData.fire(undefined);
-      
-      vscode.window.showInformationMessage(`Added Host ${rootPath} to configuration`);
+      // After adding a root, reload configurations to scan for Module Federation configs
+      this.reloadConfigurations();
     } catch (error) {
-      this.logError(`Failed to add Host`, error);
-      vscode.window.showErrorMessage(`Failed to add Host: ${error}`);
+      this.logError('Failed to add root', error);
+      vscode.window.showErrorMessage(`Failed to add root: ${error}`);
     }
   }
 
@@ -821,14 +860,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   }
 
   /**
-   * Change the configuration file and reload
+   * Change the configuration file
    */
   async changeConfigFile(): Promise<void> {
     try {
-      const changed = await this.rootConfigManager.changeConfigFile();
+      const result = await this.rootConfigManager.changeConfigFile();
       
-      if (changed) {
-        // Reload configurations from the new config file
+      if (result) {
+        // Reload configurations
         await this.reloadConfigurations();
       }
     } catch (error) {

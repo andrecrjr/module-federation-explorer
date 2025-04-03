@@ -274,17 +274,11 @@ export class RootConfigManager {
     try {
       let configPath = this.getConfigPath();
       
-      // If no configuration path is set, ask the user to select or create one
+      // If no configuration path is set, return empty config
+      // User will need to explicitly set up configuration using changeConfigFile
       if (!configPath) {
-        configPath = await this.selectOrCreateConfigPath();
-        
-        if (!configPath) {
-          this.log('No configuration path selected, using default');
-          return await this.createInitialConfig();
-        }
-        
-        // Save the selected path for future use
-        await this.setConfigPath(configPath);
+        this.log('No configuration path set yet. User needs to configure settings first.');
+        return { roots: [] };
       }
 
       try {
@@ -332,7 +326,7 @@ export class RootConfigManager {
                   config = { roots: possibleRoots };
                   this.log(`Converted configuration with ${possibleRoots.length} potential roots`);
                 } else {
-                  // Just create a new config with current directory as root
+                  // Create an empty config
                   config = { roots: [] };
                 }
               } else {
@@ -350,51 +344,18 @@ export class RootConfigManager {
           return config;
         } catch (parseError) {
           this.logError('Failed to parse configuration file', parseError);
-          return await this.createInitialConfig(configPath);
+          // Just return empty config instead of creating a new one
+          return { roots: [] };
         }
       } catch (error) {
-        // File doesn't exist or is invalid, create initial config
-        this.log(`Configuration file not found or invalid at ${configPath}, creating default config`);
-        return await this.createInitialConfig(configPath);
+        // File doesn't exist or is invalid
+        this.log(`Configuration file not found or invalid at ${configPath}`);
+        // Return empty config instead of creating a new one
+        return { roots: [] };
       }
     } catch (error) {
       this.logError('Failed to load root configuration', error);
       // Return empty config as fallback
-      return { roots: [] };
-    }
-  }
-
-  /**
-   * Create the initial root configuration
-   */
-  private async createInitialConfig(configPath?: string): Promise<UnifiedRootConfig> {
-    try {
-      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-      if (!workspaceFolder) {
-        return { roots: [] };
-      }
-
-      // Use the current workspace folder as the initial root
-      const config: UnifiedRootConfig = {
-        roots: [workspaceFolder.uri.fsPath]
-      };
-
-      // If configPath is provided, use it, otherwise use the default
-      if (!configPath) {
-        configPath = path.join(workspaceFolder.uri.fsPath, RootConfigManager.CONFIG_DIR, RootConfigManager.CONFIG_FILENAME);
-      }
-      
-      // Save the configuration to the specified path
-      await this.ensureConfigDir(path.dirname(configPath));
-      await fsPromises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
-      
-      // Save the path for future use
-      await this.setConfigPath(configPath);
-      
-      this.log(`Created initial root configuration at ${configPath}`);
-      return config;
-    } catch (error) {
-      this.logError('Failed to create initial configuration', error);
       return { roots: [] };
     }
   }
@@ -475,6 +436,21 @@ export class RootConfigManager {
   }
 
   /**
+   * Check if any root folders are configured
+   */
+  async hasConfiguredRoots(): Promise<boolean> {
+    try {
+      const config = await this.loadRootConfig();
+      
+      // Check if we have any roots configured
+      return config.roots && config.roots.length > 0;
+    } catch (error) {
+      this.logError('Failed to check for configured roots', error);
+      return false;
+    }
+  }
+
+  /**
    * Change to a different configuration file
    */
   async changeConfigFile(): Promise<boolean> {
@@ -491,8 +467,8 @@ export class RootConfigManager {
       try {
         await fsPromises.access(configPath);
       } catch {
-        // File doesn't exist, create a new one
-        await this.createInitialConfig(configPath);
+        // File doesn't exist, create a new empty one
+        await this.createEmptyConfig(configPath);
       }
       
       vscode.window.showInformationMessage(`Changed configuration to ${configPath}`);
@@ -500,6 +476,28 @@ export class RootConfigManager {
     } catch (error) {
       this.logError('Failed to change configuration file', error);
       return false;
+    }
+  }
+
+  /**
+   * Create an empty configuration file
+   */
+  private async createEmptyConfig(configPath: string): Promise<UnifiedRootConfig> {
+    try {
+      // Create an empty configuration
+      const config: UnifiedRootConfig = {
+        roots: []
+      };
+      
+      // Save the configuration to the specified path
+      await this.ensureConfigDir(path.dirname(configPath));
+      await fsPromises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      
+      this.log(`Created empty configuration file at ${configPath}`);
+      return config;
+    } catch (error) {
+      this.logError('Failed to create empty configuration', error);
+      return { roots: [] };
     }
   }
 } 

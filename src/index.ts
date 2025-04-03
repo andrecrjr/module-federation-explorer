@@ -27,9 +27,14 @@ export function activate(context: vscode.ExtensionContext) {
     provider.clearAllRunningApps();
     
     // Show initial welcome message
-    vscode.window.showInformationMessage('Module Federation Explorer is now active! Loading configurations from all roots...');
+    vscode.window.showInformationMessage('Module Federation Explorer is now active!');
     provider.log('Extension activated successfully');
 
+    // Guide the user through the setup process after a short delay
+    setTimeout(() => {
+      showSetupGuide(provider);
+    }, 2000);
+    
     // Register the tree data provider and create tree view
     const viewId = 'moduleFederation';
     vscode.window.registerTreeDataProvider(viewId, provider);
@@ -656,8 +661,8 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
         <div class="step">
           <div class="step-number">1</div>
           <div class="step-content">
-            <strong>Open the Module Federation Explorer view</strong>
-            <p>You can find it in the Explorer sidebar or by running the command <code>Module Federation: Show Explorer</code>.</p>
+            <strong>Configure your settings</strong>
+            <p>First, set up where your configuration file will be stored by clicking on the gear icon in the Module Federation Explorer view.</p>
           </div>
         </div>
         
@@ -665,9 +670,9 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
           <div class="step-number">2</div>
           <div class="step-content">
             <strong>Add a Host folder</strong>
-            <p>Click the "+" button in the extension view to add your first Module Federation host folder.</p>
+            <p>After setting up your configuration, click the "+" button in the extension view to add your first Module Federation host folder.</p>
           </div>
-                </div>
+        </div>
                 
         <div class="step">
           <div class="step-number">3</div>
@@ -675,7 +680,7 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
             <strong>Configure and start remotes</strong>
             <p>Click on any detected remote to set up its folder location and start commands.</p>
           </div>
-                </div>
+        </div>
         
         <div class="step">
           <div class="step-number">4</div>
@@ -720,4 +725,30 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
     </script>
     </body>
     </html>`;
+}
+
+/**
+ * Show a setup guide for first-time users
+ */
+function showSetupGuide(provider: UnifiedModuleFederationProvider) {
+  // Check if configuration exists and has any roots
+  (provider as any).rootConfigManager.hasConfiguredRoots().then((hasRoots: boolean) => {
+    if (!hasRoots) {
+      // Show guide message to help users get started
+      vscode.window.showInformationMessage(
+        'To get started with Module Federation Explorer, you need to configure your settings first.',
+        'Configure Settings',
+        'Show Welcome Page',
+        'Later'
+      ).then(selection => {
+        if (selection === 'Configure Settings') {
+          vscode.commands.executeCommand('moduleFederation.changeConfigFile');
+        } else if (selection === 'Show Welcome Page') {
+          vscode.commands.executeCommand('moduleFederation.showWelcome');
+        }
+      });
+    }
+  }).catch((error: unknown) => {
+    console.error('[Module Federation] Failed to check for configured roots:', error);
+  });
 }
