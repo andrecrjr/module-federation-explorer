@@ -2,7 +2,7 @@
     "name": "mf-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore and manage Module Federation remotes in VS Code",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "engines": {
         "vscode": "^1.80.0"
     },
@@ -139,12 +139,12 @@
             "view/item/context": [
                 {
                     "command": "moduleFederation.removeRoot",
-                    "when": "view == moduleFederation && viewItem == rootFolder",
+                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp || viewItem == runningRootApp)",
                     "group": "inline"
                 },
                 {
                     "command": "moduleFederation.startRootApp",
-                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp)",
+                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp || viewItem == runningRootApp)",
                     "group": "inline"
                 },
                 {
