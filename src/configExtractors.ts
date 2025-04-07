@@ -444,11 +444,6 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
   return config;
 }
 
-function isModernJSFederationConfig(filename: string): boolean {
-  return filename.endsWith('module-federation.config.ts') || 
-         filename.endsWith('module-federation.config.js');
-}
-
 // This function will extract a simplified representation of various expressions that might be used for remote URLs
 function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
   if (!valueNode) {
