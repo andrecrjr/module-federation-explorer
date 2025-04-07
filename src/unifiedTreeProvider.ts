@@ -1120,7 +1120,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     // If no match found, use the first Host as default
     const rootPaths = Array.from(this.rootConfigs.keys());
     if (rootPaths.length > 0) {
-      const defaultPath = path.join(rootPaths[0], remote.folder);
+      const defaultPath = path.resolve(rootPaths[0], remote.folder);
       this.log(`Using default folder path for remote ${remote.name}: ${defaultPath}`);
       return defaultPath;
     }

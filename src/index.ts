@@ -139,8 +139,10 @@ export function activate(context: vscode.ExtensionContext) {
               vscode.window.showInformationMessage('No MFE project folder selected. Please select the folder where your MFE project is located (containing package.json).');
               return;
             }
+
             
             folder = selectedFolder[0].fsPath;
+            
             remote.folder = folder;
             provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
             
@@ -207,9 +209,10 @@ export function activate(context: vscode.ExtensionContext) {
             // Ask user for build command
             const defaultBuildCommand = `${packageManager} run build`;
             const buildCommand = await vscode.window.showInputBox({
-              prompt: 'Enter the build command',
+              prompt: 'Enter the build command (e.g., npm run build)',
               value: remote.buildCommand || defaultBuildCommand,
-              title: 'Configure Build Command'
+              title: 'Configure Build Command',
+              placeHolder: 'Example: npm run build'
             });
             
             if (!buildCommand) {
@@ -220,9 +223,10 @@ export function activate(context: vscode.ExtensionContext) {
             // Ask user for start command
             const defaultStartCommand = `${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`;
             const startCommand = await vscode.window.showInputBox({
-              prompt: 'Enter the serve build command',
+              prompt: 'Enter the preview/start command (e.g., npm run preview)',
               value: remote.startCommand || defaultStartCommand,
-              title: 'Configure Serve Build Command'
+              title: 'Configure the command to preview/start the remote',
+              placeHolder: 'Example: npx dist server -p 3000, npm run preview etc'
             });
             
             if (!startCommand) {
@@ -311,8 +315,8 @@ export function activate(context: vscode.ExtensionContext) {
           const selectedPM = await vscode.window.showQuickPick(
             packageManagers,
             {
-              placeHolder: 'Select package manager',
-              title: 'Configure Start Command'
+              placeHolder: 'Select your preferred package manager',
+              title: 'Configure Package Manager'
             }
           );
           
@@ -321,17 +325,19 @@ export function activate(context: vscode.ExtensionContext) {
           // Let user input custom build command
           const defaultBuildCommand = remote.buildCommand || `${selectedPM.label} run build`;
           const buildCommand = await vscode.window.showInputBox({
-            prompt: 'Enter the build command (leave empty to skip build step)',
+            prompt: 'Enter the build command (e.g., npm run build)',
             value: defaultBuildCommand,
-            title: 'Configure Build Command'
+            title: 'Configure Build Command',
+            placeHolder: 'Example: npm run build'
           });
           
           // Let user input custom start command
           const defaultCommand = remote.startCommand || `${selectedPM.label} start`;
           const startCommand = await vscode.window.showInputBox({
-            prompt: 'Enter the start command',
+            prompt: 'Enter the serve/build command (e.g., npm run start)',
             value: defaultCommand,
-            title: 'Configure Start Command'
+            title: 'Configure Start Command',
+            placeHolder: 'Example: npm run start'
           });
           
           if (!startCommand) return;
@@ -517,8 +523,7 @@ function showWelcomePage(context: vscode.ExtensionContext) {
 function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.Webview): string {
   // Get path to the extension media assets
   const extensionUri = context.extensionUri;
-  const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'styles.css'));
-  const logoUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'module-federation-logo.svg'));
+  const logoUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'mfe-explorer-logo-big.png'));
   const graphPngUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'dependency-graph.png'));
 
   return `<!DOCTYPE html>

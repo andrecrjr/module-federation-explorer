@@ -1,6 +1,29 @@
 # Module Federation Explorer for Visual Studio Code
 
+<div style="display:flex;width:100%;justify-content:center">
+<img src="./media/mfe-explorer-logo-big.png" alt="Texto alternativo" width="450"/>
+</div>
+
+
 The **Module Federation Explorer** is a Visual Studio Code extension that helps you explore and manage Module Federation remotes in your workspace. It provides an intuitive interface to visualize and interact with your Module Federation configurations across Webpack, Vite, and ModernJS platforms.
+
+## Usage
+
+### Getting Started
+
+1. **Create a Configuration File**: 
+   - Before adding hosts, you need to configure your settings. This involves setting up your configuration file. You can do this by clicking on the gear icon in the Module Federation Explorer view or using the command:
+     - `Module Federation: Change Configuration File`
+
+2. **Activate the Extension**:
+   - The extension will automatically activate when you open a workspace containing:
+     - A `webpack.config.js` or `webpack.config.ts` file
+     - A `vite.config.js` or `vite.config.ts` file
+     - A `module-federation.config.js` or `module-federation.config.ts` file
+     - A `.vscode/mf-explorer.roots.json` file
+
+3. **Access the Module Federation Explorer**:
+   - Look for the "Module Federation Explorer" view in the VS Code explorer sidebar.
 
 ## Features
 
@@ -38,21 +61,10 @@ The **Module Federation Explorer** is a Visual Studio Code extension that helps 
 3. Search for "Module Federation Explorer"
 4. Click "Install"
 
-## Usage
-
-### Getting Started
-
-1. The extension will automatically activate when you open a workspace containing:
-   - A `webpack.config.js` or `webpack.config.ts` file
-   - A `vite.config.js` or `vite.config.ts` file
-   - A `module-federation.config.js` or `module-federation.config.ts` file
-   - A `.vscode/mf-explorer.roots.json` file
-
-2. Look for the "Module Federation" view in the VS Code explorer sidebar
 
 ### Managing Host Folders
 
-- Click the "+" button in the Module Federation view to add a host folder
+- Click the "+" button in the Module Federation Explorer view to add a host folder
 - Right-click on a host folder to:
   - Start/stop the host application
   - Configure the host application's start command
@@ -85,6 +97,8 @@ The **Module Federation Explorer** is a Visual Studio Code extension that helps 
 - `Module Federation: Start Remote` - Start a remote application
 - `Module Federation: Stop Remote` - Stop a remote application
 - `Module Federation: Show Welcome` - Show the welcome page
+- `Module Federation: Open View` - Open the Module Federation Explorer view
+- `Module Federation: Focus View` - Focus on the Module Federation Explorer view
 
 ## Requirements
 

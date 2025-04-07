@@ -2,7 +2,7 @@
     "name": "mf-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore and manage Module Federation remotes in VS Code",
-    "version": "1.0.2",
+    "version": "1.1.0",
     "engines": {
         "vscode": "^1.80.0"
     },
@@ -31,7 +31,7 @@
             "explorer": [
                 {
                     "id": "moduleFederation",
-                    "name": "Module Federation"
+                    "name": "Module Federation Explorer"
                 }
             ]
         },
@@ -60,7 +60,7 @@
             },
             {
                 "command": "moduleFederation.changeConfigFile",
-                "title": "Change Configuration File",
+                "title": "Module Federation: Change Configuration File",
                 "icon": "$(gear)"
             },
             {

@@ -160,7 +160,8 @@ export class RootConfigManager {
           filters: {
             'JSON files': ['json']
           },
-          title: 'Select configuration file'
+          title: 'Select Module Federation Explorer Configuration File',
+          openLabel: 'Select Configuration'
         });
         
         if (!selectedUris || selectedUris.length === 0) {
@@ -209,8 +210,8 @@ export class RootConfigManager {
         }));
         
         const selectedFolder = await vscode.window.showQuickPick(folderOptions, {
-          placeHolder: 'Select a workspace folder',
-          title: 'Create Configuration'
+          placeHolder: 'Select a workspace folder for the configuration',
+          title: 'Create Module Federation Configuration'
         });
         
         if (!selectedFolder) {
@@ -231,9 +232,10 @@ export class RootConfigManager {
       // Let user enter a custom file name
       const defaultFileName = RootConfigManager.CONFIG_FILENAME;
       const fileName = await vscode.window.showInputBox({
-        prompt: 'Enter the configuration file name',
+        prompt: 'Enter a name for your Module Federation configuration file',
         value: defaultFileName,
-        title: 'Configuration File Name'
+        title: 'Configuration File Name',
+        placeHolder: 'Example: mf-explorer.roots.json'
       });
       
       if (!fileName) {
