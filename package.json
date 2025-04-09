@@ -14,6 +14,21 @@
     "categories": [
         "Other"
     ],
+    "configuration": {
+        "type": "object",
+        "title": "Module Federation Explorer",
+        "properties": {
+            "moduleFederation.enabled": {
+                "type": "boolean",
+                "default": true
+            },
+            "moduleFederation.autoRefresh": {
+                "type": "boolean",
+                "default": true,
+                "description": "Automatically refresh configurations on file changes"
+            }
+        }
+    },
     "author": {
         "name": "André Carlos Jr.",
         "email": "andre-carlos@live.com"
@@ -178,7 +193,15 @@
                     "when": "view == moduleFederation && viewItem == remote"
                 }
             ]
-        }
+        },
+        "jsonValidation": [
+            {
+                "fileMatch": [
+                    ".vscode/mf-explorer.roots.json"
+                ],
+                "url": "./schemas/roots-schema.json"
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run package",

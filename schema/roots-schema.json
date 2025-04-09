@@ -1,0 +1,86 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Module Federation Roots Configuration",
+    "description": "Schema for validating the roots configuration for Module Federation Explorer.",
+    "type": "object",
+    "properties": {
+        "roots": {
+            "type": "array",
+            "description": "List of root folder paths.",
+            "items": {
+                "type": "string"
+            }
+        },
+        "rootConfigs": {
+            "type": "object",
+            "description": "Configuration for each root folder.",
+            "additionalProperties": {
+                "type": "object",
+                "properties": {
+                    "startCommand": {
+                        "type": "string",
+                        "description": "Command to start the application."
+                    },
+                    "remotes": {
+                        "type": "object",
+                        "description": "Remote applications configuration.",
+                        "additionalProperties": {
+                            "$ref": "#/definitions/remote"
+                        }
+                    }
+                },
+                "required": [
+                    "remotes"
+                ]
+            }
+        }
+    },
+    "definitions": {
+        "remote": {
+            "type": "object",
+            "properties": {
+                "packageManager": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "folder": {
+                    "type": "string"
+                },
+                "configSource": {
+                    "type": "string"
+                },
+                "remoteEntry": {
+                    "type": "string"
+                },
+                "startCommand": {
+                    "type": "string"
+                },
+                "buildCommand": {
+                    "type": "string"
+                },
+                "configType": {
+                    "type": "string",
+                    "enum": [
+                        "webpack",
+                        "vite",
+                        "modernjs"
+                    ]
+                }
+            },
+            "required": [
+                "packageManager",
+                "name",
+                "folder",
+                "configType"
+            ]
+        }
+    },
+    "required": [
+        "roots"
+    ]
+}
