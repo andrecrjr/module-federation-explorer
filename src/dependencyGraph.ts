@@ -33,7 +33,9 @@ export class DependencyGraphManager {
     configs.forEach((rootConfigs, rootPath) => {
       rootConfigs.forEach(config => {
         // Add the host application as a node
-        const hostId = `${config.name}-${config.configType}`;
+        // Include the rootPath in the host ID to ensure uniqueness across different roots
+        const rootPathHash = this.hashPath(rootPath);
+        const hostId = `${rootPathHash}-${config.name}-${config.configType}`;
         if (!nodeMap.has(hostId)) {
           const hostNode: DependencyGraphNode = {
             id: hostId,
@@ -47,7 +49,9 @@ export class DependencyGraphManager {
         
         // Process remotes
         config.remotes.forEach(remote => {
-          const remoteId = `${remote.name}-${remote.configType}`;
+          // For remotes, include the host ID they're connected to in their ID
+          // This ensures remotes are properly connected to the correct host
+          const remoteId = `${rootPathHash}-${remote.name}-${remote.configType}`;
           
           // Add remote as a node if not already added
           if (!nodeMap.has(remoteId)) {
@@ -81,6 +85,19 @@ export class DependencyGraphManager {
     console.log(`Generated dependency graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges`);
     
     return graph;
+  }
+
+  /**
+   * Helper method to create a short hash of a path to use in IDs
+   */
+  private hashPath(input: string): string {
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+      const char = input.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36).substring(0, 8);
   }
 
   /**
