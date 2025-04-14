@@ -932,6 +932,60 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.logError(`Failed to start Host app: ${rootFolder.name}`, error);
     }
   }
+
+  /**
+   * Edit the start command for a Host app
+   */
+  async editRootAppCommands(rootFolder: RootFolder): Promise<void> {
+    try {
+      const rootPath = rootFolder.path;
+      this.log(`Editing commands for Host app: ${rootPath}`);
+      
+      // Get current start command or default
+      const currentCommand = rootFolder.startCommand || '';
+      
+      // Detect common package managers in the directory
+      let defaultCommand = '';
+      try {
+        if (fsSync.existsSync(path.join(rootFolder.path, 'package-lock.json'))) {
+          defaultCommand = 'npm run start';
+        } else if (fsSync.existsSync(path.join(rootFolder.path, 'yarn.lock'))) {
+          defaultCommand = 'yarn start';
+        } else if (fsSync.existsSync(path.join(rootFolder.path, 'pnpm-lock.yaml'))) {
+          defaultCommand = 'pnpm run start';
+        } else {
+          defaultCommand = 'npm run start';
+        }
+      } catch {
+        defaultCommand = 'npm run start';
+      }
+
+      // Ask user for the start command
+      const startCommand = await vscode.window.showInputBox({
+        prompt: `Configure app start command for ${rootFolder.name}`,
+        value: currentCommand || defaultCommand,
+        placeHolder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
+      });
+
+      if (!startCommand) {
+        return; // User cancelled
+      }
+      
+      // Update the Host folder start command
+      rootFolder.startCommand = startCommand;
+      
+      // Save Host folder configuration
+      await this.saveRootFolderConfig(rootFolder);
+      
+      // Refresh the tree view
+      this.refresh();
+      
+      vscode.window.showInformationMessage(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
+    } catch (error) {
+      this.logError(`Failed to configure serve build command for ${rootFolder.name}`, error);
+      return undefined;
+    }
+  }
   
   /**
    * Stop a running Host app
@@ -987,9 +1041,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Ask user for the start command
       const startCommand = await vscode.window.showInputBox({
-        prompt: `Configure serve build command for ${rootFolder.name}`,
+        prompt: `Configure app start command for ${rootFolder.name}`,
         value: currentCommand || defaultCommand,
-        placeHolder: 'e.g., npm run start, yarn dev, etc. the command to start the app builded',
+        placeHolder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
       });
       
       if (!startCommand) {
@@ -1005,7 +1059,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Configured serve build command for ${rootFolder.name}: ${startCommand}`);
+      vscode.window.showInformationMessage(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
       return startCommand;
     } catch (error) {
       this.logError(`Failed to configure serve build command for ${rootFolder.name}`, error);
@@ -1600,6 +1654,101 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     } catch (error) {
       this.logError('Failed to reorder root folders', error);
       vscode.window.showErrorMessage('Failed to reorder root folders. See output panel for details.');
+    }
+  }
+
+  /**
+   * Edit the build and start commands for a remote
+   */
+  async editRemoteCommands(remote: Remote): Promise<void> {
+    try {
+      // Call the method to resolve the proper folder path
+      const resolvedFolderPath = this.resolveRemoteFolderPath(remote);
+      this.log(`Editing commands for remote ${remote.name}, folder: ${resolvedFolderPath || 'not set'}`);
+      
+      // If folder is not set, show error and exit
+      if (!resolvedFolderPath) {
+        vscode.window.showErrorMessage(`Cannot edit commands for ${remote.name}: Folder not configured`);
+        return;
+      }
+      
+      // Get current package manager or detect it
+      let packageManager = remote.packageManager;
+      if (!packageManager) {
+        // Detect package manager
+        if (fsSync.existsSync(path.join(resolvedFolderPath, 'package-lock.json'))) {
+          packageManager = 'npm';
+        } else if (fsSync.existsSync(path.join(resolvedFolderPath, 'yarn.lock'))) {
+          packageManager = 'yarn';
+        } else if (fsSync.existsSync(path.join(resolvedFolderPath, 'pnpm-lock.yaml'))) {
+          packageManager = 'pnpm';
+        } else {
+          packageManager = 'npm'; // Default to npm
+        }
+        remote.packageManager = packageManager;
+      }
+      
+      // Show quick pick for options to edit
+      const options = [
+        { label: 'Edit Build Command', description: remote.buildCommand || 'Not configured' },
+        { label: 'Edit Start Command', description: remote.startCommand || 'Not configured' },
+        { label: 'Edit Both Commands', description: 'Configure both build and start commands' }
+      ];
+      
+      const selectedOption = await vscode.window.showQuickPick(options, {
+        placeHolder: 'What would you like to edit?',
+        title: `Edit Commands for ${remote.name}`
+      });
+      
+      if (!selectedOption) {
+        return; // User cancelled
+      }
+      
+      // Handle based on selection
+      if (selectedOption.label === 'Edit Build Command' || selectedOption.label === 'Edit Both Commands') {
+        // Ask user for build command
+        const defaultBuildCommand = remote.buildCommand || `${packageManager} run build`;
+        const buildCommand = await vscode.window.showInputBox({
+          prompt: `Enter the build command for ${remote.name}`,
+          value: defaultBuildCommand,
+          title: 'Configure Build Command',
+          placeHolder: `Example: ${packageManager} run build`
+        });
+        
+        if (buildCommand !== undefined) { // Allow empty string but not undefined (cancelled)
+          remote.buildCommand = buildCommand;
+        } else if (selectedOption.label === 'Edit Build Command') {
+          return; // User cancelled just the build command
+        }
+      }
+      
+      if (selectedOption.label === 'Edit Start Command' || selectedOption.label === 'Edit Both Commands') {
+        // Ask user for start command
+        const defaultStartCommand = remote.startCommand || `${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`;
+        const startCommand = await vscode.window.showInputBox({
+          prompt: `Enter the start command for ${remote.name}`,
+          value: defaultStartCommand,
+          title: 'Configure Start Command',
+          placeHolder: `Example: ${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`
+        });
+        
+        if (startCommand !== undefined) { // Allow empty string but not undefined (cancelled)
+          remote.startCommand = startCommand;
+        } else if (selectedOption.label === 'Edit Start Command') {
+          return; // User cancelled just the start command
+        }
+      }
+      
+      // Save the updated configuration
+      await this.saveRemoteConfiguration(remote);
+      
+      // Refresh the tree view to reflect changes
+      this.refresh();
+      
+      vscode.window.showInformationMessage(`Updated commands for ${remote.name}`);
+    } catch (error) {
+      this.logError(`Failed to edit commands for ${remote.name}`, error);
+      vscode.window.showErrorMessage(`Failed to edit commands for ${remote.name}: ${error}`);
     }
   }
 }

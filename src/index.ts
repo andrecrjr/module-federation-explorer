@@ -98,6 +98,7 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('moduleFederation.startRootApp', (rootFolder) => provider.startRootApp(rootFolder)),
       vscode.commands.registerCommand('moduleFederation.stopRootApp', (rootFolder) => provider.stopRootApp(rootFolder)),
       vscode.commands.registerCommand('moduleFederation.configureRootApp', (rootFolder) => provider.configureRootAppStartCommand(rootFolder)),
+      vscode.commands.registerCommand('moduleFederation.editRootAppCommand', (rootFolder) => provider.editRootAppCommands(rootFolder)),
       
       // New Dependency Graph command
       vscode.commands.registerCommand('moduleFederation.showDependencyGraph', () => provider.showDependencyGraph()),
@@ -209,7 +210,7 @@ export function activate(context: vscode.ExtensionContext) {
             // Ask user for build command
             const defaultBuildCommand = `${packageManager} run build`;
             const buildCommand = await vscode.window.showInputBox({
-              prompt: 'Enter the build command (e.g., npm run build)',
+              prompt: `Enter the build command (e.g., ${defaultBuildCommand})`,
               value: remote.buildCommand || defaultBuildCommand,
               title: 'Configure Build Command',
               placeHolder: 'Example: npm run build'
@@ -356,6 +357,16 @@ export function activate(context: vscode.ExtensionContext) {
           vscode.window.showInformationMessage(`Updated configuration for ${remote.name}`);
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to configure commands for ${remote.name}: ${error}`);
+        }
+      }),
+
+      // Add command to edit commands for a remote
+      vscode.commands.registerCommand('moduleFederation.editCommand', async (remote: Remote) => {
+        try {
+          provider.log(`Edit command triggered for remote ${remote.name}`);
+          await (provider as any).editRemoteCommands(remote);
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to edit commands for ${remote.name}: ${error}`);
         }
       }),
 

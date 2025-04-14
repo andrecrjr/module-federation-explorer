@@ -2,7 +2,7 @@
     "name": "mf-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore and manage Module Federation remotes in VS Code",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "engines": {
         "vscode": "^1.80.0"
     },
@@ -38,7 +38,7 @@
         "viewsWelcome": [
             {
                 "view": "moduleFederation",
-                "contents": "Welcome to Module Federation Explorer!\n\nBefore adding hosts, you need to configure your settings:\n\n1. First, set up your configuration file:\n[Configure Settings](command:moduleFederation.changeConfigFile)\n\n2. Then add host folders containing Module Federation configurations:\n[Add Host Folder](command:moduleFederation.addRoot)\n\nLearn more about [Module Federation](https://github.com/andrecrjr/module-federation-explorer).",
+                "contents": "👋 Welcome to Module Federation Explorer!\n\nTo get started, follow these simple steps:\n\n1. **Set Up Your Configuration File**\n   - Configure where your settings will be stored.\n[Configure Settings](command:moduleFederation.changeConfigFile)\n\n2. **Add Host Folders**\n   - Add folders containing your Module Federation configurations (e.g., Webpack, Vite, or ModernJS setups).\n[Add Host Folder](command:moduleFederation.addRoot)\n\n3. **Explore Features**\n   - Once configured, you can visualize dependencies, manage remotes, and interact with your Module Federation architecture.\n\n📖 Learn more in the [Documentation](https://github.com/andrecrjr/module-federation-explorer).",
                 "when": "!moduleFederation.hasRoots"
             }
         ],
@@ -52,6 +52,16 @@
                 "command": "moduleFederation.addRoot",
                 "title": "Add New Host Folder",
                 "icon": "$(add)"
+            },
+            {
+                "command": "moduleFederation.editRootAppCommand",
+                "title": "Edit Host App Command",
+                "icon": "$(gear)"
+            },
+            {
+                "command": "moduleFederation.editCommand",
+                "title": "Edit Remote Command",
+                "icon": "$(gear)"
             },
             {
                 "command": "moduleFederation.removeRoot",
@@ -148,6 +158,12 @@
                     "group": "inline"
                 },
                 {
+                    "command": "moduleFederation.editRootAppCommand",
+                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp || viewItem == runningRootApp)",
+                    "group": "inline",
+                    "icon": "$(gear)"
+                },
+                {
                     "command": "moduleFederation.stopRootApp",
                     "when": "view == moduleFederation && viewItem == runningRootApp",
                     "group": "inline"
@@ -172,6 +188,12 @@
                     "command": "moduleFederation.stopRemote",
                     "when": "view == moduleFederation && viewItem == runningRemote",
                     "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.editCommand",
+                    "when": "view == moduleFederation && (viewItem == remote || viewItem == runningRemote)",
+                    "group": "inline",
+                    "icon": "$(edit)"
                 },
                 {
                     "command": "moduleFederation.configureStartCommand",
