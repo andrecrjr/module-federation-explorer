@@ -1090,8 +1090,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         config.rootConfigs = {};
       }
       
-      // Save the Host folder configuration
+      // Preserve existing configuration and only update the startCommand
+      if (!config.rootConfigs[rootFolder.path]) {
+        config.rootConfigs[rootFolder.path] = {};
+      }
+      
+      // Update just the startCommand while preserving other properties like remotes
       config.rootConfigs[rootFolder.path] = {
+        ...config.rootConfigs[rootFolder.path],
         startCommand: rootFolder.startCommand
       };
       
