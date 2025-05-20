@@ -4,15 +4,14 @@
 <img src="./media/mfe-explorer-logo-big.png" alt="Texto alternativo" width="450"/>
 </div>
 
-
-The **Module Federation Explorer** is a Visual Studio Code extension that helps you explore and manage Module Federation remotes in your workspace. It provides an intuitive interface to visualize and interact with your Module Federation configurations across Webpack, Vite, and ModernJS platforms.
+The **Module Federation Explorer** is a Visual Studio Code extension that helps you explore and manage Module Federation remotes in your workspace with Terminal integration. It provides an intuitive interface to visualize and interact with your Module Federation configurations across Webpack, Vite, and ModernJS platforms.
 
 ## Usage
 
 ### Getting Started
 
 1. **Create a Configuration File**: 
-   - Before adding hosts, you need to configure your settings. This involves setting up your configuration file. You can do this by clicking on the gear icon in the Module Federation Explorer view or using the command:
+   - First things first, before adding hosts, you need to configure your settings. This involves setting up your configuration file. You can do this by clicking on the gear icon in the Module Federation Explorer view or using the command:
      - `Module Federation: Change Configuration File`
 
 2. **Activate the Extension**:
@@ -66,14 +65,14 @@ The **Module Federation Explorer** is a Visual Studio Code extension that helps 
 
 - Click the "+" button in the Module Federation Explorer view to add a host folder
 - Right-click on a host folder to:
-  - Start/stop the host application
+  - Start/stop the host application (executed in the integrated terminal)
   - Configure the host application's start command
   - Remove the host folder
 
 ### Managing Remotes
 
 - Right-click on a remote to:
-  - Start/stop the remote application
+  - Start/stop the remote application (executed in the integrated terminal)
   - Configure build and start commands
   - Set the remote's project folder
   - View remote details
