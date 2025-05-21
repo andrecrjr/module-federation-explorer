@@ -11,8 +11,10 @@ The **Module Federation Explorer** is a Visual Studio Code extension that helps 
 ### Getting Started
 
 1. **Create a Configuration File**: 
-   - First things first, before adding hosts, you need to configure your settings. This involves setting up your configuration file. You can do this by clicking on the gear icon in the Module Federation Explorer view or using the command:
+   - First things first, before adding hosts, you need to configure your settings. This involves setting up your configuration file. You can do this by clicking on the gear icon in the Module Federation Explorer view or using the command (CTRL or CMD + shift + P) then search:
      - `Module Federation: Change Configuration File`
+
+  
 
 2. **Activate the Extension**:
    - The extension will automatically activate when you open a workspace containing:
