@@ -9,19 +9,15 @@ import {
     RemotesFolder,
     ExposesFolder,
     RootFolder,
-    UnifiedRootConfig,
-    FederationRoot
+    UnifiedRootConfig
 } from './types';
 import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS } from './configExtractors';
 import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
-import { outputChannel, log, show, clear } from './outputChannel';
+import { outputChannel, log } from './outputChannel';
 import { DependencyGraphManager } from './dependencyGraph';
 
 // Type guard functions to narrow down types
-function isFederationRoot(element: any): element is FederationRoot {
-  return element && element.type === 'federationRoot';
-}
 
 function isRootFolder(element: any): element is RootFolder {
   return element && element.type === 'rootFolder';
@@ -63,12 +59,12 @@ interface EmptyState {
   description: string;
 }
 
-export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState>, 
-  vscode.TreeDragAndDropController<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState> {
-  private _onDidChangeTreeData: vscode.EventEmitter<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
-    new vscode.EventEmitter<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined>();
+export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState>, 
+  vscode.TreeDragAndDropController<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState> {
+  private _onDidChangeTreeData: vscode.EventEmitter<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
+    new vscode.EventEmitter<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined>();
   
-  readonly onDidChangeTreeData: vscode.Event<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
+  readonly onDidChangeTreeData: vscode.Event<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
     this._onDidChangeTreeData.event;
   
   // DragAndDrop properties required for the controller
@@ -435,7 +431,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     return results;
   }
 
-  getTreeItem(element: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): vscode.TreeItem {
+  getTreeItem(element: RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): vscode.TreeItem {
     // Handle loading placeholder
     if (isLoadingPlaceholder(element)) {
       const treeItem = new vscode.TreeItem(
@@ -464,16 +460,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       return treeItem;
     }
     
-    if (isFederationRoot(element)) {
-      // If it's a federation root (top level)
-      const treeItem = new vscode.TreeItem(
-        element.name,
-        vscode.TreeItemCollapsibleState.Expanded
-      );
-      treeItem.tooltip = new vscode.MarkdownString(`## ${element.name}\n\n**Path:** ${element.path}\n\n${element.configs.length} configurations found`);
-      treeItem.iconPath = new vscode.ThemeIcon('server');
-      return treeItem;
-    } else if (isRootFolder(element)) {
+    if (isRootFolder(element)) {
       // If it's a root folder
       const treeItem = new vscode.TreeItem(
         element.name,
@@ -597,11 +584,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
       treeItem.tooltip = new vscode.MarkdownString(`## Exposed Module: ${element.name}\n\n**Path:** ${element.path}\n\n**From remote:** ${element.remoteName}`);
       treeItem.description = element.path;
-      treeItem.command = {
-        command: 'moduleFederation.openExposedPath',
-        arguments: [element],
-        title: 'Open File'
-      };
+
       
       return treeItem;
     }
@@ -609,7 +592,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     throw new Error(`Unknown element type`);
   }
 
-  getChildren(element?: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): Thenable<(FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[]> {
+  getChildren(element?: RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): Thenable<(RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[]> {
     try {
       // If we're still loading, show a loading placeholder
       if (this.isLoading) {
@@ -628,9 +611,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           }
           return rootFolders;
         });
-      } else if (isFederationRoot(element)) {
-        // Return all configured Host folders
-        return this.getRootFolders();
       } else if (isRootFolder(element)) {
         // Show remotes folder and exposes folder for this Host
         const children: (RemotesFolder | ExposesFolder)[] = [];
@@ -1578,7 +1558,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   /**
    * Handles the drag event when an item is dragged in the tree view
    */
-  handleDrag(source: readonly (FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[], 
+  handleDrag(source: readonly (RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[], 
     dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void | Thenable<void> {
     // Only allow dragging root folders
     if (source.length === 1 && isRootFolder(source[0])) {
@@ -1591,7 +1571,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   /**
    * Handles the drop event when an item is dropped in the tree view
    */
-  async handleDrop(target: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined, 
+  async handleDrop(target: RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined, 
     dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
     const draggedItem = dataTransfer.get('application/vnd.code.tree.moduleFederation')?.value;
     

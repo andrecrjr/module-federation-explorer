@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
-import { UnifiedRootConfig, FederationRoot } from './types';
+import { UnifiedRootConfig } from './types';
 import { outputChannel } from './outputChannel';
 
 /**

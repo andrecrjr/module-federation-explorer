@@ -6,12 +6,4 @@ export const outputChannel = vscode.window.createOutputChannel('Module Federatio
 // Helper functions for logging
 export function log(message: string): void {
   outputChannel.appendLine(message);
-}
-
-export function show(): void {
-  outputChannel.show();
-}
-
-export function clear(): void {
-  outputChannel.clear();
 } 
