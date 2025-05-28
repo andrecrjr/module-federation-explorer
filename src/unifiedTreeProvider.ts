@@ -99,6 +99,13 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   }
 
   /**
+   * Get the workspace root path
+   */
+  getWorkspaceRoot(): string | undefined {
+    return this.workspaceRoot;
+  }
+
+  /**
    * Refreshes the tree view without reloading configurations
    */
   refresh(): void {
@@ -791,12 +798,20 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       }
 
       // Now we should have a valid config path, ask user to select a host folder
+      // Set default URI to parent of workspace root if available
+      let defaultUri: vscode.Uri | undefined;
+      if (this.workspaceRoot) {
+        const parentPath = path.dirname(this.workspaceRoot);
+        defaultUri = vscode.Uri.file(parentPath);
+      }
+
       const selectedFolder = await vscode.window.showOpenDialog({
         canSelectFiles: false,
         canSelectFolders: true,
         canSelectMany: false,
         openLabel: 'Select Host Folder',
-        title: 'Select a folder to add to the Module Federation Explorer'
+        title: 'Select a folder to add to the Module Federation Explorer',
+        defaultUri: defaultUri
       });
 
       if (!selectedFolder || selectedFolder.length === 0) {

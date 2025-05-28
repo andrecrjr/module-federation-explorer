@@ -128,21 +128,69 @@ export function activate(context: vscode.ExtensionContext) {
           
           // If folder is not set, ask user to select one
           if (!folder) {
-            const selectedFolder = await vscode.window.showOpenDialog({
-              canSelectFiles: false,
-              canSelectFolders: true,
-              canSelectMany: false,
-              openLabel: 'Select MFE Project Folder',
-              title: `Select the project folder for MFE remote "${remote.name}" (where package.json is located)`
-            });
+            // Show informative message first
+            const proceed = await vscode.window.showInformationMessage(
+              `Remote "${remote.name}" needs a project folder to be configured.\n\nThis should be the folder containing the package.json file for this remote application.`,
+              { modal: true },
+              'Browse for Folder',
+              'Cancel'
+            );
 
-            if (!selectedFolder || selectedFolder.length === 0) {
-              vscode.window.showInformationMessage('No MFE project folder selected. Please select the folder where your MFE project is located (containing package.json).');
+            if (proceed !== 'Browse for Folder') {
               return;
             }
 
-            
-            folder = selectedFolder[0].fsPath;
+            // Loop until user selects a valid folder or cancels
+            while (true) {
+              // Set default URI to parent of workspace root if available
+              let defaultUri: vscode.Uri | undefined;
+              const workspaceRoot = provider.getWorkspaceRoot();
+              if (workspaceRoot) {
+                const parentPath = path.dirname(workspaceRoot);
+                defaultUri = vscode.Uri.file(parentPath);
+              }
+
+              const selectedFolder = await vscode.window.showOpenDialog({
+                canSelectFiles: false,
+                canSelectFolders: true,
+                canSelectMany: false,
+                openLabel: `Select "${remote.name}" Project Folder`,
+                title: `📁 Select Project Folder for Remote "${remote.name}"`,
+                defaultUri: defaultUri
+              });
+
+              if (!selectedFolder || selectedFolder.length === 0) {
+                vscode.window.showWarningMessage(
+                  `No folder selected for remote "${remote.name}". You can configure this later by right-clicking the remote and selecting "Edit Commands".`,
+                  'OK'
+                );
+                return;
+              }
+
+              folder = selectedFolder[0].fsPath;
+              
+              // Validate that the selected folder contains a package.json
+              const packageJsonPath = path.join(folder, 'package.json');
+              if (!fs.existsSync(packageJsonPath)) {
+                const proceed = await vscode.window.showWarningMessage(
+                  `The selected folder doesn't contain a package.json file.\n\nFolder: ${folder}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
+                  { modal: true },
+                  'Continue Anyway',
+                  'Select Different Folder',
+                  'Cancel'
+                );
+                
+                if (proceed === 'Select Different Folder') {
+                  continue; // Go back to folder selection
+                } else if (proceed === 'Continue Anyway') {
+                  break; // Exit the loop and proceed with this folder
+                } else {
+                  return; // User cancelled
+                }
+              } else {
+                break; // Valid folder found, exit the loop
+              }
+            }
             
             remote.folder = folder;
             provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
@@ -165,17 +213,58 @@ export function activate(context: vscode.ExtensionContext) {
             if (!confirmFolder) return;
             
             if (confirmFolder.label.startsWith('No')) {
-              const selectedFolder = await vscode.window.showOpenDialog({
-                canSelectFiles: false,
-                canSelectFolders: true,
-                canSelectMany: false,
-                openLabel: 'Select MFE Project Folder',
-                title: `Select the project folder for MFE remote "${remote.name}" (where package.json is located)`
-              });
+              // Loop until user selects a valid folder or cancels
+              while (true) {
+                // Set default URI to parent of workspace root if available
+                let defaultUri: vscode.Uri | undefined;
+                const workspaceRoot = provider.getWorkspaceRoot();
+                if (workspaceRoot) {
+                  const parentPath = path.dirname(workspaceRoot);
+                  defaultUri = vscode.Uri.file(parentPath);
+                }
 
-              if (!selectedFolder || selectedFolder.length === 0) return;
+                const selectedFolder = await vscode.window.showOpenDialog({
+                  canSelectFiles: false,
+                  canSelectFolders: true,
+                  canSelectMany: false,
+                  openLabel: `Select "${remote.name}" Project Folder`,
+                  title: `📁 Select New Project Folder for Remote "${remote.name}"`,
+                  defaultUri: defaultUri
+                });
+
+                if (!selectedFolder || selectedFolder.length === 0) {
+                  vscode.window.showInformationMessage(`Folder selection cancelled. Keeping current folder: ${folder}`);
+                  return;
+                }
+                
+                const newFolder = selectedFolder[0].fsPath;
+                
+                // Validate that the selected folder contains a package.json
+                const packageJsonPath = path.join(newFolder, 'package.json');
+                if (!fs.existsSync(packageJsonPath)) {
+                  const proceed = await vscode.window.showWarningMessage(
+                    `The selected folder doesn't contain a package.json file.\n\nFolder: ${newFolder}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
+                    { modal: true },
+                    'Continue Anyway',
+                    'Select Different Folder',
+                    'Cancel'
+                  );
+                  
+                  if (proceed === 'Select Different Folder') {
+                    continue; // Go back to folder selection
+                  } else if (proceed === 'Continue Anyway') {
+                    folder = newFolder;
+                    break; // Exit the loop and proceed with this folder
+                  } else {
+                    vscode.window.showInformationMessage(`Keeping current folder: ${folder}`);
+                    return; // User cancelled
+                  }
+                } else {
+                  folder = newFolder;
+                  break; // Valid folder found, exit the loop
+                }
+              }
               
-              folder = selectedFolder[0].fsPath;
               remote.folder = folder;
               provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
               
