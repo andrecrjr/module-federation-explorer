@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as estraverse from 'estraverse';
 import * as fs from 'fs/promises';
-import { ModuleFederationConfig } from './types';
+import { ModuleFederationConfig, SharedDependency } from './types';
 
 const { parse } = require('@typescript-eslint/parser');
 
@@ -105,6 +105,7 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
     name: '',
     remotes: [],
     exposes: [],
+    shared: [],
     configType: 'webpack',
     configPath: ''
   };
@@ -157,9 +158,18 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
           }
         }
         
-        console.log(`[Webpack MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}`);
+        // Extract shared dependencies
+        const sharedProp = findProperty(options, 'shared');
+        if (sharedProp) {
+          config.shared = extractSharedDependencies(sharedProp.value);
+        }
+        
+        console.log(`[Webpack MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
         if (config.remotes.length > 0) {
           console.log(`[Webpack MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
+        }
+        if (config.shared.length > 0) {
+          console.log(`[Webpack MFE Config] Shared:`, config.shared.map(s => s.name).join(', '));
         }
       }
     },
@@ -184,6 +194,7 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
     name: '',
     remotes: [],
     exposes: [],
+    shared: [],
     configType: 'vite',
     configPath: ''
   };
@@ -244,9 +255,18 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
         }
       }
       
-      console.log(`[Vite MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}`);
+      // Extract shared dependencies
+      const sharedProp = findProperty(options, 'shared');
+      if (sharedProp) {
+        config.shared = extractSharedDependencies(sharedProp.value);
+      }
+      
+      console.log(`[Vite MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
       if (config.remotes.length > 0) {
         console.log(`[Vite MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
+      }
+      if (config.shared.length > 0) {
+        console.log(`[Vite MFE Config] Shared:`, config.shared.map(s => s.name).join(', '));
       }
     }
   }
@@ -353,6 +373,7 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
     name: '',
     remotes: [],
     exposes: [],
+    shared: [],
     configType: 'modernjs',
     configPath: ''
   };
@@ -422,12 +443,21 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
           }
         }
         
-        console.log(`[ModernJS MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}`);
+        // Extract shared dependencies
+        const sharedProp = findProperty(options, 'shared');
+        if (sharedProp) {
+          config.shared = extractSharedDependencies(sharedProp.value);
+        }
+        
+        console.log(`[ModernJS MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
         if (config.remotes.length > 0) {
           console.log(`[ModernJS MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
         }
         if (config.exposes.length > 0) {
           console.log(`[ModernJS MFE Config] Exposes:`, config.exposes.map(e => e.name).join(', '));
+        }
+        if (config.shared.length > 0) {
+          console.log(`[ModernJS MFE Config] Shared:`, config.shared.map(s => s.name).join(', '));
         }
       }
     },
@@ -531,4 +561,92 @@ function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
 
   // For any other types, return a generic placeholder
   return '[DYNAMIC_URL]';
+}
+
+function extractSharedDependencies(valueNode: any): SharedDependency[] {
+  const shared: SharedDependency[] = [];
+  
+  if (!valueNode) {
+    return shared;
+  }
+  
+  // Handle array format: shared: ['react', 'react-dom']
+  if (valueNode.type === 'ArrayExpression') {
+    for (const element of valueNode.elements) {
+      if (element && element.type === 'Literal' && typeof element.value === 'string') {
+        shared.push({
+          name: element.value
+        });
+      }
+    }
+  }
+  
+  // Handle object format: shared: { react: { singleton: true }, 'react-dom': { eager: true } }
+  else if (valueNode.type === 'ObjectExpression') {
+    for (const prop of valueNode.properties) {
+      if (prop.type === 'Property') {
+        let depName: string | undefined;
+        
+        // Get dependency name from key
+        if (prop.key.type === 'Identifier') {
+          depName = prop.key.name;
+        } else if (prop.key.type === 'Literal' && typeof prop.key.value === 'string') {
+          depName = prop.key.value;
+        }
+        
+        if (depName) {
+          const sharedDep: SharedDependency = { name: depName };
+          
+          // Parse configuration object if present
+          if (prop.value.type === 'ObjectExpression') {
+            for (const configProp of prop.value.properties) {
+              if (configProp.type === 'Property' && configProp.key.type === 'Identifier') {
+                const configKey = configProp.key.name;
+                
+                // Extract boolean values
+                if (configProp.value.type === 'Literal' && typeof configProp.value.value === 'boolean') {
+                  switch (configKey) {
+                    case 'singleton':
+                      sharedDep.singleton = configProp.value.value;
+                      break;
+                    case 'eager':
+                      sharedDep.eager = configProp.value.value;
+                      break;
+                    case 'strictVersion':
+                      sharedDep.strictVersion = configProp.value.value;
+                      break;
+                  }
+                }
+                
+                // Extract string values
+                else if (configProp.value.type === 'Literal' && typeof configProp.value.value === 'string') {
+                  switch (configKey) {
+                    case 'version':
+                      sharedDep.version = configProp.value.value;
+                      break;
+                    case 'requiredVersion':
+                      sharedDep.requiredVersion = configProp.value.value;
+                      break;
+                  }
+                }
+              }
+            }
+          }
+          
+          shared.push(sharedDep);
+        }
+      }
+    }
+  }
+  
+  // Handle function calls or other complex expressions
+  else if (valueNode.type === 'CallExpression') {
+    // For function calls like shareAll() or share(), we can't statically analyze
+    // but we can at least indicate that shared dependencies are configured
+    shared.push({
+      name: '[DYNAMIC_SHARED]'
+    });
+  }
+  
+  return shared;
 } 

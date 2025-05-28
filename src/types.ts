@@ -30,6 +30,7 @@ export interface ModuleFederationConfig {
   name: string;
   remotes: Remote[];
   exposes: ExposedModule[];
+  shared: SharedDependency[]; // Add shared dependencies
   configType: 'webpack' | 'vite' | 'modernjs';
   configPath: string;
 }
@@ -81,8 +82,16 @@ export interface RootFolder {
 export interface DependencyGraphNode {
   id: string;
   label: string;
-  type: 'host' | 'remote';
+  type: 'host' | 'remote' | 'shared-dependency' | 'exposed-module';
   configType: 'webpack' | 'vite' | 'modernjs';
+  // Enhanced metadata
+  version?: string;
+  url?: string;
+  status?: 'running' | 'stopped' | 'unknown';
+  exposedModules?: string[];
+  sharedDependencies?: string[];
+  size?: number; // For visual sizing based on connections
+  group?: string; // For grouping related nodes
 }
 
 /**
@@ -92,6 +101,21 @@ export interface DependencyGraphEdge {
   from: string;
   to: string;
   label?: string;
+  type: 'consumes' | 'exposes' | 'shares' | 'depends-on';
+  strength?: number; // For visual weight of the relationship
+  bidirectional?: boolean;
+}
+
+/**
+ * Represents shared dependency information
+ */
+export interface SharedDependency {
+  name: string;
+  version?: string;
+  singleton?: boolean;
+  eager?: boolean;
+  requiredVersion?: string;
+  strictVersion?: boolean;
 }
 
 /**
@@ -100,4 +124,11 @@ export interface DependencyGraphEdge {
 export interface DependencyGraph {
   nodes: DependencyGraphNode[];
   edges: DependencyGraphEdge[];
+  sharedDependencies?: SharedDependency[];
+  metadata?: {
+    totalHosts: number;
+    totalRemotes: number;
+    totalSharedDeps: number;
+    totalExposedModules: number;
+  };
 } 
