@@ -110,18 +110,23 @@ export class DependencyGraphManager {
     appCapabilities.forEach((capabilities, appId) => {
       const { isHost, isRemote, config } = capabilities;
       
-      // Determine if this is truly bidirectional (both consumes and exposes)
+      // Determine basic capabilities
       const hasRemotes = config.remotes.length > 0;
       const hasExposes = config.exposes.length > 0;
-      const isBidirectional = hasRemotes && hasExposes;
+      
+      // Check if this app is being consumed as a remote by other apps
+      const isConsumedAsRemote = remoteToHostMap.has(appId);
+      
+      // True bidirectional: has remotes/exposes AND is consumed by others
+      const isBidirectional = (hasRemotes || hasExposes) && isConsumedAsRemote;
       
       // Determine the primary type
       let nodeType: 'host' | 'remote';
       let nodeGroup: string;
       
       if (isBidirectional) {
-        // True bidirectional app (both consumes and exposes)
-        nodeType = 'host'; // Primary type is host since it can consume
+        // True bidirectional app (has capabilities AND is consumed by others)
+        nodeType = 'host'; 
         nodeGroup = 'bidirectional';
       } else if (hasRemotes && !hasExposes) {
         // Pure consumer host (only consumes)
@@ -144,12 +149,13 @@ export class DependencyGraphManager {
         nodeGroup,
         hasRemotes,
         hasExposes,
+        isConsumedAsRemote,
         isBidirectional,
         remotesCount: config.remotes.length,
         exposesCount: config.exposes.length,
         sharedCount: config.shared.length,
         reason: isBidirectional 
-          ? `bidirectional: consumes ${config.remotes.length} and exposes ${config.exposes.length}`
+          ? `bidirectional: has capabilities (${hasRemotes ? 'remotes' : ''}${hasRemotes && hasExposes ? '+' : ''}${hasExposes ? 'exposes' : ''}) AND is consumed by ${remoteToHostMap.get(appId)?.length || 0} other apps`
           : hasRemotes 
             ? `consumer host: consumes ${config.remotes.length} remotes`
             : hasExposes
@@ -1012,7 +1018,7 @@ export class DependencyGraphManager {
             </div>
             <div class="legend-item">
                 <div class="legend-color bidirectional-color"></div>
-                <span>Bidirectional App<br><small>(Host + Remote)</small></span>
+                <span>Bidirectional App<br><small>(Host + Consumed as Remote)</small></span>
             </div>
             <div class="legend-item">
                 <div class="legend-color external-color"></div>
