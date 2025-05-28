@@ -355,11 +355,11 @@ export function activate(context: vscode.ExtensionContext) {
           provider.log(`Remote ${remote.name} is not running, creating separate terminals for build and start`);
 
           // Create the build terminal first
-          const buildTerminal = vscode.window.createTerminal(`Build: ${remote.name}`);
+          const buildTerminal = vscode.window.createTerminal(`Build: ${remote.name} - Remote`);
           
           // Create the start terminal as a split of the build terminal
           const startTerminal = vscode.window.createTerminal({
-            name: `Start: ${remote.name}`,
+            name: `Preview: ${remote.name} - Remote`,
             location: { parentTerminal: buildTerminal }
           });
           

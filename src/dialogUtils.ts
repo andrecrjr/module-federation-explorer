@@ -272,7 +272,7 @@ export class DialogUtils {
     // Generate default command based on type and package manager
     const defaultCommands = {
       build: `${packageManager} run build`,
-      start: `${packageManager} run start`,
+      start: `${packageManager} run preview`,
       dev: `${packageManager} run ${options.configType === 'vite' ? 'dev' : 'start'}`,
       preview: `${packageManager} run ${options.configType === 'vite' ? 'preview' : 'serve'}`
     };
