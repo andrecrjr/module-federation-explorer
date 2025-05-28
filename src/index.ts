@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Remote } from './types';
 import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
+import { DialogUtils } from './dialogUtils';
 
 /**
  * Activate the extension
@@ -110,88 +111,85 @@ export function activate(context: vscode.ExtensionContext) {
           provider.log(`Stopping remote ${remote.name}`);
           provider.stopRemote(remoteKey);
           provider.refresh();
-          vscode.window.showInformationMessage(`Stopped remote ${remote.name}`);
+          await DialogUtils.showSuccess(`Stopped remote ${remote.name}`);
         } catch (error) {
-          vscode.window.showErrorMessage(`Failed to stop remote ${remote.name}: ${error}`);
+          await DialogUtils.showError(`Failed to stop remote ${remote.name}`, {
+            detail: error instanceof Error ? error.message : String(error)
+          });
         }
       }),
 
       // Start remote command
       vscode.commands.registerCommand('moduleFederation.startRemote', async (remote: Remote) => {
         try {
-          // Call the provider's method to resolve the proper folder path
-          const resolvedFolderPath = (provider as any).resolveRemoteFolderPath(remote);
-          provider.log(`Starting remote ${remote.name}, folder: ${resolvedFolderPath || 'not set'}`);
+          provider.log(`Starting remote ${remote.name}`);
           
-          // First, let the user select or confirm the remote folder
-          let folder = resolvedFolderPath;
+          // Check if remote is already user-configured (has both folder and start command)
+          const isUserConfigured = !!(remote.folder && remote.startCommand);
           
-          // If folder is not set, ask user to select one
-          if (!folder) {
+          let folder: string;
+          
+          if (!isUserConfigured) {
+            // Remote is not configured yet - show dialog to configure it
+            provider.log(`Remote ${remote.name} is not configured yet, showing configuration dialog`);
+            
             // Show informative message first
-            const proceed = await vscode.window.showInformationMessage(
-              `Remote "${remote.name}" needs a project folder to be configured.\n\nThis should be the folder containing the package.json file for this remote application.`,
-              { modal: true },
-              'Browse for Folder',
-              'Cancel'
+            const proceed = await DialogUtils.showInfo(
+              `Remote "${remote.name}" needs a project folder to be configured.`,
+              {
+                modal: true,
+                detail: 'This should be the folder containing the package.json file for this remote application.',
+                actions: [
+                  { title: 'Browse for Folder' },
+                  { title: 'Cancel', isCloseAffordance: true }
+                ]
+              }
             );
 
             if (proceed !== 'Browse for Folder') {
               return;
             }
 
-            // Loop until user selects a valid folder or cancels
-            while (true) {
-              // Set default URI to parent of workspace root if available
-              let defaultUri: vscode.Uri | undefined;
-              const workspaceRoot = provider.getWorkspaceRoot();
-              if (workspaceRoot) {
-                const parentPath = path.dirname(workspaceRoot);
-                defaultUri = vscode.Uri.file(parentPath);
-              }
+            // Set default URI to parent of workspace root if available
+            let defaultUri: vscode.Uri | undefined;
+            const workspaceRoot = provider.getWorkspaceRoot();
+            if (workspaceRoot) {
+              const parentPath = path.dirname(workspaceRoot);
+              defaultUri = vscode.Uri.file(parentPath);
+            }
 
-              const selectedFolder = await vscode.window.showOpenDialog({
-                canSelectFiles: false,
-                canSelectFolders: true,
-                canSelectMany: false,
-                openLabel: `Select "${remote.name}" Project Folder`,
-                title: `📁 Select Project Folder for Remote "${remote.name}"`,
-                defaultUri: defaultUri
-              });
-
-              if (!selectedFolder || selectedFolder.length === 0) {
-                vscode.window.showWarningMessage(
-                  `No folder selected for remote "${remote.name}". You can configure this later by right-clicking the remote and selecting "Edit Commands".`,
-                  'OK'
-                );
-                return;
-              }
-
-              folder = selectedFolder[0].fsPath;
-              
-              // Validate that the selected folder contains a package.json
-              const packageJsonPath = path.join(folder, 'package.json');
-              if (!fs.existsSync(packageJsonPath)) {
-                const proceed = await vscode.window.showWarningMessage(
-                  `The selected folder doesn't contain a package.json file.\n\nFolder: ${folder}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
-                  { modal: true },
-                  'Continue Anyway',
-                  'Select Different Folder',
-                  'Cancel'
-                );
-                
-                if (proceed === 'Select Different Folder') {
-                  continue; // Go back to folder selection
-                } else if (proceed === 'Continue Anyway') {
-                  break; // Exit the loop and proceed with this folder
-                } else {
-                  return; // User cancelled
+            const selectedFolder = await DialogUtils.showFolderPicker({
+              title: `Select Project Folder for Remote "${remote.name}"`,
+              openLabel: `Select "${remote.name}" Project Folder`,
+              defaultUri: defaultUri,
+              validateFolder: async (folderPath: string) => {
+                const packageJsonPath = path.join(folderPath, 'package.json');
+                if (!fs.existsSync(packageJsonPath)) {
+                  const continueAnyway = await DialogUtils.showConfirmation(
+                    'The selected folder doesn\'t contain a package.json file.',
+                    {
+                      detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
+                      confirmText: 'Continue Anyway',
+                      cancelText: 'Select Different Folder'
+                    }
+                  );
+                  return { valid: continueAnyway, message: 'Invalid Node.js project folder' };
                 }
-              } else {
-                break; // Valid folder found, exit the loop
+                return { valid: true };
               }
+            });
+
+            if (!selectedFolder) {
+              await DialogUtils.showWarning(
+                `No folder selected for remote "${remote.name}".`,
+                {
+                  detail: 'You can configure this later by right-clicking the remote and selecting "Edit Commands".'
+                }
+              );
+              return;
             }
             
+            folder = selectedFolder;
             remote.folder = folder;
             provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
             
@@ -201,78 +199,64 @@ export function activate(context: vscode.ExtensionContext) {
             // Refresh the tree view to reflect folder changes
             provider.reloadConfigurations();
           } else {
-            // If folder is already set, confirm with user
-            const confirmFolder = await vscode.window.showQuickPick(
-              [
-                { label: 'Yes, use current folder', description: folder },
-                { label: 'No, select a different folder', description: 'Browse for a different MFE project folder' }
-              ],
-              { placeHolder: `Current MFE project folder: ${folder}. Continue with this folder?` }
-            );
+            // Remote is already configured - use the configured folder automatically
+            const resolvedFolderPath = (provider as any).resolveRemoteFolderPath(remote);
             
-            if (!confirmFolder) return;
-            
-            if (confirmFolder.label.startsWith('No')) {
-              // Loop until user selects a valid folder or cancels
-              while (true) {
-                // Set default URI to parent of workspace root if available
-                let defaultUri: vscode.Uri | undefined;
-                const workspaceRoot = provider.getWorkspaceRoot();
-                if (workspaceRoot) {
-                  const parentPath = path.dirname(workspaceRoot);
-                  defaultUri = vscode.Uri.file(parentPath);
-                }
+            if (!resolvedFolderPath || !fs.existsSync(resolvedFolderPath)) {
 
-                const selectedFolder = await vscode.window.showOpenDialog({
-                  canSelectFiles: false,
-                  canSelectFolders: true,
-                  canSelectMany: false,
-                  openLabel: `Select "${remote.name}" Project Folder`,
-                  title: `📁 Select New Project Folder for Remote "${remote.name}"`,
-                  defaultUri: defaultUri
-                });
+              
+              // Set default URI to parent of workspace root if available
+              let defaultUri: vscode.Uri | undefined;
+              const workspaceRoot = provider.getWorkspaceRoot();
+              if (workspaceRoot) {
+                const parentPath = path.dirname(workspaceRoot);
+                defaultUri = vscode.Uri.file(parentPath);
+              }
 
-                if (!selectedFolder || selectedFolder.length === 0) {
-                  vscode.window.showInformationMessage(`Folder selection cancelled. Keeping current folder: ${folder}`);
-                  return;
-                }
-                
-                const newFolder = selectedFolder[0].fsPath;
-                
-                // Validate that the selected folder contains a package.json
-                const packageJsonPath = path.join(newFolder, 'package.json');
-                if (!fs.existsSync(packageJsonPath)) {
-                  const proceed = await vscode.window.showWarningMessage(
-                    `The selected folder doesn't contain a package.json file.\n\nFolder: ${newFolder}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
-                    { modal: true },
-                    'Continue Anyway',
-                    'Select Different Folder',
-                    'Cancel'
-                  );
-                  
-                  if (proceed === 'Select Different Folder') {
-                    continue; // Go back to folder selection
-                  } else if (proceed === 'Continue Anyway') {
-                    folder = newFolder;
-                    break; // Exit the loop and proceed with this folder
-                  } else {
-                    vscode.window.showInformationMessage(`Keeping current folder: ${folder}`);
-                    return; // User cancelled
+              const newFolder = await DialogUtils.showFolderPicker({
+                title: `Select New Project Folder for Remote "${remote.name}"`,
+                openLabel: `Select "${remote.name}" Project Folder`,
+                defaultUri: defaultUri,
+                validateFolder: async (folderPath: string) => {
+                  const packageJsonPath = path.join(folderPath, 'package.json');
+                  if (!fs.existsSync(packageJsonPath)) {
+                    const continueAnyway = await DialogUtils.showConfirmation(
+                      'The selected folder doesn\'t contain a package.json file.',
+                      {
+                        detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
+                        confirmText: 'Continue Anyway',
+                        cancelText: 'Select Different Folder'
+                      }
+                    );
+                    return { valid: continueAnyway, message: 'Invalid Node.js project folder' };
                   }
-                } else {
-                  folder = newFolder;
-                  break; // Valid folder found, exit the loop
+                  return { valid: true };
                 }
+              });
+
+              if (!newFolder) {
+                await DialogUtils.showWarning(
+                  `No folder selected for remote "${remote.name}".`,
+                  {
+                    detail: 'You can configure this later by right-clicking the remote and selecting "Edit Commands".'
+                  }
+                );
+                return;
               }
               
+              folder = newFolder;
               remote.folder = folder;
-              provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
+              provider.log(`User selected new project folder for remote ${remote.name}: ${folder}`);
               
               // Save the folder configuration using the unified provider
               await (provider as any).saveRemoteConfiguration(remote);
               
               // Refresh the tree view to reflect folder changes
               provider.reloadConfigurations();
+            } else {
+              // Folder exists and is valid, use it automatically
+              folder = resolvedFolderPath;
+              provider.log(`Using existing configured folder for remote ${remote.name}: ${folder}`);
             }
           }
           
@@ -297,30 +281,32 @@ export function activate(context: vscode.ExtensionContext) {
             }
             
             // Ask user for build command
-            const defaultBuildCommand = `${packageManager} run build`;
-            const buildCommand = await vscode.window.showInputBox({
-              prompt: `Enter the build command (e.g., ${defaultBuildCommand})`,
-              value: remote.buildCommand || defaultBuildCommand,
-              title: 'Configure Build Command',
-              placeHolder: 'Example: npm run build'
+            const buildCommand = await DialogUtils.showCommandConfig({
+              title: `Configure Build Command for ${remote.name}`,
+              commandType: 'build',
+              currentCommand: remote.buildCommand,
+              packageManager: packageManager,
+              projectPath: folder,
+              configType: remote.configType
             });
             
             if (!buildCommand) {
-              vscode.window.showInformationMessage('Build command not provided, remote configuration canceled.');
+              await DialogUtils.showInfo('Build command not provided, remote configuration canceled.');
               return;
             }
             
             // Ask user for start command
-            const defaultStartCommand = `${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`;
-            const startCommand = await vscode.window.showInputBox({
-              prompt: 'Enter the preview/start command (e.g., npm run preview)',
-              value: remote.startCommand || defaultStartCommand,
-              title: 'Configure the command to preview/start the remote',
-              placeHolder: 'Example: npx dist server -p 3000, npm run preview etc'
+            const startCommand = await DialogUtils.showCommandConfig({
+              title: `Configure Start Command for ${remote.name}`,
+              commandType: 'preview',
+              currentCommand: remote.startCommand,
+              packageManager: packageManager,
+              projectPath: folder,
+              configType: remote.configType
             });
             
             if (!startCommand) {
-              vscode.window.showInformationMessage('Serve build command not provided, remote configuration canceled.');
+              await DialogUtils.showInfo('Start command not provided, remote configuration canceled.');
               return;
             }
             
@@ -334,7 +320,7 @@ export function activate(context: vscode.ExtensionContext) {
             // Refresh view to reflect new command configuration
             provider.reloadConfigurations();
             
-            vscode.window.showInformationMessage(`Commands configured for remote "${remote.name}"`);
+            await DialogUtils.showSuccess(`Commands configured for remote "${remote.name}"`);
           }
 
           // Check if a terminal for this remote is already running
@@ -344,7 +330,7 @@ export function activate(context: vscode.ExtensionContext) {
           if (existingTerminal) {
             provider.log(`Remote ${remote.name} is already running, showing existing terminal`);
             existingTerminal.show();
-            vscode.window.showInformationMessage(`Remote ${remote.name} is already running`);
+            await DialogUtils.showInfo(`Remote ${remote.name} is already running`);
             return;
           }
           
@@ -361,9 +347,11 @@ export function activate(context: vscode.ExtensionContext) {
           provider.setRunningRemote(remoteKey, terminal);
           provider.refresh();
           
-          vscode.window.showInformationMessage(`Started remote ${remote.name}`);
+          await DialogUtils.showSuccess(`Started remote ${remote.name}`);
         } catch (error) {
-          vscode.window.showErrorMessage(`Failed to start remote ${remote.name}: ${error}`);
+          await DialogUtils.showError(`Failed to start remote ${remote.name}`, {
+            detail: error instanceof Error ? error.message : String(error)
+          });
         }
       }),
 
@@ -375,7 +363,9 @@ export function activate(context: vscode.ExtensionContext) {
           provider.log(`Edit command triggered for remote ${remote.name}`);
           await (provider as any).editRemoteCommands(remote);
         } catch (error) {
-          vscode.window.showErrorMessage(`Failed to edit commands for ${remote.name}: ${error}`);
+          await DialogUtils.showError(`Failed to edit commands for ${remote.name}`, {
+            detail: error instanceof Error ? error.message : String(error)
+          });
         }
       }),
 
@@ -688,17 +678,24 @@ function showSetupGuide(provider: UnifiedModuleFederationProvider) {
       const configPath = (provider as any).rootConfigManager.getConfigPath();
       if (!configPath || !fs.existsSync(configPath)) {
         // Show guide message to help users get started
-        vscode.window.showInformationMessage(
-          'To get started with Module Federation Explorer, you need to add your settings first.',
-          'Create Settings',
-          'Show Welcome Page',
-          'Later'
-        ).then(selection => {
-          if (selection === 'Create Settings') {
-            vscode.commands.executeCommand('moduleFederation.changeConfigFile');
-          } else if (selection === 'Show Welcome Page') {
-            vscode.commands.executeCommand('moduleFederation.showWelcome');
-          }
+        DialogUtils.showSetupGuide({
+          title: 'Getting Started with Module Federation Explorer',
+          steps: [
+            {
+              title: 'Create Settings',
+              description: 'Set up your configuration file to store Module Federation settings',
+              action: async () => {
+                await vscode.commands.executeCommand('moduleFederation.changeConfigFile');
+              }
+            },
+            {
+              title: 'Show Welcome Page',
+              description: 'View the welcome page with detailed setup instructions',
+              action: async () => {
+                await vscode.commands.executeCommand('moduleFederation.showWelcome');
+              }
+            }
+          ]
         });
       }
     }

@@ -16,6 +16,7 @@ import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
 import { outputChannel, log } from './outputChannel';
 import { DependencyGraphManager } from './dependencyGraph';
+import { DialogUtils } from './dialogUtils';
 
 // Type guard functions to narrow down types
 
@@ -164,12 +165,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
             rootPath: root
           }));
           
-          const selectedRoot = await vscode.window.showQuickPick(rootItems, {
-            placeHolder: 'Select a Host to remove',
-            title: 'Remove Invalid Host'
+          const selectedRoot = await DialogUtils.showQuickPick(rootItems, {
+            title: 'Remove Invalid Host',
+            placeholder: 'Select a Host to remove'
           });
           
-          if (selectedRoot) {
+          if (selectedRoot && !Array.isArray(selectedRoot)) {
             await this.rootConfigManager.removeRoot(selectedRoot.rootPath);
             this.reloadConfigurations();
           }
@@ -191,15 +192,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     
     // Show error message with actions if available
     if (actions.length > 0) {
-      const actionTitles = actions.map(a => a.title);
-      vscode.window.showErrorMessage(userMessage, ...actionTitles).then(selected => {
+      DialogUtils.showError(userMessage, {
+        actions: actions.map(a => ({ title: a.title }))
+      }).then(selected => {
         const selectedAction = actions.find(a => a.title === selected);
         if (selectedAction) {
           selectedAction.action();
         }
       });
     } else {
-      vscode.window.showErrorMessage(userMessage);
+      DialogUtils.showError(userMessage);
     }
   }
 
@@ -236,9 +238,15 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
             
             // Show informational message after a short delay
             setTimeout(() => {
-              vscode.window.showInformationMessage(
-                'No Host directories are configured. Use the Add Host button to configure your first Host, then add more Hosts.',
-                'Add Host', 'Later'
+              DialogUtils.showInfo(
+                'No Host directories are configured.',
+                {
+                  detail: 'Use the Add Host button to configure your first Host, then add more Hosts.',
+                  actions: [
+                    { title: 'Add Host' },
+                    { title: 'Later', isCloseAffordance: true }
+                  ]
+                }
               ).then(selection => {
                 if (selection === 'Add Host') {
                   vscode.commands.executeCommand('moduleFederation.addRoot');
@@ -778,10 +786,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Make sure configuration is set up first
       if (!this.rootConfigManager.getConfigPath()) {
         // Configuration isn't set up, prompt user
-        const result = await vscode.window.showInformationMessage(
+        const result = await DialogUtils.showInfo(
           'You need to set up your configuration file before adding hosts.',
-          'Configure Settings',
-          'Cancel'
+          {
+            actions: [
+              { title: 'Configure Settings' },
+              { title: 'Cancel', isCloseAffordance: true }
+            ]
+          }
         );
         
         if (result === 'Configure Settings') {
@@ -805,27 +817,24 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         defaultUri = vscode.Uri.file(parentPath);
       }
 
-      const selectedFolder = await vscode.window.showOpenDialog({
-        canSelectFiles: false,
-        canSelectFolders: true,
-        canSelectMany: false,
-        openLabel: 'Select Host Folder',
+      const rootPath = await DialogUtils.showFolderPicker({
         title: 'Select a folder to add to the Module Federation Explorer',
+        openLabel: 'Select Host Folder',
         defaultUri: defaultUri
       });
 
-      if (!selectedFolder || selectedFolder.length === 0) {
+      if (!rootPath) {
         return;
       }
-
-      const rootPath = selectedFolder[0].fsPath;
       await this.rootConfigManager.addRoot(rootPath);
       
       // After adding a root, reload configurations to scan for Module Federation configs
       this.reloadConfigurations();
     } catch (error) {
       this.logError('Failed to add root', error);
-      vscode.window.showErrorMessage(`Failed to add root: ${error}`);
+      await DialogUtils.showError('Failed to add root', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -837,10 +846,13 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log(`Removing Host ${rootFolder.path}`);
       
       // Confirm with user
-      const confirmed = await vscode.window.showWarningMessage(
+      const confirmed = await DialogUtils.showConfirmation(
         `Are you sure you want to remove "${rootFolder.path}" from the configuration?`,
-        { modal: true },
-        'Yes'
+        {
+          destructive: true,
+          confirmText: 'Remove',
+          cancelText: 'Cancel'
+        }
       );
       
       if (!confirmed) {
@@ -859,10 +871,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this._onDidChangeTreeData.fire(undefined);
       
-      vscode.window.showInformationMessage(`Removed Host ${rootFolder.path} from configuration`);
+      await DialogUtils.showSuccess(`Removed Host ${rootFolder.path} from configuration`);
     } catch (error) {
       this.logError(`Failed to remove Host ${rootFolder.path}`, error);
-      vscode.window.showErrorMessage(`Failed to remove Host: ${error}`);
+      await DialogUtils.showError('Failed to remove Host', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -899,7 +913,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Check if already running
       if (this.isRootAppRunning(rootPath)) {
-        vscode.window.showInformationMessage(`Host app is already running: ${rootFolder.name}`);
+        await DialogUtils.showInfo(`Host app is already running: ${rootFolder.name}`);
         return;
       }
       
@@ -922,7 +936,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Started Host app: ${rootFolder.name}`);
+      await DialogUtils.showSuccess(`Started Host app: ${rootFolder.name}`);
     } catch (error) {
       this.logError(`Failed to start Host app: ${rootFolder.name}`, error);
     }
@@ -956,10 +970,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       }
 
       // Ask user for the start command
-      const startCommand = await vscode.window.showInputBox({
+      const startCommand = await DialogUtils.showInput({
+        title: `Configure App Start Command for ${rootFolder.name}`,
         prompt: `Configure app start command for ${rootFolder.name}`,
         value: currentCommand || defaultCommand,
-        placeHolder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
+        placeholder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
       });
 
       if (!startCommand) {
@@ -975,7 +990,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
+      await DialogUtils.showSuccess(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
     } catch (error) {
       this.logError(`Failed to configure serve build command for ${rootFolder.name}`, error);
       return undefined;
@@ -993,7 +1008,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Check if it's running
       const runningApp = this.runningRootApps.get(rootPath);
       if (!runningApp) {
-        vscode.window.showInformationMessage(`Host app is not running: ${rootFolder.name}`);
+        await DialogUtils.showInfo(`Host app is not running: ${rootFolder.name}`);
         return;
       }
       
@@ -1004,7 +1019,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Stopped Host app: ${rootFolder.name}`);
+      await DialogUtils.showSuccess(`Stopped Host app: ${rootFolder.name}`);
     } catch (error) {
       this.logError(`Failed to stop Host app: ${rootFolder.name}`, error);
     }
@@ -1035,10 +1050,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       }
       
       // Ask user for the start command
-      const startCommand = await vscode.window.showInputBox({
+      const startCommand = await DialogUtils.showInput({
+        title: `Configure App Start Command for ${rootFolder.name}`,
         prompt: `Configure app start command for ${rootFolder.name}`,
         value: currentCommand || defaultCommand,
-        placeHolder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
+        placeholder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
       });
       
       if (!startCommand) {
@@ -1054,7 +1070,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
+      await DialogUtils.showSuccess(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
       return startCommand;
     } catch (error) {
       this.logError(`Failed to configure serve build command for ${rootFolder.name}`, error);
@@ -1322,7 +1338,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Check if we have any configurations loaded
       if (this.rootConfigs.size === 0) {
         this.log('No Host configurations found for dependency graph');
-        vscode.window.showInformationMessage('No Module Federation configurations found. Please add a Host folder first.');
+        await DialogUtils.showInfo('No Module Federation configurations found. Please add a Host folder first.');
         return;
       }
       
@@ -1352,7 +1368,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log('Dependency graph opened');
     } catch (error) {
       this.logError('Failed to generate dependency graph', error);
-      vscode.window.showErrorMessage(`Failed to generate dependency graph: ${error instanceof Error ? error.message : String(error)}`);
+      await DialogUtils.showError('Failed to generate dependency graph', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -1492,9 +1510,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           }
         }
         
-        // If no match found, return the directory itself
-        this.log(`No suitable file found in directory, returning directory path`);
-        return basePath;
+              // If no match found, return the directory itself
+      this.log(`No suitable file found in directory, returning directory path`);
+      return basePath;
       }
       
       // Not a directory or doesn't exist
@@ -1654,7 +1672,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log(`Root folder ${draggedItem.name} moved to position ${targetIndex + 1}`);
     } catch (error) {
       this.logError('Failed to reorder root folders', error);
-      vscode.window.showErrorMessage('Failed to reorder root folders. See output panel for details.');
+      await DialogUtils.showError('Failed to reorder root folders', {
+        detail: 'See output panel for details.'
+      });
     }
   }
 
@@ -1669,7 +1689,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // If folder is not set, show error and exit
       if (!resolvedFolderPath) {
-        vscode.window.showErrorMessage(`Cannot edit commands for ${remote.name}: Folder not configured`);
+        await DialogUtils.showError(`Cannot edit commands for ${remote.name}: Folder not configured`);
         return;
       }
       
@@ -1691,51 +1711,53 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Show quick pick for options to edit
       const options = [
-        { label: 'Edit Build Command', description: remote.buildCommand || 'Not configured' },
-        { label: 'Edit Start Command', description: remote.startCommand || 'Not configured' },
-        { label: 'Edit Both Commands', description: 'Configure both build and start commands' }
+        { label: '🔨 Edit Build Command', description: remote.buildCommand || 'Not configured' },
+        { label: '▶️ Edit Start Command', description: remote.startCommand || 'Not configured' },
+        { label: '⚙️ Edit Both Commands', description: 'Configure both build and start commands' }
       ];
       
-      const selectedOption = await vscode.window.showQuickPick(options, {
-        placeHolder: 'What would you like to edit?',
-        title: `Edit Commands for ${remote.name}`
+      const selectedOption = await DialogUtils.showQuickPick(options, {
+        title: `Edit Commands for ${remote.name}`,
+        placeholder: 'What would you like to edit?'
       });
       
-      if (!selectedOption) {
+      if (!selectedOption || Array.isArray(selectedOption)) {
         return; // User cancelled
       }
       
       // Handle based on selection
-      if (selectedOption.label === 'Edit Build Command' || selectedOption.label === 'Edit Both Commands') {
+      if (selectedOption.label.includes('Edit Build Command') || selectedOption.label.includes('Edit Both Commands')) {
         // Ask user for build command
-        const defaultBuildCommand = remote.buildCommand || `${packageManager} run build`;
-        const buildCommand = await vscode.window.showInputBox({
-          prompt: `Enter the build command for ${remote.name}`,
-          value: defaultBuildCommand,
-          title: 'Configure Build Command',
-          placeHolder: `Example: ${packageManager} run build`
+        const buildCommand = await DialogUtils.showCommandConfig({
+          title: `Configure Build Command for ${remote.name}`,
+          commandType: 'build',
+          currentCommand: remote.buildCommand,
+          packageManager: packageManager,
+          projectPath: resolvedFolderPath,
+          configType: remote.configType
         });
         
         if (buildCommand !== undefined) { // Allow empty string but not undefined (cancelled)
           remote.buildCommand = buildCommand;
-        } else if (selectedOption.label === 'Edit Build Command') {
+        } else if (selectedOption.label.includes('Edit Build Command')) {
           return; // User cancelled just the build command
         }
       }
       
-      if (selectedOption.label === 'Edit Start Command' || selectedOption.label === 'Edit Both Commands') {
+      if (selectedOption.label.includes('Edit Start Command') || selectedOption.label.includes('Edit Both Commands')) {
         // Ask user for start command
-        const defaultStartCommand = remote.startCommand || `${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`;
-        const startCommand = await vscode.window.showInputBox({
-          prompt: `Enter the start command for ${remote.name}`,
-          value: defaultStartCommand,
-          title: 'Configure Start Command',
-          placeHolder: `Example: ${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`
+        const startCommand = await DialogUtils.showCommandConfig({
+          title: `Configure Start Command for ${remote.name}`,
+          commandType: 'start',
+          currentCommand: remote.startCommand,
+          packageManager: packageManager,
+          projectPath: resolvedFolderPath,
+          configType: remote.configType
         });
         
         if (startCommand !== undefined) { // Allow empty string but not undefined (cancelled)
           remote.startCommand = startCommand;
-        } else if (selectedOption.label === 'Edit Start Command') {
+        } else if (selectedOption.label.includes('Edit Start Command')) {
           return; // User cancelled just the start command
         }
       }
@@ -1746,10 +1768,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view to reflect changes
       this.refresh();
       
-      vscode.window.showInformationMessage(`Updated commands for ${remote.name}`);
+      await DialogUtils.showSuccess(`Updated commands for ${remote.name}`);
     } catch (error) {
       this.logError(`Failed to edit commands for ${remote.name}`, error);
-      vscode.window.showErrorMessage(`Failed to edit commands for ${remote.name}: ${error}`);
+      await DialogUtils.showError(`Failed to edit commands for ${remote.name}`, {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 }
