@@ -75,7 +75,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   private rootConfigs: Map<string, ModuleFederationConfig[]> = new Map();
   private rootConfigManager: RootConfigManager;
   private isLoading = false;
-  public runningRemotes: Map<string, { terminal: vscode.Terminal }> = new Map();
+  public runningRemotes: Map<string, { buildTerminal?: vscode.Terminal; startTerminal: vscode.Terminal }> = new Map();
   // Store running Host app information
   private runningRootApps: Map<string, { terminal: vscode.Terminal }> = new Map();
   
@@ -745,12 +745,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     // Check if the terminal is still valid (not disposed)
     if (runningRemote) {
       try {
-        // Try to reference the terminal - if it's disposed, this will throw an error
-        const disposedCheck = runningRemote.terminal.processId;
-        return runningRemote.terminal;
+        // Try to reference the start terminal - if it's disposed, this will throw an error
+        const disposedCheck = runningRemote.startTerminal.processId;
+        return runningRemote.startTerminal;
       } catch (error) {
         // Terminal was disposed externally, clean up our reference
+        this.log(`Detected disposed terminal for remote ${remoteKey}, cleaning up`);
         this.runningRemotes.delete(remoteKey);
+        this._onDidChangeTreeData.fire(undefined);
         return undefined;
       }
     }
@@ -761,8 +763,8 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   /**
    * Set a remote as running
    */
-  setRunningRemote(remoteKey: string, terminal: vscode.Terminal): void {
-    this.runningRemotes.set(remoteKey, { terminal });
+  setRunningRemote(remoteKey: string, startTerminal: vscode.Terminal, buildTerminal?: vscode.Terminal): void {
+    this.runningRemotes.set(remoteKey, { startTerminal, buildTerminal });
     this._onDidChangeTreeData.fire(undefined);
   }
   
@@ -772,7 +774,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   stopRemote(remoteKey: string): void {
     const runningRemote = this.runningRemotes.get(remoteKey);
     if (runningRemote) {
-      runningRemote.terminal.dispose();
+      // Dispose both terminals if they exist
+      if (runningRemote.buildTerminal) {
+        runningRemote.buildTerminal.dispose();
+      }
+      runningRemote.startTerminal.dispose();
       this.runningRemotes.delete(remoteKey);
       this._onDidChangeTreeData.fire(undefined);
     }
@@ -1164,6 +1170,136 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   clearAllRunningApps(): void {
     this.runningRemotes.clear();
     this.runningRootApps.clear();
+  }
+
+  /**
+   * Check for disposed terminals and clean them up
+   */
+  cleanupDisposedTerminals(): void {
+    this.log('Checking for disposed terminals...');
+    
+    // Check remotes
+    const remotesToRemove: string[] = [];
+    for (const [remoteKey, remoteInfo] of this.runningRemotes.entries()) {
+      try {
+        // Try to access processId to check if terminal is still alive
+        const startTerminalAlive = remoteInfo.startTerminal.processId !== undefined;
+        const buildTerminalAlive = !remoteInfo.buildTerminal || remoteInfo.buildTerminal.processId !== undefined;
+        
+        if (!startTerminalAlive || !buildTerminalAlive) {
+          this.log(`Found disposed terminal for remote ${remoteKey}`);
+          remotesToRemove.push(remoteKey);
+        }
+      } catch (error) {
+        this.log(`Found disposed terminal for remote ${remoteKey} (exception)`);
+        remotesToRemove.push(remoteKey);
+      }
+    }
+    
+    // Check root apps
+    const rootAppsToRemove: string[] = [];
+    for (const [rootPath, appInfo] of this.runningRootApps.entries()) {
+      try {
+        const terminalAlive = appInfo.terminal.processId !== undefined;
+        if (!terminalAlive) {
+          this.log(`Found disposed terminal for root app ${rootPath}`);
+          rootAppsToRemove.push(rootPath);
+        }
+      } catch (error) {
+        this.log(`Found disposed terminal for root app ${rootPath} (exception)`);
+        rootAppsToRemove.push(rootPath);
+      }
+    }
+    
+    // Remove disposed terminals
+    let removedAny = false;
+    for (const remoteKey of remotesToRemove) {
+      this.runningRemotes.delete(remoteKey);
+      removedAny = true;
+    }
+    
+    for (const rootPath of rootAppsToRemove) {
+      this.runningRootApps.delete(rootPath);
+      removedAny = true;
+    }
+    
+    if (removedAny) {
+      this.log(`Cleaned up ${remotesToRemove.length} remotes and ${rootAppsToRemove.length} root apps`);
+      this._onDidChangeTreeData.fire(undefined);
+    } else {
+      this.log('No disposed terminals found');
+    }
+  }
+
+  /**
+   * Handle terminal closure events to clean up running apps
+   */
+  handleTerminalClosed(closedTerminal: vscode.Terminal): void {
+    this.log(`Terminal closed: ${closedTerminal.name}`);
+    this.log(`Currently tracking ${this.runningRemotes.size} running remotes and ${this.runningRootApps.size} running root apps`);
+    
+    let foundMatch = false;
+    
+    // Helper function to compare terminals by name and process ID
+    const terminalsMatch = (terminal1: vscode.Terminal, terminal2: vscode.Terminal): boolean => {
+      try {
+        // First try direct reference comparison
+        if (terminal1 === terminal2) {
+          return true;
+        }
+        
+        // Then try comparing by name and process ID
+        return terminal1.name === terminal2.name && 
+               terminal1.processId === terminal2.processId;
+      } catch (error) {
+        // If there's an error accessing processId (terminal disposed), try name only
+        return terminal1.name === terminal2.name;
+      }
+    };
+    
+    // Check if this terminal belongs to a running remote
+    for (const [remoteKey, remoteInfo] of this.runningRemotes.entries()) {
+      this.log(`Checking remote ${remoteKey}: start terminal name="${remoteInfo.startTerminal.name}", build terminal name="${remoteInfo.buildTerminal?.name || 'none'}"`);
+      
+      let shouldRemove = false;
+      
+      // Check if the closed terminal is either the build or start terminal
+      if (terminalsMatch(remoteInfo.startTerminal, closedTerminal)) {
+        this.log(`Start terminal closed for remote: ${remoteKey}`);
+        shouldRemove = true;
+        foundMatch = true;
+      } else if (remoteInfo.buildTerminal && terminalsMatch(remoteInfo.buildTerminal, closedTerminal)) {
+        this.log(`Build terminal closed for remote: ${remoteKey}`);
+        shouldRemove = true;
+        foundMatch = true;
+      }
+      
+      if (shouldRemove) {
+        this.log(`Removing remote ${remoteKey} from running list due to terminal closure`);
+        this.runningRemotes.delete(remoteKey);
+        this._onDidChangeTreeData.fire(undefined);
+        break; // Exit loop since we found the terminal
+      }
+    }
+    
+    // Check if this terminal belongs to a running root app
+    if (!foundMatch) {
+      for (const [rootPath, appInfo] of this.runningRootApps.entries()) {
+        this.log(`Checking root app ${rootPath}: terminal name="${appInfo.terminal.name}"`);
+        
+        if (terminalsMatch(appInfo.terminal, closedTerminal)) {
+          this.log(`Root app terminal closed for: ${rootPath}`);
+          this.runningRootApps.delete(rootPath);
+          this._onDidChangeTreeData.fire(undefined);
+          foundMatch = true;
+          break; // Exit loop since we found the terminal
+        }
+      }
+    }
+    
+    if (!foundMatch) {
+      this.log(`No matching tracked terminal found for closed terminal: ${closedTerminal.name}`);
+    }
   }
 
   /**
@@ -1712,7 +1848,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Show quick pick for options to edit
       const options = [
         { label: '🔨 Edit Build Command', description: remote.buildCommand || 'Not configured' },
-        { label: '▶️ Edit Start Command', description: remote.startCommand || 'Not configured' },
+        { label: '▶️ Edit Preview Build Command', description: remote.startCommand || 'Not configured' },
         { label: '⚙️ Edit Both Commands', description: 'Configure both build and start commands' }
       ];
       
@@ -1744,7 +1880,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         }
       }
       
-      if (selectedOption.label.includes('Edit Start Command') || selectedOption.label.includes('Edit Both Commands')) {
+      if (selectedOption.label.includes('Edit Preview Build Command') || selectedOption.label.includes('Edit Both Commands')) {
         // Ask user for start command
         const startCommand = await DialogUtils.showCommandConfig({
           title: `Configure Start Command for ${remote.name}`,

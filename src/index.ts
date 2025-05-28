@@ -27,6 +27,23 @@ export function activate(context: vscode.ExtensionContext) {
     // Clear any previously running remotes (in case of extension restart)
     provider.clearAllRunningApps();
     
+    // Listen for terminal disposal events to clean up running apps
+    const terminalDisposalListener = vscode.window.onDidCloseTerminal((terminal) => {
+      provider.log(`[Event] Terminal disposal event fired for: ${terminal.name}`);
+      provider.handleTerminalClosed(terminal);
+    });
+    context.subscriptions.push(terminalDisposalListener);
+    
+    // Set up periodic cleanup of disposed terminals (every 10 seconds)
+    const periodicCleanup = setInterval(() => {
+      provider.cleanupDisposedTerminals();
+    }, 10000);
+    
+    // Clean up the interval when extension is deactivated
+    context.subscriptions.push({
+      dispose: () => clearInterval(periodicCleanup)
+    });
+    
     // Show initial welcome message
     vscode.window.showInformationMessage('Module Federation Explorer is now active!');
     provider.log('Extension activated successfully');
@@ -103,6 +120,9 @@ export function activate(context: vscode.ExtensionContext) {
       
       // New Dependency Graph command
       vscode.commands.registerCommand('moduleFederation.showDependencyGraph', () => provider.showDependencyGraph()),
+      
+      // Debug command to manually clean up disposed terminals
+      vscode.commands.registerCommand('moduleFederation.cleanupTerminals', () => provider.cleanupDisposedTerminals()),
       
       // Remote commands
       vscode.commands.registerCommand('moduleFederation.stopRemote', async (remote: Remote) => {
@@ -280,7 +300,6 @@ export function activate(context: vscode.ExtensionContext) {
               provider.log(`Detected package manager for remote ${remote.name}: ${packageManager}`);
             }
             
-            // Ask user for build command
             const buildCommand = await DialogUtils.showCommandConfig({
               title: `Configure Build Command for ${remote.name}`,
               commandType: 'build',
@@ -295,9 +314,8 @@ export function activate(context: vscode.ExtensionContext) {
               return;
             }
             
-            // Ask user for start command
             const startCommand = await DialogUtils.showCommandConfig({
-              title: `Configure Start Command for ${remote.name}`,
+              title: `Configure Preview Build Command for ${remote.name}`,
               commandType: 'preview',
               currentCommand: remote.startCommand,
               packageManager: packageManager,
@@ -306,7 +324,7 @@ export function activate(context: vscode.ExtensionContext) {
             });
             
             if (!startCommand) {
-              await DialogUtils.showInfo('Start command not provided, remote configuration canceled.');
+              await DialogUtils.showInfo('Preview Build command not provided, remote configuration canceled.');
               return;
             }
             
@@ -334,17 +352,22 @@ export function activate(context: vscode.ExtensionContext) {
             return;
           }
           
-          provider.log(`Remote ${remote.name} is not running, creating new terminal`);
+          provider.log(`Remote ${remote.name} is not running, creating separate terminals for build and start`);
 
-          // Create a new terminal and start the remote
-          const terminal = vscode.window.createTerminal(`Remote: ${remote.name}`);
-          terminal.show();
+          // Create separate terminals for build and start commands
+          const buildTerminal = vscode.window.createTerminal(`Build: ${remote.name}`);
+          const startTerminal = vscode.window.createTerminal(`Start: ${remote.name}`);
           
-          // Run build and serve commands
-          terminal.sendText(`cd "${folder}" && ${remote.buildCommand} && ${remote.startCommand}`);
+          // Run build command in build terminal
+          buildTerminal.show();
+          buildTerminal.sendText(`cd "${folder}" && ${remote.buildCommand}`);
           
-          // Store running remote info
-          provider.setRunningRemote(remoteKey, terminal);
+          // Run start command in start terminal
+          startTerminal.show();
+          startTerminal.sendText(`cd "${folder}" && ${remote.startCommand}`);
+          
+          // Store running remote info with both terminals
+          provider.setRunningRemote(remoteKey, startTerminal, buildTerminal);
           provider.refresh();
           
           await DialogUtils.showSuccess(`Started remote ${remote.name}`);
