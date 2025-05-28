@@ -60,41 +60,152 @@ const fallback = (node: any) => {
   return (estraverse.VisitorKeys as any)[node.type] || [];
 };
 
+// Cache for package manager detection to avoid repeated file system operations
+const packageManagerCache = new Map<string, { packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }>();
+
 /**
  * Detect package manager and get appropriate start command based on project type
  */
 async function detectPackageManagerAndStartCommand(folder: string, configType: 'webpack' | 'vite'): Promise<{ packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }> {
+  // Check cache first
+  const cacheKey = `${folder}-${configType}`;
+  if (packageManagerCache.has(cacheKey)) {
+    return packageManagerCache.get(cacheKey)!;
+  }
+
   try {
-    // Check for package-lock.json (npm)
-    const hasPackageLock = await fs.access(path.join(folder, 'package-lock.json')).then(() => true).catch(() => false);
-    if (hasPackageLock) {
-      const startScript = configType === 'vite' ? 'dev' : 'start';
-      return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
-    }
+    const startScript = configType === 'vite' ? 'dev' : 'start';
+    
+    // Check for lock files in order of preference
+    const lockFiles = [
+      { file: 'package-lock.json', manager: 'npm' as const },
+      { file: 'pnpm-lock.yaml', manager: 'pnpm' as const },
+      { file: 'yarn.lock', manager: 'yarn' as const }
+    ];
 
-    // Check for pnpm-lock.yaml (pnpm)
-    const hasPnpmLock = await fs.access(path.join(folder, 'pnpm-lock.yaml')).then(() => true).catch(() => false);
-    if (hasPnpmLock) {
-      const startScript = configType === 'vite' ? 'dev' : 'start';
-      return { packageManager: 'pnpm', startCommand: `pnpm run ${startScript}` };
-    }
-
-    // Check for yarn.lock (yarn)
-    const hasYarnLock = await fs.access(path.join(folder, 'yarn.lock')).then(() => true).catch(() => false);
-    if (hasYarnLock) {
-      const startScript = configType === 'vite' ? 'dev' : 'start';
-      return { packageManager: 'yarn', startCommand: `yarn ${startScript}` };
+    for (const { file, manager } of lockFiles) {
+      try {
+        await fs.access(path.join(folder, file));
+        const result = { 
+          packageManager: manager, 
+          startCommand: `${manager}${manager === 'yarn' ? '' : ' run'} ${startScript}` 
+        };
+        packageManagerCache.set(cacheKey, result);
+        return result;
+      } catch {
+        // Continue to next lock file
+      }
     }
 
     // Default to npm if no lock file is found
-    const startScript = configType === 'vite' ? 'dev' : 'start';
-    return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
+    const result = { packageManager: 'npm' as const, startCommand: `npm run ${startScript}` };
+    packageManagerCache.set(cacheKey, result);
+    return result;
   } catch (error) {
     console.error('Error detecting package manager:', error);
     // Default to npm if there's an error
-    const startScript = configType === 'vite' ? 'dev' : 'start';
-    return { packageManager: 'npm', startCommand: `npm run ${startScript}` };
+    const result = { packageManager: 'npm' as const, startCommand: `npm run ${configType === 'vite' ? 'dev' : 'start'}` };
+    packageManagerCache.set(cacheKey, result);
+    return result;
   }
+}
+
+// Helper functions for AST traversal
+function findProperty(obj: any, name: string): any {
+  if (!obj?.properties) return undefined;
+  return obj.properties.find((p: any) =>
+    p.type === 'Property' &&
+    ((p.key.type === 'Identifier' && p.key.name === name) ||
+     (p.key.type === 'Literal' && p.key.value === name))
+  );
+}
+
+function getPropertyKey(prop: any): string | undefined {
+  if (prop.key.type === 'Identifier') return prop.key.name;
+  if (prop.key.type === 'Literal') return prop.key.value;
+  return undefined;
+}
+
+function isValidRemoteProperty(prop: any): boolean {
+  return prop.type === 'Property' &&
+         (prop.key.type === 'Identifier' || prop.key.type === 'Literal') &&
+         extractRemoteUrlFromExpression(prop.value) !== undefined;
+}
+
+// Common function to extract configuration from options object
+function extractConfigFromOptions(options: any, config: ModuleFederationConfig): void {
+  // Extract name
+  const nameProp = findProperty(options, 'name');
+  if (nameProp?.value.type === 'Literal') {
+    config.name = nameProp.value.value;
+  }
+  
+  // Extract remotes
+  const remotesProp = findProperty(options, 'remotes');
+  if (remotesProp?.value.type === 'ObjectExpression') {
+    for (const prop of remotesProp.value.properties) {
+      if (isValidRemoteProperty(prop)) {
+        const remoteName = getPropertyKey(prop);
+        if (remoteName) {
+          const remoteUrl = extractRemoteUrlFromExpression(prop.value);
+          config.remotes.push({
+            name: remoteName,
+            url: remoteUrl,
+            folder: remoteName,
+            remoteEntry: remoteUrl,
+            packageManager: 'npm',
+            configType: config.configType
+          });
+        }
+      }
+    }
+  }
+  
+  // Extract exposes
+  const exposesProp = findProperty(options, 'exposes');
+  if (exposesProp?.value.type === 'ObjectExpression') {
+    for (const prop of exposesProp.value.properties) {
+      const exposeName = getPropertyKey(prop);
+      if (exposeName && prop.value.type === 'Literal') {
+        config.exposes.push({
+          name: exposeName,
+          path: prop.value.value,
+          remoteName: config.name
+        });
+      }
+    }
+  }
+  
+  // Extract shared dependencies
+  const sharedProp = findProperty(options, 'shared');
+  if (sharedProp) {
+    config.shared = extractSharedDependencies(sharedProp.value);
+  }
+}
+
+// Common function to log configuration
+function logConfig(configType: string, config: ModuleFederationConfig): void {
+  console.log(`[${configType} MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
+  if (config.remotes.length > 0) {
+    console.log(`[${configType} MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
+  }
+  if (config.exposes.length > 0) {
+    console.log(`[${configType} MFE Config] Exposes:`, config.exposes.map(e => e.name).join(', '));
+  }
+  if (config.shared.length > 0) {
+    console.log(`[${configType} MFE Config] Shared:`, config.shared.map(s => s.name).join(', '));
+  }
+}
+
+// Common function to update package manager info for remotes
+async function updateRemotePackageManagers(config: ModuleFederationConfig): Promise<void> {
+  // Batch process all remotes to avoid repeated file system operations
+  await Promise.all(config.remotes.map(async (remote) => {
+    const configType = config.configType === 'modernjs' ? 'webpack' : config.configType;
+    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, configType);
+    remote.packageManager = packageManager;
+    remote.startCommand = startCommand;
+  }));
 }
 
 /**
@@ -114,75 +225,14 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
     enter(node: any) {
       // Check for ModuleFederationPlugin instantiation
       if (isModuleFederationPluginNode(node)) {
-        const options = node.arguments[0];
-        
-        // Extract name
-        const nameProp = findProperty(options, 'name');
-        if (nameProp?.value.type === 'Literal') {
-          config.name = nameProp.value.value;
-        }
-        
-        // Extract remotes
-        const remotesProp = findProperty(options, 'remotes');
-        if (remotesProp?.value.type === 'ObjectExpression') {
-          for (const prop of remotesProp.value.properties) {
-            if (isValidRemoteProperty(prop)) {
-              const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
-              
-              // Extract remote URL using our helper function
-              const remoteUrl = extractRemoteUrlFromExpression(prop.value);
-              
-              config.remotes.push({
-                name: remoteName,
-                url: remoteUrl,
-                folder: remoteName,
-                remoteEntry: remoteUrl,
-                packageManager: 'npm',
-                configType: 'webpack'
-              });
-            }
-          }
-        }
-        
-        // Extract exposes
-        const exposesProp = findProperty(options, 'exposes');
-        if (exposesProp?.value.type === 'ObjectExpression') {
-          for (const prop of exposesProp.value.properties) {
-            if (prop.key.type === 'Identifier' && prop.value.type === 'Literal') {
-              config.exposes.push({
-                name: prop.key.name,
-                path: prop.value.value,
-                remoteName: config.name
-              });
-            }
-          }
-        }
-        
-        // Extract shared dependencies
-        const sharedProp = findProperty(options, 'shared');
-        if (sharedProp) {
-          config.shared = extractSharedDependencies(sharedProp.value);
-        }
-        
-        console.log(`[Webpack MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
-        if (config.remotes.length > 0) {
-          console.log(`[Webpack MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
-        }
-        if (config.shared.length > 0) {
-          console.log(`[Webpack MFE Config] Shared:`, config.shared.map(s => s.name).join(', '));
-        }
+        extractConfigFromOptions(node.arguments[0], config);
+        logConfig('Webpack', config);
       }
     },
     fallback
   });
   
-  // Detect package manager for each remote after AST traversal
-  for (const remote of config.remotes) {
-    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'webpack');
-    remote.packageManager = packageManager;
-    remote.startCommand = startCommand;
-  }
-  
+  await updateRemotePackageManagers(config);
   return config;
 }
 
@@ -209,91 +259,48 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
   // Process each plugin
   for (const plugin of pluginsProp.value.elements) {
     if (isFederationPlugin(plugin)) {
-      const options = plugin.arguments[0];
-      
-      // Extract name
-      const nameProp = findProperty(options, 'name');
-      if (nameProp?.value.type === 'Literal') {
-        config.name = nameProp.value.value;
-      }
-      
-      // Extract remotes
-      const remotesProp = findProperty(options, 'remotes');
-      if (remotesProp?.value.type === 'ObjectExpression') {
-        for (const prop of remotesProp.value.properties) {
-          if (isValidRemoteProperty(prop)) {
-            const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
-            
-            // Extract remote URL using our helper function
-            const remoteUrl = extractRemoteUrlFromExpression(prop.value);
-            
-            config.remotes.push({
-              name: remoteName,
-              url: remoteUrl,
-              folder: remoteName,
-              packageManager: 'npm',
-              configType: 'vite'
-            });
-          }
-        }
-      }
-      
-      // Extract exposes
-      const exposesProp = findProperty(options, 'exposes');
-      if (exposesProp?.value.type === 'ObjectExpression') {
-        for (const prop of exposesProp.value.properties) {
-          if (prop.key.type === 'Identifier' || prop.key.type === 'Literal') {
-            const exposeName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
-            if (prop.value.type === 'Literal') {
-              config.exposes.push({
-                name: exposeName,
-                path: prop.value.value,
-                remoteName: config.name
-              });
-            }
-          }
-        }
-      }
-      
-      // Extract shared dependencies
-      const sharedProp = findProperty(options, 'shared');
-      if (sharedProp) {
-        config.shared = extractSharedDependencies(sharedProp.value);
-      }
-      
-      console.log(`[Vite MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
-      if (config.remotes.length > 0) {
-        console.log(`[Vite MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
-      }
-      if (config.shared.length > 0) {
-        console.log(`[Vite MFE Config] Shared:`, config.shared.map(s => s.name).join(', '));
-      }
+      extractConfigFromOptions(plugin.arguments[0], config);
+      logConfig('Vite', config);
+      break; // Assume only one federation plugin per config
     }
   }
   
-  // Detect package manager for each remote after AST traversal
-  for (const remote of config.remotes) {
-    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'vite');
-    remote.packageManager = packageManager;
-    remote.startCommand = startCommand;
-  }
-  
+  await updateRemotePackageManagers(config);
   return config;
 }
 
-// Helper functions for AST traversal
-function findProperty(obj: any, name: string): any {
-  return obj.properties.find((p: any) =>
-    p.type === 'Property' &&
-    ((p.key.type === 'Identifier' && p.key.name === name) ||
-     (p.key.type === 'Literal' && p.key.value === name))
-  );
-}
-
-function isValidRemoteProperty(prop: any): boolean {
-  return prop.type === 'Property' &&
-         (prop.key.type === 'Identifier' || prop.key.type === 'Literal') &&
-         extractRemoteUrlFromExpression(prop.value) !== undefined;
+/**
+ * Extract Module Federation configuration from ModernJS config AST
+ */
+export async function extractConfigFromModernJS(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
+  const config: ModuleFederationConfig = {
+    name: '',
+    remotes: [],
+    exposes: [],
+    shared: [],
+    configType: 'modernjs',
+    configPath: ''
+  };
+  
+  estraverse.traverse(ast, {
+    enter(node: any) {
+      // Look for export default createModuleFederationConfig({ ... })
+      if (node.type === 'ExportDefaultDeclaration' &&
+          node.declaration.type === 'CallExpression' &&
+          node.declaration.callee.type === 'Identifier' &&
+          node.declaration.callee.name === 'createModuleFederationConfig' &&
+          node.declaration.arguments.length > 0 &&
+          node.declaration.arguments[0].type === 'ObjectExpression') {
+        
+        extractConfigFromOptions(node.declaration.arguments[0], config);
+        logConfig('ModernJS', config);
+      }
+    },
+    fallback
+  });
+  
+  await updateRemotePackageManagers(config);
+  return config;
 }
 
 function isModuleFederationPluginNode(node: any): boolean {
@@ -365,130 +372,14 @@ function isFederationPlugin(plugin: any): boolean {
          plugin.arguments[0].type === 'ObjectExpression';
 }
 
-/**
- * Extract Module Federation configuration from ModernJS config AST
- */
-export async function extractConfigFromModernJS(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
-  const config: ModuleFederationConfig = {
-    name: '',
-    remotes: [],
-    exposes: [],
-    shared: [],
-    configType: 'modernjs',
-    configPath: ''
-  };
-  
-  estraverse.traverse(ast, {
-    enter(node: any) {
-      // Look for export default createModuleFederationConfig({ ... })
-      if (node.type === 'ExportDefaultDeclaration' &&
-          node.declaration.type === 'CallExpression' &&
-          node.declaration.callee.type === 'Identifier' &&
-          node.declaration.callee.name === 'createModuleFederationConfig' &&
-          node.declaration.arguments.length > 0 &&
-          node.declaration.arguments[0].type === 'ObjectExpression') {
-          
-        const options = node.declaration.arguments[0];
-          
-        // Extract name
-        const nameProp = findProperty(options, 'name');
-        if (nameProp?.value.type === 'Literal') {
-          config.name = nameProp.value.value;
-        }
-        
-        // Extract remotes
-        const remotesProp = findProperty(options, 'remotes');
-        if (remotesProp?.value.type === 'ObjectExpression') {
-          for (const prop of remotesProp.value.properties) {
-            if (isValidRemoteProperty(prop)) {
-              const remoteName = prop.key.type === 'Identifier' ? prop.key.name : prop.key.value;
-              
-              // Extract remote URL using our helper function
-              const remoteUrl = extractRemoteUrlFromExpression(prop.value);
-              
-              config.remotes.push({
-                name: remoteName,
-                url: remoteUrl,
-                folder: remoteName,
-                remoteEntry: remoteUrl,
-                packageManager: 'npm',
-                configType: 'modernjs'
-              });
-            }
-          }
-        }
-        
-        // Extract exposes
-        const exposesProp = findProperty(options, 'exposes');
-        if (exposesProp?.value.type === 'ObjectExpression') {
-          for (const prop of exposesProp.value.properties) {
-            // Handle string literal keys like './Components'
-            if (prop.key.type === 'Literal' && prop.value.type === 'Literal') {
-              const exposeName = prop.key.value;
-              config.exposes.push({
-                name: exposeName,
-                path: prop.value.value,
-                remoteName: config.name
-              });
-            }
-            // Also handle identifier keys
-            else if (prop.key.type === 'Identifier' && prop.value.type === 'Literal') {
-              const exposeName = prop.key.name;
-              config.exposes.push({
-                name: exposeName,
-                path: prop.value.value,
-                remoteName: config.name
-              });
-            }
-          }
-        }
-        
-        // Extract shared dependencies
-        const sharedProp = findProperty(options, 'shared');
-        if (sharedProp) {
-          config.shared = extractSharedDependencies(sharedProp.value);
-        }
-        
-        console.log(`[ModernJS MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
-        if (config.remotes.length > 0) {
-          console.log(`[ModernJS MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
-        }
-        if (config.exposes.length > 0) {
-          console.log(`[ModernJS MFE Config] Exposes:`, config.exposes.map(e => e.name).join(', '));
-        }
-        if (config.shared.length > 0) {
-          console.log(`[ModernJS MFE Config] Shared:`, config.shared.map(s => s.name).join(', '));
-        }
-      }
-    },
-    fallback
-  });
-  
-  // Detect package manager for each remote after AST traversal
-  for (const remote of config.remotes) {
-    const { packageManager, startCommand } = await detectPackageManagerAndStartCommand(remote.folder, 'webpack');
-    remote.packageManager = packageManager;
-    remote.startCommand = startCommand;
-  }
-  
-  return config;
-}
-
 // This function will extract a simplified representation of various expressions that might be used for remote URLs
 function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
   if (!valueNode) {
     return undefined;
   }
 
-  // Handle TypeScript non-null assertion operator (!)
-  if (valueNode.type === 'TSNonNullExpression') {
-    // Process the expression without the non-null assertion
-    return extractRemoteUrlFromExpression(valueNode.expression);
-  }
-
-  // Handle type assertions (as Type or <Type>)
-  if (valueNode.type === 'TSAsExpression' || valueNode.type === 'TSTypeAssertion') {
-    // Process the expression without the type assertion
+  // Handle TypeScript non-null assertion operator (!) and type assertions
+  if (valueNode.type === 'TSNonNullExpression' || valueNode.type === 'TSAsExpression' || valueNode.type === 'TSTypeAssertion') {
     return extractRemoteUrlFromExpression(valueNode.expression);
   }
 
@@ -585,14 +476,7 @@ function extractSharedDependencies(valueNode: any): SharedDependency[] {
   else if (valueNode.type === 'ObjectExpression') {
     for (const prop of valueNode.properties) {
       if (prop.type === 'Property') {
-        let depName: string | undefined;
-        
-        // Get dependency name from key
-        if (prop.key.type === 'Identifier') {
-          depName = prop.key.name;
-        } else if (prop.key.type === 'Literal' && typeof prop.key.value === 'string') {
-          depName = prop.key.value;
-        }
+        const depName = getPropertyKey(prop);
         
         if (depName) {
           const sharedDep: SharedDependency = { name: depName };
