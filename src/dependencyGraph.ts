@@ -188,13 +188,27 @@ export class DependencyGraphManager {
       });
     });
     
-    // Third pass: Create consumption edges
+    // Third pass: Create consolidated consumption edges (avoid overlapping bidirectional edges)
+    const edgeMap = new Map<string, DependencyGraphEdge>(); // Track unique edges
+    const processedPairs = new Set<string>(); // Track processed node pairs
+    
     remoteToHostMap.forEach((hostIds, remoteId) => {
       hostIds.forEach(hostId => {
         const hostNode = nodeMap.get(hostId);
         const remoteNode = nodeMap.get(remoteId);
         
         if (hostNode && remoteNode) {
+          // Create a unique pair identifier (always use lexicographically smaller ID first)
+          const pairId = hostId < remoteId ? `${hostId}-${remoteId}` : `${remoteId}-${hostId}`;
+          
+          // Skip if we've already processed this pair
+          if (processedPairs.has(pairId)) {
+            return;
+          }
+          
+          // Check if this is a bidirectional relationship
+          const isHostAlsoRemote = remoteToHostMap.has(hostId) && remoteToHostMap.get(hostId)!.includes(remoteId);
+          
           // Find the specific remote configuration for edge labeling
           const hostConfig = appCapabilities.get(hostId)?.config;
           const remoteConfig = hostConfig?.remotes.find(r => 
@@ -207,16 +221,37 @@ export class DependencyGraphManager {
             remoteNode.url = remoteConfig.url;
           }
           
-          const edge: DependencyGraphEdge = {
-            from: hostId,
-            to: remoteId,
-            type: 'consumes',
-            label: remoteConfig?.url || remoteNode.url || remoteNode.label,
-            strength: 1,
-            bidirectional: hostNode.group === 'bidirectional' && remoteNode.group === 'bidirectional'
-          };
+          let edge: DependencyGraphEdge;
           
+          if (isHostAlsoRemote) {
+            // Bidirectional relationship - create a single bidirectional edge
+            edge = {
+              from: hostId,
+              to: remoteId,
+              type: 'consumes',
+              label: `↔ ${remoteConfig?.url || remoteNode.url || remoteNode.label}`,
+              strength: 1.5, // Stronger connection for bidirectional
+              bidirectional: true
+            };
+            
+            console.log(`[Graph] Created bidirectional consume edge: ${hostNode.label} ↔ ${remoteNode.label}`);
+          } else {
+            // Unidirectional relationship
+            edge = {
+              from: hostId,
+              to: remoteId,
+              type: 'consumes',
+              label: remoteConfig?.url || remoteNode.url || remoteNode.label,
+              strength: 1,
+              bidirectional: false
+            };
+            
+            console.log(`[Graph] Created unidirectional consume edge: ${hostNode.label} → ${remoteNode.label}`);
+          }
+          
+          // Add the edge and mark this pair as processed
           graph.edges.push(edge);
+          processedPairs.add(pairId);
         }
       });
     });
@@ -586,6 +621,11 @@ export class DependencyGraphManager {
                 stroke: #007ACC;
                 stroke-dasharray: none;
             }
+            .edge.consumes.bidirectional {
+                stroke: #FF6B35;
+                stroke-width: 2.5px;
+                stroke-dasharray: none;
+            }
             .edge.exposes {
                 stroke: #FD7E14;
                 stroke-dasharray: 5,5;
@@ -746,6 +786,10 @@ export class DependencyGraphManager {
             .consumes-line {
                 background-color: #007ACC;
             }
+            .bidirectional-consumes-line {
+                background-color: #FF6B35;
+                height: 3px;
+            }
             .exposes-line {
                 background-color: #FD7E14;
                 background-image: repeating-linear-gradient(90deg, transparent, transparent 3px, #FFF 3px, #FFF 6px);
@@ -858,7 +902,7 @@ export class DependencyGraphManager {
             <div class="legend-item">
                 <div class="legend-color bidirectional-color"></div>
                 <span>Bidirectional App<br><small>(Host + Remote)</small></span>
-            </div>
+        </div>
             <div class="legend-item">
                 <div class="legend-color external-color"></div>
                 <span>External Remote</span>
@@ -877,6 +921,10 @@ export class DependencyGraphManager {
                 <div class="legend-item">
                     <div class="legend-line consumes-line"></div>
                     <span>Consumes</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line bidirectional-consumes-line"></div>
+                    <span>Bidirectional Consumes</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-line exposes-line"></div>
@@ -1092,6 +1140,32 @@ export class DependencyGraphManager {
                         .attr("d", "M0,-5L10,0L0,5")
                         .attr("fill", "#28A745");
                     
+                    // Bidirectional consume arrow
+                    defs.append("marker")
+                        .attr("id", "arrow-bidirectional")
+                        .attr("viewBox", "0 -5 10 10")
+                        .attr("refX", 30)
+                        .attr("refY", 0)
+                        .attr("markerWidth", 6)
+                        .attr("markerHeight", 6)
+                        .attr("orient", "auto")
+                        .append("path")
+                        .attr("d", "M0,-5L10,0L0,5")
+                        .attr("fill", "#FF6B35");
+                    
+                    // Bidirectional start arrow (for the other end)
+                    defs.append("marker")
+                        .attr("id", "arrow-bidirectional-start")
+                        .attr("viewBox", "0 -5 10 10")
+                        .attr("refX", -20)
+                        .attr("refY", 0)
+                        .attr("markerWidth", 6)
+                        .attr("markerHeight", 6)
+                        .attr("orient", "auto")
+                        .append("path")
+                        .attr("d", "M10,-5L0,0L10,5")
+                        .attr("fill", "#FF6B35");
+                    
                     // Create a zoom behavior
                     zoom = d3.zoom()
                         .scaleExtent([0.1, 4])
@@ -1138,14 +1212,30 @@ export class DependencyGraphManager {
                         .data(graphData.links)
                         .enter()
                         .append('line')
-                        .attr('class', d => \`edge \${d.type || 'default'}\`)
+                        .attr('class', d => {
+                            let classes = \`edge \${d.type || 'default'}\`;
+                            if (d.bidirectional) {
+                                classes += ' bidirectional';
+                            }
+                            return classes;
+                        })
                         .attr('marker-end', d => {
+                            if (d.bidirectional && d.type === 'consumes') {
+                                return 'url(#arrow-bidirectional)';
+                            }
                             switch(d.type) {
                                 case 'consumes': return 'url(#arrow-consumes)';
                                 case 'exposes': return 'url(#arrow-exposes)';
                                 case 'shares': return 'url(#arrow-shares)';
                                 default: return 'url(#arrow-consumes)';
                             }
+                        })
+                        .attr('marker-start', d => {
+                            // Add start marker for bidirectional consume edges
+                            if (d.bidirectional && d.type === 'consumes') {
+                                return 'url(#arrow-bidirectional-start)';
+                            }
+                            return null;
                         })
                         .style('stroke-width', d => (d.strength || 1) * 2);
                     
