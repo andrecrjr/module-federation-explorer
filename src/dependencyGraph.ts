@@ -23,6 +23,19 @@ export class DependencyGraphManager {
    * Generate a dependency graph from the provided configurations
    */
   generateDependencyGraph(configs: Map<string, ModuleFederationConfig[]>): DependencyGraph {
+    console.log(`[Graph] Starting dependency graph generation with ${configs.size} root paths:`, 
+      Array.from(configs.entries()).map(([path, cfgs]) => ({
+        path,
+        configCount: cfgs.length,
+        configs: cfgs.map(c => ({
+          name: c.name,
+          type: c.configType,
+          remotes: c.remotes.length,
+          exposes: c.exposes.length,
+          shared: c.shared.length
+        }))
+      }))
+    );
     const graph: DependencyGraph = {
       nodes: [],
       edges: [],
@@ -43,6 +56,11 @@ export class DependencyGraphManager {
     // First pass: Analyze all applications to determine their capabilities (host, remote, or both)
     configs.forEach((rootConfigs, rootPath) => {
       rootConfigs.forEach(config => {
+        // Skip configurations without names
+        if (!config.name || config.name.trim() === '') {
+          console.log(`[Graph] ⚠️  Skipping config without name in ${rootPath}:`, config);
+          return;
+        }
         const rootPathHash = this.hashPath(rootPath);
         const appId = `${rootPathHash}-${config.name}-${config.configType}`;
         
@@ -50,11 +68,11 @@ export class DependencyGraphManager {
         const isHost = config.remotes.length > 0;
         const isRemote = config.exposes.length > 0;
         
-        // If neither host nor remote, default to host (new applications are typically hosts)
-        // This handles the case where a new host application hasn't configured remotes yet
-        // Also consider if the app has shared dependencies as an indicator it might be a host
-        const hasSharedDeps = config.shared.length > 0;
-        const finalIsHost = isHost || (!isHost && !isRemote) || (!isRemote && hasSharedDeps);
+        // Simple logic: 
+        // - If it has remotes, it's a host (can also be remote if it has exposes)
+        // - If it has exposes, it's a remote (can also be host if it has remotes)
+        // - If it has neither, default to host (new applications are typically hosts)
+        const finalIsHost = isHost || (!isHost && !isRemote);
         const finalIsRemote = isRemote;
         
         appCapabilities.set(appId, {
@@ -70,8 +88,7 @@ export class DependencyGraphManager {
           exposesCount: config.exposes.length,
           sharedCount: config.shared.length,
           configType: config.configType,
-          defaultedToHost: !isHost && !isRemote,
-          sharedDepsInfluence: !isRemote && hasSharedDeps && !isHost
+          defaultedToHost: !isHost && !isRemote
         });
         
         // Track exposed modules for later reference
@@ -92,20 +109,33 @@ export class DependencyGraphManager {
         nodeType = config.remotes.length >= config.exposes.length ? 'host' : 'remote';
       } else if (isHost) {
         nodeType = 'host';
-      } else {
+      } else if (isRemote) {
         nodeType = 'remote';
+      } else {
+        // Default to host for applications with no remotes or exposes (new applications)
+        nodeType = 'host';
       }
       
-      console.log(`[Graph] App '${config.name}' node type determination:`, {
+                    console.log(`[Graph] App '${config.name}' node type determination:`, {
         isHost,
         isRemote,
         nodeType,
+        remotesCount: config.remotes.length,
+        exposesCount: config.exposes.length,
+        sharedCount: config.shared.length,
         reason: isHost && isRemote 
           ? `bidirectional: ${config.remotes.length} remotes vs ${config.exposes.length} exposes`
           : isHost 
             ? 'host only'
-            : 'remote only (or defaulted)'
+            : isRemote
+              ? 'remote only'
+              : 'defaulted to host (no remotes or exposes)'
       });
+      
+      // Additional debug for problematic cases
+      if (!isHost && !isRemote) {
+        console.log(`[Graph] ⚠️  App '${config.name}' has no remotes or exposes - should be defaulted to host but nodeType is: ${nodeType}`);
+      }
       
       // Create a single unified node for this application
       const appNode: DependencyGraphNode = {
@@ -115,7 +145,7 @@ export class DependencyGraphManager {
         configType: config.configType,
         exposedModules: isRemote ? config.exposes.map(e => e.name) : undefined,
         sharedDependencies: config.shared.map(s => s.name),
-        size: config.remotes.length + config.exposes.length + config.shared.length,
+        size: Math.max(1, config.remotes.length + config.exposes.length + config.shared.length),
         group: isHost && isRemote ? 'bidirectional' : (isHost ? 'hosts' : 'remotes')
       };
       
@@ -363,6 +393,14 @@ export class DependencyGraphManager {
       sharedDeps: graph.metadata!.totalSharedDeps,
       exposedModules: graph.metadata!.totalExposedModules
     });
+    
+    // Debug: Show all created nodes and their types
+    console.log(`[Graph] Created nodes:`, graph.nodes.map(node => ({
+      label: node.label,
+      type: node.type,
+      group: node.group,
+      size: node.size
+    })));
     
     return graph;
   }
