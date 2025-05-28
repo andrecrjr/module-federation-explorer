@@ -64,31 +64,39 @@ export class DependencyGraphManager {
         const rootPathHash = this.hashPath(rootPath);
         const appId = `${rootPathHash}-${config.name}-${config.configType}`;
         
-        // Determine if this app is a host (has remotes) or remote (has exposes) or both
-        const isHost = config.remotes.length > 0;
-        const isRemote = config.exposes.length > 0;
+        // Revised logic for Module Federation roles:
+        // - Host: Consumes remotes (has remotes array) 
+        // - Remote: Exposes modules to be consumed by others (has exposes array)
+        // - Bidirectional: Both consumes remotes AND exposes modules
+        const hasRemotes = config.remotes.length > 0;
+        const hasExposes = config.exposes.length > 0;
         
-        // Simple logic: 
-        // - If it has remotes, it's a host (can also be remote if it has exposes)
-        // - If it has exposes, it's a remote (can also be host if it has remotes)
-        // - If it has neither, default to host (new applications are typically hosts)
-        const finalIsHost = isHost || (!isHost && !isRemote);
-        const finalIsRemote = isRemote;
+        // Determine roles based on actual capabilities
+        const isHost = hasRemotes; // Only true hosts consume remotes
+        const isRemote = hasExposes; // Only true remotes expose modules
+        const isBidirectional = hasRemotes && hasExposes; // Both consume and expose
+        
+        // If app has neither remotes nor exposes, treat it as a standalone host
+        const isStandaloneHost = !hasRemotes && !hasExposes;
         
         appCapabilities.set(appId, {
-          isHost: finalIsHost,
-          isRemote: finalIsRemote,
+          isHost: isHost || isStandaloneHost || isBidirectional,
+          isRemote: isRemote || isBidirectional,
           config
         });
         
         console.log(`[Graph] App '${config.name}' capabilities:`, {
-          isHost: finalIsHost,
-          isRemote: finalIsRemote,
+          isHost: isHost || isStandaloneHost || isBidirectional,
+          isRemote: isRemote || isBidirectional,
+          isBidirectional,
+          isStandaloneHost,
+          hasRemotes,
+          hasExposes,
           remotesCount: config.remotes.length,
           exposesCount: config.exposes.length,
           sharedCount: config.shared.length,
           configType: config.configType,
-          defaultedToHost: !isHost && !isRemote
+          role: isBidirectional ? 'bidirectional' : (isHost ? 'host' : (isRemote ? 'remote' : 'standalone'))
         });
         
         // Track exposed modules for later reference
@@ -102,51 +110,63 @@ export class DependencyGraphManager {
     appCapabilities.forEach((capabilities, appId) => {
       const { isHost, isRemote, config } = capabilities;
       
-      // Determine the primary type - if both host and remote, prioritize based on what it does more
+      // Determine if this is truly bidirectional (both consumes and exposes)
+      const hasRemotes = config.remotes.length > 0;
+      const hasExposes = config.exposes.length > 0;
+      const isBidirectional = hasRemotes && hasExposes;
+      
+      // Determine the primary type
       let nodeType: 'host' | 'remote';
-      if (isHost && isRemote) {
-        // If both, determine primary role based on number of remotes vs exposes
-        nodeType = config.remotes.length >= config.exposes.length ? 'host' : 'remote';
-      } else if (isHost) {
+      let nodeGroup: string;
+      
+      if (isBidirectional) {
+        // True bidirectional app (both consumes and exposes)
+        nodeType = 'host'; // Primary type is host since it can consume
+        nodeGroup = 'bidirectional';
+      } else if (hasRemotes && !hasExposes) {
+        // Pure consumer host (only consumes)
         nodeType = 'host';
-      } else if (isRemote) {
-        nodeType = 'remote';
+        nodeGroup = 'hosts';
+      } else if (hasExposes && !hasRemotes) {
+        // Provider host (only exposes - still a host that provides services)
+        nodeType = 'host';
+        nodeGroup = 'hosts';
       } else {
-        // Default to host for applications with no remotes or exposes (new applications)
+        // Standalone app (neither consumes nor exposes)
         nodeType = 'host';
+        nodeGroup = 'hosts';
       }
       
-                    console.log(`[Graph] App '${config.name}' node type determination:`, {
+      console.log(`[Graph] App '${config.name}' node type determination:`, {
         isHost,
         isRemote,
         nodeType,
+        nodeGroup,
+        hasRemotes,
+        hasExposes,
+        isBidirectional,
         remotesCount: config.remotes.length,
         exposesCount: config.exposes.length,
         sharedCount: config.shared.length,
-        reason: isHost && isRemote 
-          ? `bidirectional: ${config.remotes.length} remotes vs ${config.exposes.length} exposes`
-          : isHost 
-            ? 'host only'
-            : isRemote
-              ? 'remote only'
-              : 'defaulted to host (no remotes or exposes)'
+        reason: isBidirectional 
+          ? `bidirectional: consumes ${config.remotes.length} and exposes ${config.exposes.length}`
+          : hasRemotes 
+            ? `consumer host: consumes ${config.remotes.length} remotes`
+            : hasExposes
+              ? `provider host: exposes ${config.exposes.length} modules`
+              : 'standalone host (no remotes or exposes)'
       });
-      
-      // Additional debug for problematic cases
-      if (!isHost && !isRemote) {
-        console.log(`[Graph] ⚠️  App '${config.name}' has no remotes or exposes - should be defaulted to host but nodeType is: ${nodeType}`);
-      }
       
       // Create a single unified node for this application
       const appNode: DependencyGraphNode = {
         id: appId,
-            label: config.name,
+        label: config.name,
         type: nodeType,
         configType: config.configType,
-        exposedModules: isRemote ? config.exposes.map(e => e.name) : undefined,
+        exposedModules: hasExposes ? config.exposes.map(e => e.name) : undefined,
         sharedDependencies: config.shared.map(s => s.name),
         size: Math.max(1, config.remotes.length + config.exposes.length + config.shared.length),
-        group: isHost && isRemote ? 'bidirectional' : (isHost ? 'hosts' : 'remotes')
+        group: nodeGroup
       };
       
       nodeMap.set(appId, appNode);
@@ -164,34 +184,34 @@ export class DependencyGraphManager {
       }
       
       // Track remote consumption relationships
-        config.remotes.forEach(remote => {
+      config.remotes.forEach(remote => {
         // Find if this remote exists as an application in our configurations
         const remoteAppId = this.findAppIdByName(remote.name, appCapabilities);
         
         console.log(`[Graph] Processing remote '${remote.name}' for app '${config.name}':`, {
-          remoteAppId: remoteAppId ? 'found internal' : 'external',
+          remoteAppId: remoteAppId ? 'found in workspace' : 'not in workspace',
           remoteUrl: remote.url,
           remoteConfigType: remote.configType
         });
         
         if (remoteAppId) {
-          // This is an internal remote (another app in our workspace)
+          // This remote is another app in our workspace
           if (!remoteToHostMap.has(remoteAppId)) {
             remoteToHostMap.set(remoteAppId, []);
           }
           remoteToHostMap.get(remoteAppId)!.push(appId);
         } else {
-          // This is an external remote - create a separate node for it
+          // This remote is not in our workspace - create a regular remote node for it
           const externalRemoteId = `external-${remote.name}`;
           if (!nodeMap.has(externalRemoteId)) {
             const externalRemoteNode: DependencyGraphNode = {
               id: externalRemoteId,
               label: remote.name,
               type: 'remote',
-              configType: remote.configType,
+              configType: remote.configType || 'external',
               url: remote.url,
               size: 1,
-              group: 'external-remotes'
+              group: 'remotes'
             };
             nodeMap.set(externalRemoteId, externalRemoteNode);
             graph.nodes.push(externalRemoteNode);
@@ -256,7 +276,7 @@ export class DependencyGraphManager {
           if (isHostAlsoRemote) {
             // Bidirectional relationship - create a single bidirectional edge
             edge = {
-              from: hostId,
+            from: hostId,
               to: remoteId,
               type: 'consumes',
               label: `↔ ${remoteConfig?.url || remoteNode.url || remoteNode.label}`,
@@ -283,8 +303,8 @@ export class DependencyGraphManager {
           graph.edges.push(edge);
           processedPairs.add(pairId);
         }
+        });
       });
-    });
     
     // Fourth pass: Create exposed module nodes for applications that expose modules
     exposedModulesMap.forEach((moduleNames, appId) => {
@@ -324,6 +344,12 @@ export class DependencyGraphManager {
     
     // Collect all shared dependencies from configurations
     appCapabilities.forEach((capabilities, appId) => {
+      console.log(`[Graph] Processing shared deps for app '${capabilities.config.name}':`, {
+        appId,
+        sharedDeps: capabilities.config.shared.map(s => s.name),
+        sharedCount: capabilities.config.shared.length
+      });
+      
       capabilities.config.shared.forEach(sharedDep => {
         if (!sharedDepsMap.has(sharedDep.name)) {
           sharedDepsMap.set(sharedDep.name, new Set());
@@ -332,9 +358,25 @@ export class DependencyGraphManager {
       });
     });
     
+    console.log(`[Graph] Shared dependencies map:`, Array.from(sharedDepsMap.entries()).map(([depName, appIds]) => ({
+      dependency: depName,
+      usedByApps: Array.from(appIds).map(appId => {
+        const app = Array.from(appCapabilities.entries()).find(([id]) => id === appId);
+        return app ? app[1].config.name : appId;
+      }),
+      count: appIds.size
+    })));
+    
     // Create shared dependency nodes for dependencies used by multiple apps
     sharedDepsMap.forEach((hostIds, depName) => {
       if (hostIds.size > 1 && depName !== '[DYNAMIC_SHARED]') {
+        console.log(`[Graph] Creating shared dependency node for '${depName}' used by ${hostIds.size} apps:`, 
+          Array.from(hostIds).map(appId => {
+            const app = Array.from(appCapabilities.entries()).find(([id]) => id === appId);
+            return app ? app[1].config.name : appId;
+          })
+        );
+        
         const sharedDepId = `shared-${depName}`;
         
         // Find the most detailed shared dependency configuration
@@ -374,22 +416,53 @@ export class DependencyGraphManager {
               bidirectional: true
             };
             graph.edges.push(shareEdge);
+            
+            console.log(`[Graph] Created sharing edge: ${hostNode.label} ↔ ${depName}`);
           }
         });
+      } else {
+        console.log(`[Graph] Skipping shared dependency '${depName}' - used by ${hostIds.size} apps (need 2+)`);
       }
     });
     
-    // Update final metadata
-    graph.metadata!.totalHosts = Array.from(appCapabilities.values()).filter(c => c.isHost).length;
-    graph.metadata!.totalRemotes = Array.from(appCapabilities.values()).filter(c => c.isRemote).length;
+    // Update final metadata with accurate counts
+    let consumerHosts = 0;
+    let providerHosts = 0;
+    let bidirectionalApps = 0;
+    let standaloneApps = 0;
+    
+    appCapabilities.forEach((capabilities) => {
+      const hasRemotes = capabilities.config.remotes.length > 0;
+      const hasExposes = capabilities.config.exposes.length > 0;
+      
+      if (hasRemotes && hasExposes) {
+        bidirectionalApps++;
+      } else if (hasRemotes && !hasExposes) {
+        consumerHosts++;
+      } else if (!hasRemotes && hasExposes) {
+        providerHosts++;
+      } else {
+        standaloneApps++;
+      }
+    });
+    
+    // Set metadata based on actual app types
+    // All workspace apps are now hosts (consumer, provider, bidirectional, or standalone)
+    graph.metadata!.totalHosts = consumerHosts + providerHosts + bidirectionalApps + standaloneApps;
+    // Only external remotes count as remotes
+    graph.metadata!.totalRemotes = graph.nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length;
     
     // Debug log the enhanced graph data
     console.log(`Generated bidirectional-aware dependency graph:`, {
       nodes: graph.nodes.length,
       edges: graph.edges.length,
-      hosts: graph.metadata!.totalHosts,
-      remotes: graph.metadata!.totalRemotes,
-      bidirectional: Array.from(appCapabilities.values()).filter(c => c.isHost && c.isRemote).length,
+      consumerHosts,
+      providerHosts,
+      bidirectionalApps,
+      standaloneApps,
+      externalRemotes: graph.nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length,
+      totalHosts: graph.metadata!.totalHosts,
+      totalRemotes: graph.metadata!.totalRemotes,
       sharedDeps: graph.metadata!.totalSharedDeps,
       exposedModules: graph.metadata!.totalExposedModules
     });
@@ -931,16 +1004,16 @@ export class DependencyGraphManager {
                 <h4>Node Types</h4>
             <div class="legend-item">
                 <div class="legend-color host-color"></div>
-                <span>Host Application</span>
+                <span>Host Application<br><small>(Workspace Apps)</small></span>
             </div>
             <div class="legend-item">
                 <div class="legend-color remote-color"></div>
-                <span>Remote Module</span>
+                <span>Remote Module<br><small>(External Apps)</small></span>
             </div>
             <div class="legend-item">
                 <div class="legend-color bidirectional-color"></div>
                 <span>Bidirectional App<br><small>(Host + Remote)</small></span>
-        </div>
+            </div>
             <div class="legend-item">
                 <div class="legend-color external-color"></div>
                 <span>External Remote</span>
@@ -1078,7 +1151,7 @@ export class DependencyGraphManager {
                     hosts: nodes.filter(n => n.type === 'host').length,
                     remotes: nodes.filter(n => n.type === 'remote').length,
                     bidirectional: nodes.filter(n => n.group === 'bidirectional').length,
-                    external: nodes.filter(n => n.group === 'external-remotes').length,
+                    external: nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length,
                     shared: nodes.filter(n => n.type === 'shared-dependency').length,
                     modules: nodes.filter(n => n.type === 'exposed-module').length
                 };
@@ -1316,16 +1389,21 @@ export class DependencyGraphManager {
                             return base + Math.min((d.size || 1) * 2, 15);
                         })
                         .attr('class', d => {
-                            switch(d.type) {
-                                case 'host': 
-                                    return d.group === 'bidirectional' ? 'bidirectional-node' : 'host-node';
-                                case 'remote': 
-                                    if (d.group === 'bidirectional') return 'bidirectional-node';
-                                    if (d.group === 'external-remotes') return 'external-remote-node';
-                                    return 'remote-node';
-                                case 'shared-dependency': return 'shared-dependency-node';
-                                case 'exposed-module': return 'exposed-module-node';
-                                default: return 'host-node';
+                            // More precise node styling based on actual configuration
+                            if (d.type === 'host' && d.group === 'bidirectional') {
+                                return 'bidirectional-node';
+                            } else if (d.type === 'host') {
+                                return 'host-node';
+                            } else if (d.type === 'remote') {
+                                if (d.group === 'bidirectional') return 'bidirectional-node';
+                                if (d.id.startsWith('external-')) return 'external-remote-node';
+                                return 'remote-node';
+                            } else if (d.type === 'shared-dependency') {
+                                return 'shared-dependency-node';
+                            } else if (d.type === 'exposed-module') {
+                                return 'exposed-module-node';
+                            } else {
+                                return 'host-node';
                             }
                         })
                         .on('mouseover', showTooltip)
