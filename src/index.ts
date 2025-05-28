@@ -576,10 +576,14 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
     </head>
     <body>
         <div class="container">
-      <img src="${logoUri}" alt="Module Federation Logo" class="logo" />
-                <h1>Welcome to Module Federation Explorer</h1>
-      <p>A powerful tool to visualize, manage, and interact with your Module Federation architecture.</p>
-      
+        <img src="${logoUri}" alt="Module Federation Logo" class="logo" />
+        <h1>Welcome to Module Federation Explorer</h1>
+        <p>A powerful tool to visualize, manage with Terminals, and interact with your Module Federation architecture.</p>
+        
+      <div style="margin: 30px 0 30px 0;">
+        <button class="button" id="openExplorerBtn">Open Module Federation Explorer</button>
+        <button class="button" id="openDocsBtn">Documentation</button>
+      </div>
       <div class="feature-grid">
         <div class="feature-card">
           <h3>📦 Discover MFE Modules</h3>
@@ -639,11 +643,6 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
             <p>Click the graph icon in the toolbar to visualize your Module Federation architecture.</p>
           </div>
         </div>
-      </div>
-
-      <div style="margin-top: 30px;">
-        <button class="button" id="openExplorerBtn">Open Module Federation Explorer</button>
-        <button class="button" id="openDocsBtn">Documentation</button>
       </div>
       
       <p style="margin-top: 20px; font-size: 0.9em;">
