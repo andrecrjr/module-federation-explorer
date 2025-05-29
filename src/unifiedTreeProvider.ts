@@ -965,50 +965,139 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const rootPath = rootFolder.path;
       this.log(`Editing commands for Host app: ${rootPath}`);
       
-      // Get current start command or default
-      const currentCommand = rootFolder.startCommand || '';
-      
-      // Detect common package managers in the directory
-      let defaultCommand = '';
+      // Get current package manager or detect it
+      let packageManager = '';
       try {
         if (fsSync.existsSync(path.join(rootFolder.path, 'package-lock.json'))) {
-          defaultCommand = 'npm run start';
+          packageManager = 'npm';
         } else if (fsSync.existsSync(path.join(rootFolder.path, 'yarn.lock'))) {
-          defaultCommand = 'yarn start';
+          packageManager = 'yarn';
         } else if (fsSync.existsSync(path.join(rootFolder.path, 'pnpm-lock.yaml'))) {
-          defaultCommand = 'pnpm run start';
+          packageManager = 'pnpm';
         } else {
-          defaultCommand = 'npm run start';
+          packageManager = 'npm'; // Default to npm
         }
       } catch {
-        defaultCommand = 'npm run start';
+        packageManager = 'npm';
       }
-
-      // Ask user for the start command
-      const startCommand = await DialogUtils.showInput({
-        title: `Configure App Start Command for ${rootFolder.name}`,
-        prompt: `Configure app start command for ${rootFolder.name}`,
-        value: currentCommand || defaultCommand,
-        placeholder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
+      
+      // Show quick pick for options to edit
+      const options = [
+        { label: '▶️ Edit Start Command - eg. npm run start, yarn dev, etc. the command to start the app', description: rootFolder.startCommand || 'Not configured' },
+        { label: '📁 Change Project Folder', description: rootFolder.path || 'Not configured' },
+      ];
+      
+      const selectedOption = await DialogUtils.showQuickPick(options, {
+        title: `Edit Configuration for ${rootFolder.name}`,
+        placeholder: 'What would you like to edit?'
       });
-
-      if (!startCommand) {
+      
+      if (!selectedOption || Array.isArray(selectedOption)) {
         return; // User cancelled
       }
       
-      // Update the Host folder start command
-      rootFolder.startCommand = startCommand;
+      // Handle folder change option
+      if (selectedOption.label.includes('Change Project Folder')) {
+        // Set default URI to parent of workspace root if available
+        let defaultUri: vscode.Uri | undefined;
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (workspaceRoot) {
+          const parentPath = path.dirname(workspaceRoot);
+          defaultUri = vscode.Uri.file(parentPath);
+        }
+
+        const newFolder = await DialogUtils.showFolderPicker({
+          title: `Select New Project Folder for Host App "${rootFolder.name}"`,
+          openLabel: `Select "${rootFolder.name}" Project Folder`,
+          defaultUri: defaultUri,
+          validateFolder: async (folderPath: string) => {
+            const packageJsonPath = path.join(folderPath, 'package.json');
+            if (!fsSync.existsSync(packageJsonPath)) {
+              const continueAnyway = await DialogUtils.showConfirmation(
+                'The selected folder doesn\'t contain a package.json file.',
+                {
+                  detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
+                  confirmText: 'Continue Anyway',
+                  cancelText: 'Select Different Folder'
+                }
+              );
+              return { valid: continueAnyway, message: 'Invalid Node.js project folder' };
+            }
+            return { valid: true };
+          }
+        });
+
+        if (!newFolder) {
+          await DialogUtils.showWarning(
+            `No folder selected for Host app "${rootFolder.name}".`,
+            {
+              detail: 'Folder configuration was not changed.'
+            }
+          );
+          return;
+        }
+        
+        // Update the root folder path
+        const oldPath = rootFolder.path;
+        rootFolder.path = newFolder;
+        this.log(`Updated project folder for Host app ${rootFolder.name}: ${newFolder}`);
+        
+        // Update the rootConfigs map with the new path
+        const configs = this.rootConfigs.get(oldPath);
+        if (configs) {
+          this.rootConfigs.delete(oldPath);
+          this.rootConfigs.set(newFolder, configs);
+        }
+        
+        // Re-detect package manager for the new folder
+        if (fsSync.existsSync(path.join(newFolder, 'package-lock.json'))) {
+          packageManager = 'npm';
+        } else if (fsSync.existsSync(path.join(newFolder, 'yarn.lock'))) {
+          packageManager = 'yarn';
+        } else if (fsSync.existsSync(path.join(newFolder, 'pnpm-lock.yaml'))) {
+          packageManager = 'pnpm';
+        } else {
+          packageManager = 'npm'; // Default to npm
+        }
+        
+        // Save the updated configuration
+        await this.saveRootFolderConfig(rootFolder);
+        
+        // Refresh the tree view to reflect changes
+        this.refresh();
+        
+        await DialogUtils.showSuccess(`Updated project folder for ${rootFolder.name}`);
+        return;
+      }
       
-      // Save Host folder configuration
-      await this.saveRootFolderConfig(rootFolder);
-      
-      // Refresh the tree view
-      this.refresh();
-      
-      await DialogUtils.showSuccess(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
+      // Handle start command editing
+      if (selectedOption.label.includes('Edit Start Command')) {
+        // Ask user for start command using the enhanced command config dialog
+        const startCommand = await DialogUtils.showCommandConfig({
+          title: `Configure Start Command for ${rootFolder.name}`,
+          commandType: 'start',
+          currentCommand: rootFolder.startCommand,
+          packageManager: packageManager,
+          projectPath: rootFolder.path
+        });
+        
+        if (startCommand !== undefined) { // Allow empty string but not undefined (cancelled)
+          rootFolder.startCommand = startCommand;
+          
+          // Save the updated configuration
+          await this.saveRootFolderConfig(rootFolder);
+          
+          // Refresh the tree view to reflect changes
+          this.refresh();
+          
+          await DialogUtils.showSuccess(`Updated start command for ${rootFolder.name}`);
+        }
+      }
     } catch (error) {
-      this.logError(`Failed to configure serve build command for ${rootFolder.name}`, error);
-      return undefined;
+      this.logError(`Failed to edit commands for ${rootFolder.name}`, error);
+      await DialogUtils.showError(`Failed to edit commands for ${rootFolder.name}`, {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
   
