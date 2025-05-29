@@ -241,7 +241,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
               DialogUtils.showInfo(
                 'No Host directories are configured.',
                 {
-                  detail: 'Use the Add Host button to configure your first Host, then add more Hosts.',
+                  detail: 'Use the Add Host button in the toolbar to configure your first Host, then add more Hosts.',
                   actions: [
                     { title: 'Add Host' },
                     { title: 'Later', isCloseAffordance: true }
@@ -995,6 +995,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const options = [
         { label: '▶️ Edit Start Command - eg. npm run start, yarn dev, etc. the command to start the app', description: rootFolder.startCommand || 'Not configured' },
         { label: '📁 Change Project Folder', description: rootFolder.path || 'Not configured' },
+        { label: '🔗 Add External Remote', description: 'Add an external remote to this host app' },
       ];
       
       const selectedOption = await DialogUtils.showQuickPick(options, {
@@ -1102,6 +1103,20 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           
           await DialogUtils.showSuccess(`Updated start command for ${rootFolder.name}`);
         }
+      }
+
+      // Handle add external remote option
+      if (selectedOption.label.includes('Add External Remote')) {
+        // Create a temporary RemotesFolder to use with the existing addExternalRemote method
+        const remotesFolder: RemotesFolder = {
+          type: 'remotesFolder',
+          parentName: rootFolder.name,
+          remotes: [] // Start with empty remotes array
+        };
+
+        // Call a modified version of addExternalRemote that uses the rootFolder.path directly
+        await this.addExternalRemoteToHost(remotesFolder, rootFolder.path);
+        return;
       }
     } catch (error) {
       this.logError(`Failed to edit commands for ${rootFolder.name}`, error);
@@ -2373,6 +2388,101 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     } catch (error) {
       this.logError(`Failed to remove external remote ${remoteName} from configuration`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Add an external remote to a specific host (when we already know the root path)
+   */
+  async addExternalRemoteToHost(remotesFolder: RemotesFolder, targetRootPath: string): Promise<void> {
+    try {
+      this.log(`Adding external remote for host ${remotesFolder.parentName} at path ${targetRootPath}`);
+      
+      // Get the remote name from user
+      const remoteName = await DialogUtils.showInput({
+        title: 'Add External Remote',
+        prompt: 'Enter the name of the external remote',
+        placeholder: 'e.g., shared-components, auth-service, etc.',
+        validateInput: (value: string) => {
+          if (!value || value.trim() === '') {
+            return 'Remote name is required';
+          }
+          if (!/^[a-zA-Z0-9_-]+$/.test(value.trim())) {
+            return 'Remote name can only contain letters, numbers, hyphens, and underscores';
+          }
+          return undefined;
+        }
+      });
+
+      if (!remoteName) {
+        return; // User cancelled
+      }
+
+      // Get the remote URL from user
+      const remoteUrl = await DialogUtils.showInput({
+        title: 'Add External Remote',
+        prompt: `Enter the URL for remote "${remoteName}"`,
+        placeholder: 'e.g., http://localhost:3001/remoteEntry.js, https://my-remote.com/remoteEntry.js',
+        validateInput: (value: string) => {
+          if (!value || value.trim() === '') {
+            return 'Remote URL is required';
+          }
+          try {
+            new URL(value.trim());
+            return undefined;
+          } catch {
+            return 'Please enter a valid URL';
+          }
+        }
+      });
+
+      if (!remoteUrl) {
+        return; // User cancelled
+      }
+
+      // Check if remote name already exists in any of the configurations for this root
+      const configs = this.rootConfigs.get(targetRootPath);
+      if (configs) {
+        for (const config of configs) {
+          const existingRemote = config.remotes.find(r => r.name === remoteName.trim());
+          if (existingRemote) {
+            await DialogUtils.showError('Remote already exists', {
+              detail: `A remote named "${remoteName.trim()}" already exists in host "${remotesFolder.parentName}"`
+            });
+            return;
+          }
+        }
+      }
+
+      // Create the external remote object
+      const externalRemote: Remote = {
+        name: remoteName.trim(),
+        url: remoteUrl.trim(),
+        folder: '', // External remotes don't have local folders
+        configType: 'external',
+        packageManager: '',
+        isExternal: true
+      };
+
+      // Save the external remote to configuration
+      await this.saveExternalRemoteConfiguration(targetRootPath, externalRemote);
+
+      // Add the external remote to all configurations in memory for this root
+      if (configs) {
+        for (const config of configs) {
+          config.remotes.push(externalRemote);
+        }
+      }
+
+      // Refresh the tree view
+      this.refresh();
+
+      await DialogUtils.showSuccess(`Added external remote "${remoteName.trim()}" to host "${remotesFolder.parentName}"`);
+    } catch (error) {
+      this.logError('Failed to add external remote', error);
+      await DialogUtils.showError('Failed to add external remote', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 }
