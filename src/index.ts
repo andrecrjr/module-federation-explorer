@@ -391,8 +391,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }),
 
-
-
       // Add command to edit commands for a remote
       vscode.commands.registerCommand('moduleFederation.editCommand', async (remote: Remote) => {
         try {
@@ -405,6 +403,29 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }),
 
+      // Add command to add external remote
+      vscode.commands.registerCommand('moduleFederation.addExternalRemote', async (remotesFolder: any) => {
+        try {
+          provider.log(`Add external remote triggered for ${remotesFolder.parentName}`);
+          await (provider as any).addExternalRemote(remotesFolder);
+        } catch (error) {
+          await DialogUtils.showError('Failed to add external remote', {
+            detail: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }),
+
+      // Add command to remove external remote
+      vscode.commands.registerCommand('moduleFederation.removeExternalRemote', async (remote: Remote) => {
+        try {
+          provider.log(`Remove external remote triggered for ${remote.name}`);
+          await (provider as any).removeExternalRemote(remote);
+        } catch (error) {
+          await DialogUtils.showError('Failed to remove external remote', {
+            detail: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }),
 
     ];
 

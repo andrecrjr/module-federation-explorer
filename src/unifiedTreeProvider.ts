@@ -548,6 +548,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const isRunning = this.runningRemotes.has(`remote-${element.name}`);
       const hasFolder = !!element.folder;
       const hasStartCommand = !!element.startCommand;
+      const isExternal = element.isExternal || element.configType === 'external';
       
       const treeItem = new vscode.TreeItem(
         element.name,
@@ -557,6 +558,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Create rich tooltip with configuration details
       let tooltip = new vscode.MarkdownString(`## Remote: ${element.name}\n\n`);
       
+      if (isExternal) {
+        tooltip.appendMarkdown(`**Type:** External Remote\n\n`);
+      }
+      
       if (element.url) {
         tooltip.appendMarkdown(`**URL:** ${element.url}\n\n`);
       }
@@ -565,21 +570,26 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         tooltip.appendMarkdown(`**Remote entry:** ${element.remoteEntry}\n\n`);
       }
       
-      if (element.folder) {
+      if (element.folder && !isExternal) {
         tooltip.appendMarkdown(`**Folder:** ${element.folder}\n\n`);
       }
       
-      if (element.startCommand) {
+      if (element.startCommand && !isExternal) {
         tooltip.appendMarkdown(`**Serve build command:** \`${element.startCommand}\`\n\n`);
       }
       
-      if (element.buildCommand) {
+      if (element.buildCommand && !isExternal) {
         tooltip.appendMarkdown(`**Build command:** \`${element.buildCommand}\`\n\n`);
       }
       
       tooltip.appendMarkdown(`**Config type:** ${element.configType}`);
       
-      if (isRunning) {
+      if (isExternal) {
+        // External remotes have different styling and context
+        treeItem.iconPath = new vscode.ThemeIcon('globe');
+        treeItem.contextValue = 'externalRemote';
+        tooltip.appendMarkdown(`\n\n$(globe) **External Remote**`);
+      } else if (isRunning) {
         tooltip.appendMarkdown(`\n\n$(play) **Running**`);
         treeItem.iconPath = new vscode.ThemeIcon('vm-running');
         treeItem.contextValue = 'runningRemote';
@@ -1530,25 +1540,57 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Go through each Host configuration
       for (const [rootPath, rootConfig] of Object.entries(safeConfig.rootConfigs)) {
-        // Skip if no remotes section
-        if (!rootConfig.remotes) {
-          continue;
+        // Process regular remotes
+        if (rootConfig.remotes) {
+          // Process each remote in this Host
+          for (const [remoteName, savedRemote] of Object.entries(rootConfig.remotes)) {
+            // Find the remote in our configs
+            for (const [configRootPath, configs] of this.rootConfigs.entries()) {
+              for (const mfeConfig of configs) {
+                for (const remote of mfeConfig.remotes) {
+                  if (remote.name === remoteName) {
+                    this.log(`Updating remote ${remote.name} with saved configuration from Host ${rootPath}`);
+                    // Update properties from saved config
+                    remote.folder = savedRemote.folder || remote.name;
+                    remote.url = savedRemote.url || remote.url;
+                    remote.packageManager = savedRemote.packageManager || remote.packageManager;
+                    remote.startCommand = savedRemote.startCommand || remote.startCommand;
+                    remote.buildCommand = savedRemote.buildCommand || remote.buildCommand;
+                  }
+                }
+              }
+            }
+          }
         }
-        
-        // Process each remote in this Host
-        for (const [remoteName, savedRemote] of Object.entries(rootConfig.remotes)) {
-          // Find the remote in our configs
-          for (const [configRootPath, configs] of this.rootConfigs.entries()) {
-            for (const mfeConfig of configs) {
-              for (const remote of mfeConfig.remotes) {
-                if (remote.name === remoteName) {
-                  this.log(`Updating remote ${remote.name} with saved configuration from Host ${rootPath}`);
-                  // Update properties from saved config
-                  remote.folder = savedRemote.folder || remote.name;
-                  remote.url = savedRemote.url || remote.url;
-                  remote.packageManager = savedRemote.packageManager || remote.packageManager;
-                  remote.startCommand = savedRemote.startCommand || remote.startCommand;
-                  remote.buildCommand = savedRemote.buildCommand || remote.buildCommand;
+
+        // Process external remotes
+        if (rootConfig.externalRemotes) {
+          this.log(`Loading ${Object.keys(rootConfig.externalRemotes).length} external remotes for root ${rootPath}`);
+          
+          // Find the configurations for this root path
+          const configs = this.rootConfigs.get(rootPath);
+          if (configs) {
+            // Add external remotes to each configuration in this root
+            for (const [externalRemoteName, externalRemoteConfig] of Object.entries(rootConfig.externalRemotes)) {
+              this.log(`Adding external remote ${externalRemoteName} to configurations in ${rootPath}`);
+              
+              // Create the external remote object
+              const externalRemote: Remote = {
+                name: externalRemoteConfig.name,
+                url: externalRemoteConfig.url,
+                folder: '', // External remotes don't have local folders
+                configType: 'external',
+                packageManager: '',
+                isExternal: true
+              };
+
+              // Add to each configuration in this root (they should all see the same external remotes)
+              for (const mfeConfig of configs) {
+                // Check if this external remote already exists in the config
+                const existingRemote = mfeConfig.remotes.find(r => r.name === externalRemoteName && r.isExternal);
+                if (!existingRemote) {
+                  mfeConfig.remotes.push(externalRemote);
+                  this.log(`Added external remote ${externalRemoteName} to config ${mfeConfig.name}`);
                 }
               }
             }
@@ -2077,6 +2119,260 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       await DialogUtils.showError(`Failed to edit commands for ${remote.name}`, {
         detail: error instanceof Error ? error.message : String(error)
       });
+    }
+  }
+
+  /**
+   * Add an external remote to the current host
+   */
+  async addExternalRemote(remotesFolder: RemotesFolder): Promise<void> {
+    try {
+      this.log(`Adding external remote for host ${remotesFolder.parentName}`);
+      
+      // Get the remote name from user
+      const remoteName = await DialogUtils.showInput({
+        title: 'Add External Remote',
+        prompt: 'Enter the name of the external remote',
+        placeholder: 'e.g., shared-components, auth-service, etc.',
+        validateInput: (value: string) => {
+          if (!value || value.trim() === '') {
+            return 'Remote name is required';
+          }
+          if (!/^[a-zA-Z0-9_-]+$/.test(value.trim())) {
+            return 'Remote name can only contain letters, numbers, hyphens, and underscores';
+          }
+          return undefined;
+        }
+      });
+
+      if (!remoteName) {
+        return; // User cancelled
+      }
+
+      // Get the remote URL from user
+      const remoteUrl = await DialogUtils.showInput({
+        title: 'Add External Remote',
+        prompt: `Enter the URL for remote "${remoteName}"`,
+        placeholder: 'e.g., http://localhost:3001/remoteEntry.js, https://my-remote.com/remoteEntry.js',
+        validateInput: (value: string) => {
+          if (!value || value.trim() === '') {
+            return 'Remote URL is required';
+          }
+          try {
+            new URL(value.trim());
+            return undefined;
+          } catch {
+            return 'Please enter a valid URL';
+          }
+        }
+      });
+
+      if (!remoteUrl) {
+        return; // User cancelled
+      }
+
+      // Find the root path for this remotes folder
+      let targetRootPath = '';
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          if (config.name === remotesFolder.parentName) {
+            targetRootPath = rootPath;
+            break;
+          }
+        }
+        if (targetRootPath) break;
+      }
+
+      if (!targetRootPath) {
+        await DialogUtils.showError('Failed to find host configuration', {
+          detail: `Could not find configuration for host "${remotesFolder.parentName}"`
+        });
+        return;
+      }
+
+      // Check if remote name already exists
+      const existingRemote = remotesFolder.remotes.find(r => r.name === remoteName.trim());
+      if (existingRemote) {
+        await DialogUtils.showError('Remote already exists', {
+          detail: `A remote named "${remoteName.trim()}" already exists in host "${remotesFolder.parentName}"`
+        });
+        return;
+      }
+
+      // Create the external remote object
+      const externalRemote: Remote = {
+        name: remoteName.trim(),
+        url: remoteUrl.trim(),
+        folder: '', // External remotes don't have local folders
+        configType: 'external',
+        packageManager: '',
+        isExternal: true
+      };
+
+      // Save the external remote to configuration
+      await this.saveExternalRemoteConfiguration(targetRootPath, externalRemote);
+
+      // Add the external remote to the current configuration in memory
+      remotesFolder.remotes.push(externalRemote);
+
+      // Refresh the tree view
+      this.refresh();
+
+      await DialogUtils.showSuccess(`Added external remote "${remoteName.trim()}" to host "${remotesFolder.parentName}"`);
+    } catch (error) {
+      this.logError('Failed to add external remote', error);
+      await DialogUtils.showError('Failed to add external remote', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  /**
+   * Save external remote configuration
+   */
+  private async saveExternalRemoteConfiguration(rootPath: string, externalRemote: Remote): Promise<void> {
+    try {
+      this.log(`Saving external remote configuration for ${externalRemote.name} in root ${rootPath}`);
+      
+      // Get current config
+      const config = await this.rootConfigManager.loadRootConfig();
+      if (!config) {
+        throw new Error('No configuration found');
+      }
+
+      // Ensure rootConfigs exists
+      if (!config.rootConfigs) {
+        config.rootConfigs = {};
+      }
+
+      // Ensure the config for this root exists
+      if (!config.rootConfigs[rootPath]) {
+        config.rootConfigs[rootPath] = {};
+      }
+
+      // Ensure externalRemotes section exists for this root
+      if (!config.rootConfigs[rootPath].externalRemotes) {
+        config.rootConfigs[rootPath].externalRemotes = {};
+      }
+
+      // Store external remote configuration
+      config.rootConfigs[rootPath].externalRemotes![externalRemote.name] = {
+        name: externalRemote.name,
+        url: externalRemote.url!,
+        configType: 'external',
+        isExternal: true
+      };
+
+      // Save the config
+      await this.rootConfigManager.saveRootConfig(config);
+
+      this.log(`Saved external remote configuration for ${externalRemote.name} in root ${rootPath}`);
+    } catch (error) {
+      this.logError(`Failed to save external remote configuration for ${externalRemote.name}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove an external remote
+   */
+  async removeExternalRemote(remote: Remote): Promise<void> {
+    try {
+      this.log(`Removing external remote ${remote.name}`);
+      
+      // Confirm with user
+      const confirmed = await DialogUtils.showConfirmation(
+        `Are you sure you want to remove external remote "${remote.name}"?`,
+        {
+          destructive: true,
+          confirmText: 'Remove',
+          cancelText: 'Cancel'
+        }
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      // Find the root path that contains this external remote
+      let targetRootPath = '';
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          if (config.remotes.some(r => r.name === remote.name && r.isExternal)) {
+            targetRootPath = rootPath;
+            break;
+          }
+        }
+        if (targetRootPath) break;
+      }
+
+      if (!targetRootPath) {
+        await DialogUtils.showError('Failed to find external remote configuration', {
+          detail: `Could not find configuration for external remote "${remote.name}"`
+        });
+        return;
+      }
+
+      // Remove from configuration file
+      await this.removeExternalRemoteFromConfiguration(targetRootPath, remote.name);
+
+      // Remove from memory configurations
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          const remoteIndex = config.remotes.findIndex(r => r.name === remote.name && r.isExternal);
+          if (remoteIndex !== -1) {
+            config.remotes.splice(remoteIndex, 1);
+            this.log(`Removed external remote ${remote.name} from config ${config.name}`);
+          }
+        }
+      }
+
+      // Refresh the tree view
+      this.refresh();
+
+      await DialogUtils.showSuccess(`Removed external remote "${remote.name}"`);
+    } catch (error) {
+      this.logError('Failed to remove external remote', error);
+      await DialogUtils.showError('Failed to remove external remote', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  /**
+   * Remove external remote from configuration file
+   */
+  private async removeExternalRemoteFromConfiguration(rootPath: string, remoteName: string): Promise<void> {
+    try {
+      this.log(`Removing external remote ${remoteName} from configuration in root ${rootPath}`);
+      
+      // Get current config
+      const config = await this.rootConfigManager.loadRootConfig();
+      if (!config) {
+        throw new Error('No configuration found');
+      }
+
+      // Check if the configuration structure exists
+      if (!config.rootConfigs || !config.rootConfigs[rootPath] || !config.rootConfigs[rootPath].externalRemotes) {
+        this.log(`No external remotes configuration found for root ${rootPath}`);
+        return;
+      }
+
+      // Remove the external remote
+      delete config.rootConfigs[rootPath].externalRemotes![remoteName];
+
+      // Clean up empty externalRemotes object if needed
+      if (Object.keys(config.rootConfigs[rootPath].externalRemotes!).length === 0) {
+        delete config.rootConfigs[rootPath].externalRemotes;
+      }
+
+      // Save the config
+      await this.rootConfigManager.saveRootConfig(config);
+
+      this.log(`Removed external remote ${remoteName} from configuration in root ${rootPath}`);
+    } catch (error) {
+      this.logError(`Failed to remove external remote ${remoteName} from configuration`, error);
+      throw error;
     }
   }
 }

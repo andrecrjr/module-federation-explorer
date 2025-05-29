@@ -122,6 +122,16 @@
                 "command": "moduleFederation.showFeedback",
                 "title": "Module Federation Explorer: Share Feedback",
                 "icon": "$(feedback)"
+            },
+            {
+                "command": "moduleFederation.addExternalRemote",
+                "title": "Add External Remote",
+                "icon": "$(add)"
+            },
+            {
+                "command": "moduleFederation.removeExternalRemote",
+                "title": "Remove External Remote",
+                "icon": "$(trash)"
             }
         ],
         "menus": {
@@ -180,6 +190,11 @@
                     "group": "rootApp@1"
                 },
                 {
+                    "command": "moduleFederation.addExternalRemote",
+                    "when": "view == moduleFederation && viewItem == remotesFolder",
+                    "group": "inline"
+                },
+                {
                     "command": "moduleFederation.startRemote",
                     "when": "view == moduleFederation && viewItem == remote",
                     "group": "inline"
@@ -200,6 +215,11 @@
                     "when": "view == moduleFederation && (viewItem == remote || viewItem == runningRemote)",
                     "group": "inline",
                     "icon": "$(edit)"
+                },
+                {
+                    "command": "moduleFederation.removeExternalRemote",
+                    "when": "view == moduleFederation && viewItem == externalRemote",
+                    "group": "inline"
                 }
             ]
         }

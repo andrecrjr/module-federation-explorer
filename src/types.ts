@@ -10,7 +10,8 @@ export interface Remote {
   remoteEntry?: string; // The remote entry point
   startCommand?: string; // The command to start the remote application
   buildCommand?: string; // The command to build the remote application
-  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild'; // The type of configuration that defined this remote
+  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild' | 'external'; // The type of configuration that defined this remote
+  isExternal?: boolean; // Flag to indicate if this is an external remote added by user
 }
 
 /**
@@ -60,6 +61,14 @@ export interface UnifiedRootConfig {
       remotes?: {
         [remoteName: string]: Remote;
       };
+      externalRemotes?: {
+        [remoteName: string]: {
+          name: string;
+          url: string;
+          configType: 'external';
+          isExternal: true;
+        };
+      };
     }
   };
 }
@@ -83,7 +92,7 @@ export interface DependencyGraphNode {
   id: string;
   label: string;
   type: 'host' | 'remote' | 'shared-dependency' | 'exposed-module';
-  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild';
+  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild' | 'external';
   // Enhanced metadata
   version?: string;
   url?: string;

@@ -156,11 +156,20 @@ export class DependencyGraphManager {
               configType: remote.configType || 'external',
               url: remote.url,
               size: 1,
-              group: 'remotes'
+              group: remote.isExternal || remote.configType === 'external' ? 'external-remotes' : 'remotes'
             };
             nodeMap.set(externalRemoteId, externalRemoteNode);
             graph.nodes.push(externalRemoteNode);
             graph.metadata!.totalRemotes++;
+            
+            log(`[Graph] Created external remote node: ${JSON.stringify({
+              id: externalRemoteId,
+              name: remote.name,
+              url: remote.url,
+              configType: remote.configType,
+              isExternal: remote.isExternal,
+              group: externalRemoteNode.group
+            })}`);
           } else {
             // Update existing external remote with more information if available
             const existingNode = nodeMap.get(externalRemoteId)!;
@@ -169,6 +178,10 @@ export class DependencyGraphManager {
             }
             if (remote.configType && existingNode.configType !== remote.configType) {
               existingNode.configType = remote.configType;
+            }
+            // Update group if this is an external remote
+            if (remote.isExternal || remote.configType === 'external') {
+              existingNode.group = 'external-remotes';
             }
             // Increment size to reflect multiple consumers
             existingNode.size = (existingNode.size || 1) + 1;
