@@ -1,130 +1,147 @@
 # Module Federation Explorer for Visual Studio Code
 
 <div style="display:flex;width:100%;justify-content:center">
-<img src="./media/mfe-explorer-logo-big.png" alt="Texto alternativo" width="450"/>
+<img src="./media/mfe-explorer-logo-big.png" alt="Module Federation Explorer Logo" width="450"/>
 </div>
 
+The **Module Federation Explorer** is a Visual Studio Code extension designed for **local development** that helps you explore, manage, and orchestrate Module Federation applications directly from your workspace. With integrated terminal support, you can start, stop, and monitor your micro-frontends without leaving your editor.
 
-The **Module Federation Explorer** is a Visual Studio Code extension that helps you explore and manage Module Federation remotes in your workspace. It provides an intuitive interface to visualize and interact with your Module Federation configurations across Webpack, Vite, and ModernJS platforms.
+## 🚀 Key Highlights
 
-## Usage
+- **Local Development First**: Built specifically for local development workflows
+- **Terminal Integration**: Execute commands directly in VS Code's integrated terminal
+- **Multi-Platform Support**: Works with Webpack, Vite, and ModernJS Module Federation setups
+- **Zero Configuration**: Automatically detects your Module Federation configurations
+- **Visual Management**: Tree view interface for easy navigation and control
 
-### Getting Started
+## 📋 Prerequisites
 
-1. **Create a Configuration File**: 
-   - Before adding hosts, you need to configure your settings. This involves setting up your configuration file. You can do this by clicking on the gear icon in the Module Federation Explorer view or using the command:
-     - `Module Federation: Change Configuration File`
+- Visual Studio Code version 1.80.0 or higher
+- Node.js and a package manager (npm, yarn, or pnpm)
+- A local workspace with Module Federation configuration
 
-2. **Activate the Extension**:
-   - The extension will automatically activate when you open a workspace containing:
-     - A `webpack.config.js` or `webpack.config.ts` file
-     - A `vite.config.js` or `vite.config.ts` file
-     - A `module-federation.config.js` or `module-federation.config.ts` file
-     - A `.vscode/mf-explorer.roots.json` file
-
-3. **Access the Module Federation Explorer**:
-   - Look for the "Module Federation Explorer" view in the VS Code explorer sidebar.
-
-## Features
-
-- **Root Folder Management**:
-  - Add and remove host folders for Module Federation projects
-  - Configure and manage multiple root applications with custom start commands
-  - Automatic detection of Webpack, Vite, and ModernJS configurations
-
-- **Remote Management**:
-  - Start and stop remote applications directly from the tree view
-  - Configure custom build and start commands for each remote
-  - Visual status indicators for running remotes
-  - Automatic package manager detection (npm, yarn, pnpm)
-
-- **Configuration Management**:
-  - Automatic detection of configuration files (`webpack.config.js`, `vite.config.js`, `module-federation.config.js`)
-  - Support for both JavaScript and TypeScript configuration files
-  - Persistent configuration storage in `.vscode/mf-explorer.roots.json`
-
-- **Navigation & Discoverability**:
-  - Open exposed module files directly from the explorer
-  - File watching for real-time configuration updates
-  - Interactive dependency graph visualization
-
-- **User Interface**:
-  - Tree view in the VS Code explorer sidebar
-  - Context menu actions for quick access to common operations
-  - Status indicators for running applications
-  - Welcome guide for first-time users
-
-## Installation
+## 🛠️ Installation
 
 1. Open Visual Studio Code
-2. Go to the Extensions Marketplace (Ctrl+Shift+X or Cmd+Shift+X on macOS)
+2. Go to the Extensions Marketplace (`Ctrl+Shift+X` or `Cmd+Shift+X` on macOS)
 3. Search for "Module Federation Explorer"
 4. Click "Install"
 
+## 🎯 Getting Started
 
-### Managing Host Folders
+### 1. Automatic Activation
+The extension automatically activates when it detects any of these files in your workspace:
+- `webpack.config.js` or `webpack.config.ts`
+- `vite.config.js` or `vite.config.ts`
+- `module-federation.config.js` or `module-federation.config.ts`
+- `.vscode/mf-explorer.roots.json`
 
-- Click the "+" button in the Module Federation Explorer view to add a host folder
-- Right-click on a host folder to:
-  - Start/stop the host application
-  - Configure the host application's start command
-  - Remove the host folder
+### 2. Initial Configuration
+Before adding hosts, set up your configuration:
+- Click the gear icon in the Module Federation Explorer view, or
+- Use Command Palette (`Ctrl/Cmd + Shift + P`) → `Module Federation: Change Configuration File`
 
-### Managing Remotes
+### 3. Access the Explorer
+Find the "Module Federation Explorer" view in your VS Code sidebar to start managing your micro-frontends.
 
-- Right-click on a remote to:
-  - Start/stop the remote application
-  - Configure build and start commands
-  - Set the remote's project folder
-  - View remote details
+## ✨ Features
 
-### Exploring Modules
+### 🏠 Host Application Management
+- **Add/Remove Hosts**: Manage multiple host applications in your workspace
+- **Custom Start Commands**: Configure specific startup commands for each host
+- **Terminal Execution**: All commands run in VS Code's integrated terminal
+- **Status Monitoring**: Visual indicators show which applications are running
 
-- View exposed modules for each remote
-- Click on an exposed module to open its source file
-- View the dependency graph to understand relationships between hosts and remotes
+### 🔗 Remote Application Control
+- **Start/Stop Remotes**: Control remote applications with a single click
+- **Custom Build Commands**: Configure build and start commands per remote
+- **Package Manager Detection**: Automatically detects npm, yarn, or pnpm
+- **Real-time Status**: See which remotes are currently running
 
-### Available Commands
+### ⚙️ Configuration Management
+- **Auto-Detection**: Automatically finds and parses configuration files
+- **Multi-Framework Support**: Webpack, Vite, and ModernJS configurations
+- **Persistent Settings**: Stores configuration in `.vscode/mf-explorer.roots.json`
+- **File Watching**: Real-time updates when configurations change
 
-- `Module Federation: Refresh` - Refresh the Module Federation view
-- `Module Federation: Add New Host Folder` - Add a new host folder
-- `Module Federation: Remove Host Folder` - Remove a host folder
-- `Module Federation: Change Configuration File` - Change the configuration file
-- `Module Federation: Start Host App` - Start the host application
-- `Module Federation: Stop Host App` - Stop the host application
-- `Module Federation: Configure Root App` - Configure the host application
-- `Module Federation: Show Dependency Graph` - Visualize the module federation architecture
-- `Module Federation: Start Remote` - Start a remote application
-- `Module Federation: Stop Remote` - Stop a remote application
-- `Module Federation: Show Welcome` - Show the welcome page
-- `Module Federation: Open View` - Open the Module Federation Explorer view
-- `Module Federation: Focus View` - Focus on the Module Federation Explorer view
+### 🧭 Navigation & Discovery
+- **Module Explorer**: Browse exposed modules from each remote
+- **Direct File Access**: Click to open module source files
+- **Dependency Visualization**: Interactive graph showing host-remote relationships
+- **Quick Navigation**: Jump between related files and configurations
 
-## Requirements
+## 📖 Usage Guide
 
-- Visual Studio Code version 1.80.0 or higher
-- A workspace with Module Federation configuration (Webpack, Vite, or ModernJS)
+### Managing Hosts
+1. **Add Host**: Click the "+" button in the explorer view
+2. **Configure**: Right-click on any host to:
+   - Start/stop the application (runs in terminal)
+   - Modify start commands
+   - Remove from workspace
 
-## Extension Settings
+### Controlling Remotes
+1. **Start/Stop**: Right-click on any remote for quick actions
+2. **Configure**: Set custom build and start commands
+3. **Monitor**: Visual status indicators show running state
+4. **Navigate**: Click on exposed modules to view source code
 
-The extension automatically detects and processes Module Federation configurations in your workspace. It supports:
+### Terminal Integration
+All operations execute in VS Code's integrated terminal, giving you:
+- Full visibility of command output
+- Ability to interact with running processes
+- Standard terminal features (scrollback, search, etc.)
+- Multiple terminal sessions for concurrent operations
 
-- Webpack configuration files (`webpack.config.js`, `webpack.config.ts`)
-- Vite configuration files (`vite.config.js`, `vite.config.ts`)
-- ModernJS configuration files (`module-federation.config.js`, `module-federation.config.ts`)
+## 🎮 Available Commands
 
-## Support
+Access these via Command Palette (`Ctrl/Cmd + Shift + P`):
 
-If you find this extension helpful, you can support the developer:
+| Command | Description |
+|---------|-------------|
+| `Module Federation: Refresh` | Refresh the explorer view |
+| `Module Federation: Add New Host Folder` | Add a new host application |
+| `Module Federation: Remove Host Folder` | Remove a host from workspace |
+| `Module Federation: Change Configuration File` | Update configuration settings |
+| `Module Federation: Start Host App` | Start the host application |
+| `Module Federation: Stop Host App` | Stop the host application |
+| `Module Federation: Configure Root App` | Configure host settings |
+| `Module Federation: Show Dependency Graph` | Visualize architecture |
+| `Module Federation: Start Remote` | Start a remote application |
+| `Module Federation: Stop Remote` | Stop a remote application |
+| `Module Federation: Show Welcome` | Display welcome guide |
+| `Module Federation: Open View` | Open the explorer view |
+| `Module Federation: Focus View` | Focus on the explorer |
+
+## 🔧 Supported Configurations
+
+The extension automatically detects and works with:
+
+- **Webpack**: `webpack.config.js`, `webpack.config.ts`
+- **Vite**: `vite.config.js`, `vite.config.ts`
+- **ModernJS**: `module-federation.config.js`, `module-federation.config.ts`
+
+Both JavaScript and TypeScript configuration files are supported.
+
+## 💡 Tips for Local Development
+
+- **Multiple Terminals**: The extension creates separate terminal sessions for each application
+- **Port Management**: Ensure your hosts and remotes use different ports
+- **Hot Reload**: Changes to configurations are automatically detected
+- **Dependency Tracking**: Use the dependency graph to understand your architecture
+
+## 🤝 Support the Project
+
+If this extension improves your Module Federation development experience:
 
 <a href="https://ko-fi.com/andrecrjr">
-  <img src="https://cdn.prod.website-files.com/5c14e387dab576fe667689cf/670f5a01c01ea9191809398c_support_me_on_kofi_blue-p-500.png" alt="KoFi Donation" width="200"/>
+  <img src="https://cdn.prod.website-files.com/5c14e387dab576fe667689cf/670f5a01c01ea9191809398c_support_me_on_kofi_blue-p-500.png" alt="Support on Ko-fi" width="200"/>
 </a>
 
-## Contributing
+## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request at [https://github.com/andrecrjr/module-federation-explorer](https://github.com/andrecrjr/module-federation-explorer).
+We welcome contributions! Please submit Pull Requests at:
+[https://github.com/andrecrjr/module-federation-explorer](https://github.com/andrecrjr/module-federation-explorer)
 
-## License
+## 📄 License
 
 This extension is released under the MIT License.

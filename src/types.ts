@@ -10,7 +10,8 @@ export interface Remote {
   remoteEntry?: string; // The remote entry point
   startCommand?: string; // The command to start the remote application
   buildCommand?: string; // The command to build the remote application
-  configType: 'webpack' | 'vite' | 'modernjs'; // The type of configuration that defined this remote
+  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild' | 'external'; // The type of configuration that defined this remote
+  isExternal?: boolean; // Flag to indicate if this is an external remote added by user
 }
 
 /**
@@ -30,7 +31,8 @@ export interface ModuleFederationConfig {
   name: string;
   remotes: Remote[];
   exposes: ExposedModule[];
-  configType: 'webpack' | 'vite' | 'modernjs';
+  shared: SharedDependency[]; // Add shared dependencies
+  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild';
   configPath: string;
 }
 
@@ -46,15 +48,7 @@ export interface ExposesFolder {
   exposes: ExposedModule[];
 }
 
-/**
- * Represents a federation root directory
- */
-export interface FederationRoot {
-  type: 'federationRoot';
-  path: string;
-  name: string;
-  configs: ModuleFederationConfig[];
-}
+
 
 /**
  * Represents the unified federation root structure
@@ -67,12 +61,20 @@ export interface UnifiedRootConfig {
       remotes?: {
         [remoteName: string]: Remote;
       };
+      externalRemotes?: {
+        [remoteName: string]: {
+          name: string;
+          url: string;
+          configType: 'external';
+          isExternal: true;
+        };
+      };
     }
   };
 }
 
 /**
- * Represents a root directory in the tree view
+ * Represents a root federation directory in the tree view
  */
 export interface RootFolder {
   type: 'rootFolder';
@@ -89,8 +91,16 @@ export interface RootFolder {
 export interface DependencyGraphNode {
   id: string;
   label: string;
-  type: 'host' | 'remote';
-  configType: 'webpack' | 'vite' | 'modernjs';
+  type: 'host' | 'remote' | 'shared-dependency' | 'exposed-module';
+  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild' | 'external';
+  // Enhanced metadata
+  version?: string;
+  url?: string;
+  status?: 'running' | 'stopped' | 'unknown';
+  exposedModules?: string[];
+  sharedDependencies?: string[];
+  size?: number; // For visual sizing based on connections
+  group?: string; // For grouping related nodes
 }
 
 /**
@@ -100,6 +110,21 @@ export interface DependencyGraphEdge {
   from: string;
   to: string;
   label?: string;
+  type: 'consumes' | 'exposes' | 'shares' | 'depends-on';
+  strength?: number; // For visual weight of the relationship
+  bidirectional?: boolean;
+}
+
+/**
+ * Represents shared dependency information
+ */
+export interface SharedDependency {
+  name: string;
+  version?: string;
+  singleton?: boolean;
+  eager?: boolean;
+  requiredVersion?: string;
+  strictVersion?: boolean;
 }
 
 /**
@@ -108,4 +133,11 @@ export interface DependencyGraphEdge {
 export interface DependencyGraph {
   nodes: DependencyGraphNode[];
   edges: DependencyGraphEdge[];
+  sharedDependencies?: SharedDependency[];
+  metadata?: {
+    totalHosts: number;
+    totalRemotes: number;
+    totalSharedDeps: number;
+    totalExposedModules: number;
+  };
 } 

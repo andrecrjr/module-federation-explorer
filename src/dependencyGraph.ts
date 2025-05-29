@@ -6,7 +6,8 @@ import {
   DependencyGraphNode, 
   DependencyGraphEdge, 
   Remote, 
-  ModuleFederationConfig 
+  ModuleFederationConfig,
+  SharedDependency
 } from './types';
 import { log } from './outputChannel';
 
@@ -22,69 +23,582 @@ export class DependencyGraphManager {
    * Generate a dependency graph from the provided configurations
    */
   generateDependencyGraph(configs: Map<string, ModuleFederationConfig[]>): DependencyGraph {
+    log(`[Graph] Starting dependency graph generation with ${configs.size} root paths: ${JSON.stringify(
+      Array.from(configs.entries()).map(([path, cfgs]) => ({
+        path,
+        configCount: cfgs.length,
+        configs: cfgs.map(c => ({
+          name: c.name,
+          type: c.configType,
+          remotes: c.remotes.length,
+          exposes: c.exposes.length,
+          shared: c.shared.length
+        }))
+      }))
+    )}`);
     const graph: DependencyGraph = {
       nodes: [],
-      edges: []
+      edges: [],
+      sharedDependencies: [],
+      metadata: {
+        totalHosts: 0,
+        totalRemotes: 0,
+        totalSharedDeps: 0,
+        totalExposedModules: 0
+      }
     };
     
     const nodeMap = new Map<string, DependencyGraphNode>();
+    const exposedModulesMap = new Map<string, string[]>(); // Track exposed modules per app
+    const remoteToHostMap = new Map<string, string[]>(); // Track which hosts consume each remote
+    const appCapabilities = new Map<string, { isHost: boolean; isRemote: boolean; config: ModuleFederationConfig }>(); // Track app capabilities
     
-    // Process all configs to create nodes and edges
+    // First pass: Analyze all applications to determine their capabilities (host, remote, or both)
     configs.forEach((rootConfigs, rootPath) => {
       rootConfigs.forEach(config => {
-        // Add the host application as a node
-        // Include the rootPath in the host ID to ensure uniqueness across different roots
+        // Skip configurations without names
+        if (!config.name || config.name.trim() === '') {
+          log(`[Graph] ⚠️  Skipping config without name in ${rootPath}: ${JSON.stringify(config)}`);
+          return;
+        }
         const rootPathHash = this.hashPath(rootPath);
-        const hostId = `${rootPathHash}-${config.name}-${config.configType}`;
-        if (!nodeMap.has(hostId)) {
-          const hostNode: DependencyGraphNode = {
-            id: hostId,
-            label: config.name,
-            type: 'host',
-            configType: config.configType
-          };
-          nodeMap.set(hostId, hostNode);
-          graph.nodes.push(hostNode);
+        const appId = `${rootPathHash}-${config.name}-${config.configType}`;
+        
+        // Log potential self-reference scenarios
+        const selfReferencingRemotes = config.remotes.filter(remote => remote.name === config.name);
+        if (selfReferencingRemotes.length > 0) {
+          log(`[Graph] 🔍 Detected potential self-reference in app '${config.name}': ${JSON.stringify({
+            appId,
+            appName: config.name,
+            selfReferencingRemotes: selfReferencingRemotes.map(r => ({ name: r.name, url: r.url })),
+            allRemotes: config.remotes.map(r => ({ name: r.name, url: r.url }))
+          })}`);
         }
         
-        // Process remotes
-        config.remotes.forEach(remote => {
-          // For remotes, include the host ID they're connected to in their ID
-          // This ensures remotes are properly connected to the correct host
-          const remoteId = `${rootPathHash}-${remote.name}-${remote.configType}`;
-          
-          // Add remote as a node if not already added
-          if (!nodeMap.has(remoteId)) {
-            const remoteNode: DependencyGraphNode = {
-              id: remoteId,
-              label: remote.name,
-              type: 'remote',
-              configType: remote.configType
-            };
-            nodeMap.set(remoteId, remoteNode);
-            graph.nodes.push(remoteNode);
-          }
-          
-          // Add edge from host to remote
-          const edge: DependencyGraphEdge = {
-            from: hostId,
-            to: remoteId
-          };
-          
-          // Check if we have an entry point URL to add as a label
-          if (remote.url) {
-            edge.label = remote.url;
-          }
-          
-          graph.edges.push(edge);
+        // Revised logic for Module Federation roles:
+        // - Host: Consumes remotes (has remotes array) 
+        // - Remote: Exposes modules to be consumed by others (has exposes array)
+        // - Bidirectional: Both consumes remotes AND exposes modules
+        const hasRemotes = config.remotes.length > 0;
+        const hasExposes = config.exposes.length > 0;
+        
+        // Determine roles based on actual capabilities
+        const isHost = hasRemotes; // Only true hosts consume remotes
+        const isRemote = hasExposes; // Only true remotes expose modules
+        const isBidirectional = hasRemotes && hasExposes; // Both consume and expose
+        
+        // If app has neither remotes nor exposes, treat it as a standalone host
+        const isStandaloneHost = !hasRemotes && !hasExposes;
+        
+        appCapabilities.set(appId, {
+          isHost: isHost || isStandaloneHost || isBidirectional,
+          isRemote: isRemote || isBidirectional,
+          config
         });
+        
+        log(`[Graph] App '${config.name}' capabilities: ${JSON.stringify({
+          isHost: isHost || isStandaloneHost || isBidirectional,
+          isRemote: isRemote || isBidirectional,
+          isBidirectional,
+          isStandaloneHost,
+          hasRemotes,
+          hasExposes,
+          remotesCount: config.remotes.length,
+          exposesCount: config.exposes.length,
+          sharedCount: config.shared.length,
+          configType: config.configType,
+          role: isBidirectional ? 'bidirectional' : (isHost ? 'host' : (isRemote ? 'remote' : 'standalone'))
+        })}`);
+        
+        // Track exposed modules for later reference
+        if (config.exposes.length > 0) {
+          exposedModulesMap.set(appId, config.exposes.map(e => e.name));
+        }
       });
     });
     
-    // Debug log the graph data to help troubleshooting
-    console.log(`Generated dependency graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges`);
+    // Second pass: Build the remote consumption map first
+    appCapabilities.forEach((capabilities, appId) => {
+      const { config } = capabilities;
+      
+      // Track remote consumption relationships
+      config.remotes.forEach(remote => {
+        // Find if this remote exists as an application in our configurations
+        const remoteAppId = this.findAppIdByName(remote.name, appCapabilities);
+        
+        log(`[Graph] Processing remote '${remote.name}' for app '${config.name}': ${JSON.stringify({
+          remoteAppId: remoteAppId ? 'found in workspace' : 'not in workspace',
+          remoteUrl: remote.url,
+          remoteConfigType: remote.configType,
+          isSelfReference: remoteAppId === appId
+        })}`);
+        
+        // Skip self-references to prevent self-loops
+        if (remoteAppId === appId) {
+          log(`[Graph] ⚠️  Skipping self-reference: app '${config.name}' references itself as remote '${remote.name}'`);
+          return;
+        }
+        
+        if (remoteAppId) {
+          // This remote is another app in our workspace
+          if (!remoteToHostMap.has(remoteAppId)) {
+            remoteToHostMap.set(remoteAppId, []);
+          }
+          remoteToHostMap.get(remoteAppId)!.push(appId);
+        } else {
+          // This remote is not in our workspace - create a regular remote node for it
+          const externalRemoteId = `external-${remote.name}`;
+          if (!nodeMap.has(externalRemoteId)) {
+            const externalRemoteNode: DependencyGraphNode = {
+              id: externalRemoteId,
+              label: remote.name,
+              type: 'remote',
+              configType: remote.configType || 'external',
+              url: remote.url,
+              size: 1,
+              group: remote.isExternal || remote.configType === 'external' ? 'external-remotes' : 'remotes'
+            };
+            nodeMap.set(externalRemoteId, externalRemoteNode);
+            graph.nodes.push(externalRemoteNode);
+            graph.metadata!.totalRemotes++;
+            
+            log(`[Graph] Created external remote node: ${JSON.stringify({
+              id: externalRemoteId,
+              name: remote.name,
+              url: remote.url,
+              configType: remote.configType,
+              isExternal: remote.isExternal,
+              group: externalRemoteNode.group
+            })}`);
+          } else {
+            // Update existing external remote with more information if available
+            const existingNode = nodeMap.get(externalRemoteId)!;
+            if (remote.url && !existingNode.url) {
+              existingNode.url = remote.url;
+            }
+            if (remote.configType && existingNode.configType !== remote.configType) {
+              existingNode.configType = remote.configType;
+            }
+            // Update group if this is an external remote
+            if (remote.isExternal || remote.configType === 'external') {
+              existingNode.group = 'external-remotes';
+            }
+            // Increment size to reflect multiple consumers
+            existingNode.size = (existingNode.size || 1) + 1;
+          }
+          
+          // Track the relationship
+          if (!remoteToHostMap.has(externalRemoteId)) {
+            remoteToHostMap.set(externalRemoteId, []);
+          }
+          remoteToHostMap.get(externalRemoteId)!.push(appId);
+        }
+      });
+    });
+    
+    // Third pass: Create unified nodes based on capabilities and consumption relationships
+    appCapabilities.forEach((capabilities, appId) => {
+      const { isHost, isRemote, config } = capabilities;
+      
+      // Determine basic capabilities
+      const hasRemotes = config.remotes.length > 0;
+      const hasExposes = config.exposes.length > 0;
+      
+      // Check if this app is being consumed as a remote by other apps (now the map is complete)
+      const isConsumedAsRemote = remoteToHostMap.has(appId);
+      
+      // Determine the primary type based on actual usage patterns
+      let nodeType: 'host' | 'remote';
+      let nodeGroup: string;
+      
+      if (hasRemotes && hasExposes) {
+        // Bidirectional: both consumes and exposes
+        if (isConsumedAsRemote) {
+          // True bidirectional - consumed by others AND consumes others
+          nodeType = 'host'; // Keep as host since it actively consumes
+          nodeGroup = 'bidirectional';
+        } else {
+          // Self-contained bidirectional - has both capabilities but not consumed
+          nodeType = 'host';
+          nodeGroup = 'hosts';
+        }
+      } else if (hasRemotes && !hasExposes) {
+        // Pure consumer - only consumes remotes
+        nodeType = 'host';
+        nodeGroup = 'hosts';
+      } else if (!hasRemotes && hasExposes) {
+        // Pure provider - only exposes modules
+        if (isConsumedAsRemote) {
+          // This app is being consumed as a remote by other apps
+          nodeType = 'remote';
+          nodeGroup = 'remotes';
+        } else {
+          // Exposes modules but nobody is consuming it (orphaned provider)
+          nodeType = 'host'; // Still treat as host since it's a workspace app
+          nodeGroup = 'hosts';
+        }
+      } else {
+        // Standalone app - neither consumes nor exposes
+        nodeType = 'host';
+        nodeGroup = 'hosts';
+      }
+      
+      log(`[Graph] App '${config.name}' node type determination: ${JSON.stringify({
+        isHost,
+        isRemote,
+        nodeType,
+        nodeGroup,
+        hasRemotes,
+        hasExposes,
+        isConsumedAsRemote,
+        remotesCount: config.remotes.length,
+        exposesCount: config.exposes.length,
+        sharedCount: config.shared.length,
+        consumedByApps: isConsumedAsRemote ? remoteToHostMap.get(appId)?.length || 0 : 0,
+        reason: (() => {
+          if (hasRemotes && hasExposes) {
+            return isConsumedAsRemote 
+              ? `bidirectional: consumes ${config.remotes.length} remotes AND consumed by ${remoteToHostMap.get(appId)?.length || 0} apps`
+              : `self-contained: has both capabilities but not consumed by others`;
+          } else if (hasRemotes && !hasExposes) {
+            return `consumer host: consumes ${config.remotes.length} remotes`;
+          } else if (!hasRemotes && hasExposes) {
+            return isConsumedAsRemote
+              ? `remote provider: exposes ${config.exposes.length} modules, consumed by ${remoteToHostMap.get(appId)?.length || 0} apps`
+              : `orphaned provider: exposes ${config.exposes.length} modules but not consumed`;
+          } else {
+            return 'standalone host (no remotes or exposes)';
+          }
+        })()
+      })}`);
+      
+      // Create a single unified node for this application
+      const appNode: DependencyGraphNode = {
+        id: appId,
+        label: config.name,
+        type: nodeType,
+        configType: config.configType,
+        exposedModules: hasExposes ? config.exposes.map(e => e.name) : undefined,
+        sharedDependencies: config.shared.map(s => s.name),
+        size: Math.max(1, config.remotes.length + config.exposes.length + config.shared.length),
+        group: nodeGroup
+      };
+      
+      nodeMap.set(appId, appNode);
+      graph.nodes.push(appNode);
+      
+      // Update metadata based on capabilities
+      if (isHost) {
+        graph.metadata!.totalHosts++;
+      }
+      if (isRemote) {
+        graph.metadata!.totalRemotes++;
+      }
+      if (config.exposes.length > 0) {
+        graph.metadata!.totalExposedModules += config.exposes.length;
+      }
+      
+      // Track exposed modules for later reference
+      if (config.exposes.length > 0) {
+        exposedModulesMap.set(appId, config.exposes.map(e => e.name));
+      }
+    });
+    
+    // Fourth pass: Create consolidated consumption edges (avoid overlapping bidirectional edges)
+    const edgeMap = new Map<string, DependencyGraphEdge>(); // Track unique edges
+    const processedPairs = new Set<string>(); // Track processed node pairs
+    
+    remoteToHostMap.forEach((hostIds, remoteId) => {
+      hostIds.forEach(hostId => {
+        const hostNode = nodeMap.get(hostId);
+        const remoteNode = nodeMap.get(remoteId);
+        
+        if (hostNode && remoteNode) {
+          // Skip self-loops (safety check)
+          if (hostId === remoteId) {
+            log(`[Graph] ⚠️  Skipping self-loop edge for app '${hostNode.label}'`);
+            return;
+          }
+          
+          // Create a unique pair identifier (always use lexicographically smaller ID first)
+          const pairId = hostId < remoteId ? `${hostId}-${remoteId}` : `${remoteId}-${hostId}`;
+          
+          // Skip if we've already processed this pair
+          if (processedPairs.has(pairId)) {
+            return;
+          }
+          
+          // Check if this is a bidirectional relationship
+          const isHostAlsoRemote = remoteToHostMap.has(hostId) && remoteToHostMap.get(hostId)!.includes(remoteId);
+          
+          // Find the specific remote configuration for edge labeling
+          const hostConfig = appCapabilities.get(hostId)?.config;
+          const remoteConfig = hostConfig?.remotes.find(r => 
+            this.findAppIdByName(r.name, appCapabilities) === remoteId || 
+            `external-${r.name}` === remoteId
+          );
+          
+          // Ensure remote node has proper URL information
+          if (remoteConfig?.url && !remoteNode.url) {
+            remoteNode.url = remoteConfig.url;
+          }
+          
+          let edge: DependencyGraphEdge;
+          
+          if (isHostAlsoRemote) {
+            // Bidirectional relationship - create a single bidirectional edge
+            edge = {
+            from: hostId,
+              to: remoteId,
+              type: 'consumes',
+              label: `↔ ${remoteConfig?.url || remoteNode.url || remoteNode.label}`,
+              strength: 1.5, // Stronger connection for bidirectional
+              bidirectional: true
+            };
+            
+            log(`[Graph] Created bidirectional consume edge: ${hostNode.label} ↔ ${remoteNode.label}`);
+          } else {
+            // Unidirectional relationship
+            edge = {
+              from: hostId,
+              to: remoteId,
+              type: 'consumes',
+              label: remoteConfig?.url || remoteNode.url || remoteNode.label,
+              strength: 1,
+              bidirectional: false
+            };
+            
+            log(`[Graph] Created unidirectional consume edge: ${hostNode.label} → ${remoteNode.label}`);
+          }
+          
+          // Add the edge and mark this pair as processed
+          graph.edges.push(edge);
+          processedPairs.add(pairId);
+        }
+        });
+      });
+    
+    // Fifth pass: Create exposed module nodes for applications that expose modules
+    exposedModulesMap.forEach((moduleNames, appId) => {
+      const appNode = nodeMap.get(appId);
+      if (appNode) {
+        moduleNames.forEach(moduleName => {
+          const moduleId = `${appId}-module-${moduleName}`;
+          
+          const moduleNode: DependencyGraphNode = {
+            id: moduleId,
+            label: moduleName,
+            type: 'exposed-module',
+            configType: appNode.configType,
+            size: remoteToHostMap.get(appId)?.length || 1,
+            group: appId
+          };
+          
+          nodeMap.set(moduleId, moduleNode);
+          graph.nodes.push(moduleNode);
+          
+          // Add expose edge
+          const exposeEdge: DependencyGraphEdge = {
+            from: appId,
+            to: moduleId,
+            type: 'exposes',
+            label: moduleName,
+            strength: 1
+          };
+          
+          graph.edges.push(exposeEdge);
+        });
+      }
+    });
+    
+    // Sixth pass: Create shared dependency nodes from actual configurations
+    const sharedDepsMap = new Map<string, Set<string>>(); // Track which apps share each dependency
+    
+    // Collect all shared dependencies from configurations
+    appCapabilities.forEach((capabilities, appId) => {
+      log(`[Graph] Processing shared deps for app '${capabilities.config.name}': ${JSON.stringify({
+        appId,
+        sharedDeps: capabilities.config.shared.map(s => s.name),
+        sharedCount: capabilities.config.shared.length
+      })}`);
+      
+      capabilities.config.shared.forEach(sharedDep => {
+        if (!sharedDepsMap.has(sharedDep.name)) {
+          sharedDepsMap.set(sharedDep.name, new Set());
+        }
+        sharedDepsMap.get(sharedDep.name)!.add(appId);
+      });
+    });
+    
+    log(`[Graph] Shared dependencies map: ${JSON.stringify(Array.from(sharedDepsMap.entries()).map(([depName, appIds]) => ({
+      dependency: depName,
+      usedByApps: Array.from(appIds).map(appId => {
+        const app = Array.from(appCapabilities.entries()).find(([id]) => id === appId);
+        return app ? app[1].config.name : appId;
+      }),
+      count: appIds.size
+    })))}`);
+    
+    // Create shared dependency nodes for dependencies used by multiple apps
+    sharedDepsMap.forEach((hostIds, depName) => {
+      if (hostIds.size > 1 && depName !== '[DYNAMIC_SHARED]') {
+        log(`[Graph] Creating shared dependency node for '${depName}' used by ${hostIds.size} apps: ${JSON.stringify(
+          Array.from(hostIds).map(appId => {
+            const app = Array.from(appCapabilities.entries()).find(([id]) => id === appId);
+            return app ? app[1].config.name : appId;
+          })
+        )}`);
+        
+        const sharedDepId = `shared-${depName}`;
+        
+        // Find the most detailed shared dependency configuration
+        let sharedDepConfig: SharedDependency | undefined;
+        appCapabilities.forEach((capabilities) => {
+          const foundShared = capabilities.config.shared.find(s => s.name === depName);
+          if (foundShared && (!sharedDepConfig || Object.keys(foundShared).length > Object.keys(sharedDepConfig).length)) {
+            sharedDepConfig = foundShared;
+          }
+        });
+        
+        const sharedDepNode: DependencyGraphNode = {
+          id: sharedDepId,
+          label: depName,
+          type: 'shared-dependency',
+          configType: 'webpack',
+          size: hostIds.size,
+          group: 'shared',
+          version: sharedDepConfig?.version,
+          sharedDependencies: [depName]
+        };
+        
+        nodeMap.set(sharedDepId, sharedDepNode);
+        graph.nodes.push(sharedDepNode);
+        graph.metadata!.totalSharedDeps++;
+        
+        // Add sharing edges to all apps that use this dependency
+        hostIds.forEach(hostId => {
+          const hostNode = nodeMap.get(hostId);
+          if (hostNode) {
+            const shareEdge: DependencyGraphEdge = {
+              from: hostId,
+              to: sharedDepId,
+              type: 'shares',
+              label: depName,
+              strength: 0.5,
+              bidirectional: true
+            };
+            graph.edges.push(shareEdge);
+            
+            log(`[Graph] Created sharing edge: ${hostNode.label} ↔ ${depName}`);
+          }
+        });
+      } else {
+        log(`[Graph] Skipping shared dependency '${depName}' - used by ${hostIds.size} apps (need 2+)`);
+      }
+    });
+    
+    // Update final metadata with accurate counts
+    let consumerHosts = 0;
+    let providerHosts = 0;
+    let bidirectionalApps = 0;
+    let standaloneApps = 0;
+    let workspaceRemotes = 0;
+    
+    appCapabilities.forEach((capabilities) => {
+      const hasRemotes = capabilities.config.remotes.length > 0;
+      const hasExposes = capabilities.config.exposes.length > 0;
+      
+      if (hasRemotes && hasExposes) {
+        bidirectionalApps++;
+      } else if (hasRemotes && !hasExposes) {
+        consumerHosts++;
+      } else if (!hasRemotes && hasExposes) {
+        providerHosts++;
+      } else {
+        standaloneApps++;
+      }
+    });
+    
+    // Count workspace applications that are classified as remotes
+    workspaceRemotes = graph.nodes.filter(n => n.type === 'remote' && !n.id.startsWith('external-')).length;
+    
+    // Count external remotes
+    const externalRemotes = graph.nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length;
+    
+    // Set metadata based on actual node classifications
+    graph.metadata!.totalHosts = graph.nodes.filter(n => n.type === 'host').length;
+    graph.metadata!.totalRemotes = graph.nodes.filter(n => n.type === 'remote').length;
+    
+    // Debug log the enhanced graph data
+    log(`Generated enhanced dependency graph: ${JSON.stringify({
+      nodes: graph.nodes.length,
+      edges: graph.edges.length,
+      consumerHosts,
+      providerHosts,
+      bidirectionalApps,
+      standaloneApps,
+      workspaceRemotes,
+      externalRemotes,
+      totalHosts: graph.metadata!.totalHosts,
+      totalRemotes: graph.metadata!.totalRemotes,
+      sharedDeps: graph.metadata!.totalSharedDeps,
+      exposedModules: graph.metadata!.totalExposedModules,
+      nodeBreakdown: {
+        hostNodes: graph.nodes.filter(n => n.type === 'host').map(n => ({ label: n.label, group: n.group })),
+        remoteNodes: graph.nodes.filter(n => n.type === 'remote').map(n => ({ label: n.label, group: n.group, isExternal: n.id.startsWith('external-') }))
+      }
+    })}`);
+    
+    // Debug: Show all created nodes and their types
+    log(`[Graph] Created nodes: ${JSON.stringify(graph.nodes.map(node => ({
+      label: node.label,
+      type: node.type,
+      group: node.group,
+      size: node.size
+    })))}`);
+    
+    // Summary of self-reference prevention
+    let totalSelfReferences = 0;
+    appCapabilities.forEach((capabilities) => {
+      const selfRefs = capabilities.config.remotes.filter(remote => remote.name === capabilities.config.name);
+      totalSelfReferences += selfRefs.length;
+    });
+    
+    if (totalSelfReferences > 0) {
+      log(`[Graph] ✅ Successfully prevented ${totalSelfReferences} self-reference(s) from creating self-loop edges`);
+    }
     
     return graph;
+  }
+
+  /**
+   * Helper method to find an application ID by its name
+   */
+  private findAppIdByName(appName: string, appCapabilities: Map<string, { isHost: boolean; isRemote: boolean; config: ModuleFederationConfig }>): string | undefined {
+    // First try exact match
+    for (const [appId, capabilities] of appCapabilities.entries()) {
+      if (capabilities.config.name === appName) {
+        return appId;
+      }
+    }
+    
+    // Try case-insensitive match
+    const lowerAppName = appName.toLowerCase();
+    for (const [appId, capabilities] of appCapabilities.entries()) {
+      if (capabilities.config.name.toLowerCase() === lowerAppName) {
+        return appId;
+      }
+    }
+    
+    // Try partial match (for cases where remote name might be a subset)
+    for (const [appId, capabilities] of appCapabilities.entries()) {
+      const configName = capabilities.config.name.toLowerCase();
+      if (configName.includes(lowerAppName) || lowerAppName.includes(configName)) {
+        return appId;
+      }
+    }
+    
+    return undefined;
   }
 
   /**
@@ -154,7 +668,13 @@ export class DependencyGraphManager {
               vscode.window.showErrorMessage(`Graph Error: ${message.text}`);
               break;
             case 'loaded':
-              console.log("Dependency graph loaded successfully");
+              log("Enhanced dependency graph loaded successfully");
+              if (message.metadata) {
+                log(`Graph metadata: ${JSON.stringify(message.metadata)}`);
+              }
+              break;
+            case 'nodeClick':
+              this.handleNodeClick(message.node);
               break;
           }
         },
@@ -172,6 +692,52 @@ export class DependencyGraphManager {
   }
 
   /**
+   * Handle node click events from the webview
+   */
+  private handleNodeClick(node: DependencyGraphNode): void {
+    log(`Node clicked in graph: ${JSON.stringify(node)}`);
+    
+    // Show information about the clicked node
+    const nodeType = node.type.replace('-', ' ');
+    let message = `**${node.label}** (${nodeType})\n\n`;
+    message += `**Config Type:** ${node.configType}\n`;
+    
+    if (node.url) {
+      message += `**URL:** ${node.url}\n`;
+    }
+    
+    if (node.version) {
+      message += `**Version:** ${node.version}\n`;
+    }
+    
+    if (node.exposedModules && node.exposedModules.length > 0) {
+      message += `**Exposed Modules:** ${node.exposedModules.join(', ')}\n`;
+    }
+    
+    if (node.sharedDependencies && node.sharedDependencies.length > 0) {
+      message += `**Shared Dependencies:** ${node.sharedDependencies.join(', ')}\n`;
+    }
+    
+    if (node.size && node.size > 1) {
+      message += `**Connections:** ${node.size}\n`;
+    }
+    
+    if (node.status) {
+      message += `**Status:** ${node.status}\n`;
+    }
+    
+    if (node.group) {
+      message += `**Group:** ${node.group}\n`;
+    }
+    
+    // Show the information in a VS Code information message
+    vscode.window.showInformationMessage(
+      `Module Federation Node: ${node.label}`,
+      { modal: false, detail: message }
+    );
+  }
+
+  /**
    * Generate HTML for the webview panel
    */
     private getWebviewContent(webview: vscode.Webview, graph: DependencyGraph): string {
@@ -183,7 +749,10 @@ export class DependencyGraphManager {
         links: graph.edges.map(edge => ({
         source: edge.from,
         target: edge.to,
-        label: edge.label
+        label: edge.label,
+        type: edge.type,
+        strength: edge.strength || 1,
+        bidirectional: edge.bidirectional || false
         }))
     };
     return `<!DOCTYPE html>
@@ -191,7 +760,7 @@ export class DependencyGraphManager {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' https://d3js.org;">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' https://d3js.org https://cdn.jsdelivr.net https://unpkg.com;">
         <title>Module Federation Dependency Graph</title>
         <style>
             body, html {
@@ -199,56 +768,113 @@ export class DependencyGraphManager {
                 margin: 0;
                 padding: 0;
                 overflow: hidden;
+                font-family: var(--vscode-font-family);
             }
             #graph-container {
                 width: 100%;
                 height: 100vh;
                 background-color: var(--vscode-editor-background);
+                position: relative;
             }
-            /* Host Nodes */
+            
+            /* Enhanced Node Styles */
             .host-node {
-                fill: #007ACC; /* Vibrant blue */
-                stroke: #005A9C; /* Darker blue for border */
-                stroke-width: 2px;
+                fill: #007ACC;
+                stroke: #005A9C;
+                stroke-width: 3px;
             }
-            /* Remote Nodes */
             .remote-node {
-                fill: #6F42C1; /* Distinct purple */
-                stroke: #4B2882; /* Darker purple for border */
+                fill: #6F42C1;
+                stroke: #4B2882;
                 stroke-width: 2px;
             }
-            /* Node Labels */
-            .node-label {
-                fill: #FFFFFF; /* White text for contrast */
-                font-family: var(--vscode-font-family);
-                font-size: 12px;
-                text-anchor: middle;
-                pointer-events: none;
+            .bidirectional-node {
+                fill: url(#bidirectionalGradient);
+                stroke: #FF6B35;
+                stroke-width: 3px;
             }
-            /* Links */
+            .external-remote-node {
+                fill: #DC3545;
+                stroke: #C82333;
+                stroke-width: 2px;
+                opacity: 0.8;
+            }
+            .shared-dependency-node {
+                fill: #28A745;
+                stroke: #1E7E34;
+                stroke-width: 2px;
+            }
+            .exposed-module-node {
+                fill: #FD7E14;
+                stroke: #E55100;
+                stroke-width: 1px;
+            }
+            
+            /* Node hover effects */
+            .node:hover circle {
+                stroke-width: 4px !important;
+                filter: brightness(1.2);
+            }
+            
+            /* Enhanced Link Styles */
             .edge {
-                stroke: #9E9E9E; /* Neutral gray */
                 stroke-width: 1.5px;
+                fill: none;
+            }
+            .edge.consumes {
+                stroke: #007ACC;
+                stroke-dasharray: none;
+            }
+            .edge.consumes.bidirectional {
+                stroke: #FF6B35;
+                stroke-width: 2.5px;
+                stroke-dasharray: none;
+            }
+            .edge.exposes {
+                stroke: #FD7E14;
+                stroke-dasharray: 5,5;
+            }
+            .edge.shares {
+                stroke: #28A745;
+                stroke-dasharray: 3,3;
+                opacity: 0.7;
+            }
+            .edge.depends-on {
+                stroke: #6C757D;
+                stroke-dasharray: 2,2;
             }
             .edge:hover {
-                stroke: #FFC107; /* Highlight with yellow */
-                stroke-width: 2px;
+                stroke-width: 3px !important;
+                opacity: 1 !important;
             }
-            /* Edge Labels */
-            .edge-label {
-                fill: #FFFFFF; /* White text for contrast */
+            
+            /* Node Labels */
+            .node-label {
+                fill: #FFFFFF;
                 font-family: var(--vscode-font-family);
-                font-size: 10px;
+                font-size: 11px;
                 text-anchor: middle;
                 pointer-events: none;
+                font-weight: 500;
             }
-            /* Tooltip */
+            
+            /* Edge Labels */
+            .edge-label {
+                fill: var(--vscode-editor-foreground);
+                font-family: var(--vscode-font-family);
+                font-size: 9px;
+                text-anchor: middle;
+                pointer-events: none;
+                opacity: 0.8;
+            }
+            
+            /* Enhanced Tooltip */
             .tooltip {
                 position: absolute;
                 background: var(--vscode-editor-widget-background);
                 border: 1px solid var(--vscode-widget-border);
-                padding: 8px;
-                border-radius: 4px;
+                padding: 12px;
+                border-radius: 6px;
                 font-family: var(--vscode-font-family);
                 font-size: 12px;
                 color: var(--vscode-editor-foreground);
@@ -256,38 +882,175 @@ export class DependencyGraphManager {
                 pointer-events: none;
                 opacity: 0;
                 transition: opacity 0.2s;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                max-width: 300px;
             }
-            /* Legend */
+            .tooltip h4 {
+                margin: 0 0 8px 0;
+                color: var(--vscode-textLink-foreground);
+            }
+            .tooltip .detail {
+                margin: 4px 0;
+                font-size: 11px;
+                opacity: 0.9;
+            }
+            
+            /* Enhanced Legend */
             .legend {
                 position: absolute;
                 top: 20px;
                 right: 20px;
                 background: var(--vscode-editor-widget-background);
                 border: 1px solid var(--vscode-widget-border);
-                padding: 10px;
-                border-radius: 4px;
+                padding: 16px;
+                border-radius: 6px;
                 font-family: var(--vscode-font-family);
                 font-size: 12px;
                 color: var(--vscode-editor-foreground);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                min-width: 220px;
+                max-width: 280px;
+            }
+            .legend h3 {
+                margin: 0 0 12px 0;
+                font-size: 14px;
+                color: var(--vscode-textLink-foreground);
+            }
+            .legend-section {
+                margin-bottom: 18px;
+            }
+            .legend-section:last-child {
+                margin-bottom: 0;
+            }
+            .legend-section h4 {
+                margin: 0 0 10px 0;
+                font-size: 11px;
+                text-transform: uppercase;
+                opacity: 0.8;
+                font-weight: 600;
+                border-bottom: 1px solid var(--vscode-widget-border);
+                padding-bottom: 4px;
             }
             .legend-item {
                 display: flex;
-                align-items: center;
-                margin-bottom: 8px;
+                align-items: flex-start;
+                margin-bottom: 12px;
+                min-height: 24px;
+                line-height: 1.4;
+                clear: both;
+            }
+            .legend-item small {
+                opacity: 0.7;
+                font-size: 10px;
+                margin-left: 4px;
+                white-space: nowrap;
             }
             .legend-color {
-                width: 15px;
-                height: 15px;
-                margin-right: 8px;
-                border-radius: 3px;
+                width: 16px;
+                height: 16px;
+                margin-right: 10px;
+                margin-top: 2px;
+                border-radius: 50%;
+                border: 2px solid;
+                flex-shrink: 0;
             }
             .host-color {
-                background-color: #007ACC; /* Match host node color */
+                background-color: #007ACC;
+                border-color: #005A9C;
             }
             .remote-color {
-                background-color: #6F42C1; /* Match remote node color */
+                background-color: #6F42C1;
+                border-color: #4B2882;
             }
-            /* Loading Message */
+            .bidirectional-color {
+                background: #007ACC;
+                border: 2px solid #6F42C1;
+                box-shadow: 0 0 0 1px #FF6B35;
+                position: relative;
+                display: inline-block;
+            }
+            .external-color {
+                background-color: #DC3545;
+                border-color: #C82333;
+            }
+            .shared-color {
+                background-color: #28A745;
+                border-color: #1E7E34;
+            }
+            .module-color {
+                background-color: #FD7E14;
+                border-color: #E55100;
+            }
+            .legend-line {
+                width: 20px;
+                height: 2px;
+                margin-right: 8px;
+                border-radius: 1px;
+            }
+            .consumes-line {
+                background-color: #007ACC;
+            }
+            .bidirectional-consumes-line {
+                background-color: #FF6B35;
+                height: 3px;
+            }
+            .exposes-line {
+                background-color: #FD7E14;
+                background-image: repeating-linear-gradient(90deg, transparent, transparent 3px, #FFF 3px, #FFF 6px);
+            }
+            .shares-line {
+                background-color: #28A745;
+                background-image: repeating-linear-gradient(90deg, transparent, transparent 2px, #FFF 2px, #FFF 4px);
+            }
+            
+            /* Controls */
+            .controls {
+                position: absolute;
+                top: 20px;
+                left: 20px;
+                background: var(--vscode-editor-widget-background);
+                border: 1px solid var(--vscode-widget-border);
+                padding: 10px;
+                border-radius: 6px;
+                font-family: var(--vscode-font-family);
+                font-size: 12px;
+            }
+            .control-button {
+                background: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
+                border: none;
+                padding: 6px 12px;
+                margin: 2px;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 11px;
+            }
+            .control-button:hover {
+                background: var(--vscode-button-hoverBackground);
+            }
+            
+            /* Stats Panel */
+            .stats {
+                position: absolute;
+                bottom: 20px;
+                left: 20px;
+                background: var(--vscode-editor-widget-background);
+                border: 1px solid var(--vscode-widget-border);
+                padding: 10px;
+                border-radius: 6px;
+                font-family: var(--vscode-font-family);
+                font-size: 11px;
+                color: var(--vscode-editor-foreground);
+            }
+            .stats .stat-item {
+                margin: 2px 0;
+            }
+            .stats .stat-value {
+                font-weight: bold;
+                color: var(--vscode-textLink-foreground);
+            }
+            
+            /* Loading and Error States */
             .loading {
                 position: absolute;
                 top: 50%;
@@ -297,14 +1060,12 @@ export class DependencyGraphManager {
                 font-size: 16px;
                 color: var(--vscode-editor-foreground);
             }
-            /* Error Message */
             #error-message {
                 color: var(--vscode-errorForeground);
                 text-align: center;
                 margin-top: 20px;
                 display: none;
             }
-            /* No Data Message */
             #no-data {
                 display: none;
                 position: absolute;
@@ -323,20 +1084,80 @@ export class DependencyGraphManager {
         <div class="tooltip" id="tooltip"></div>
         <div id="error-message"></div>
         <div id="no-data">No Module Federation configurations found to display.</div>
+        
+        <div class="controls">
+            <button class="control-button" onclick="resetZoom()">Reset View</button>
+            <button class="control-button" onclick="togglePhysics()">Toggle Physics</button>
+            <button class="control-button" onclick="exportGraph()">Export</button>
+        </div>
+        
         <div class="legend">
+            <h3>Module Federation Graph</h3>
+            <div class="legend-section">
+                <h4>Node Types</h4>
             <div class="legend-item">
                 <div class="legend-color host-color"></div>
-                <span>Host Application</span>
+                <span>Host Application<br><small>(Consumes remotes or standalone)</small></span>
             </div>
             <div class="legend-item">
                 <div class="legend-color remote-color"></div>
-                <span>Remote Module</span>
+                <span>Remote Application<br><small>(Workspace apps consumed by others)</small></span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color bidirectional-color"></div>
+                <span>Bidirectional App<br><small>(Consumes remotes + consumed by others)</small></span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color external-color"></div>
+                <span>External Remote<br><small>(Outside workspace)</small></span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color shared-color"></div>
+                <span>Shared Dependency</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color module-color"></div>
+                <span>Exposed Module</span>
+            </div>
+            </div>
+            <div class="legend-section">
+                <h4>Relationships</h4>
+                <div class="legend-item">
+                    <div class="legend-line consumes-line"></div>
+                    <span>Consumes</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line bidirectional-consumes-line"></div>
+                    <span>Bidirectional Consumes</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line exposes-line"></div>
+                    <span>Exposes</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-line shares-line"></div>
+                    <span>Shares</span>
+                </div>
             </div>
         </div>
-        <div class="loading" id="loading">Loading Module Federation Dependency Graph...</div>
+        
+        <div class="stats">
+            <div class="stat-item">Hosts: <span class="stat-value" id="stat-hosts">0</span></div>
+            <div class="stat-item">Workspace Remotes: <span class="stat-value" id="stat-workspace-remotes">0</span></div>
+            <div class="stat-item">External Remotes: <span class="stat-value" id="stat-external-remotes">0</span></div>
+            <div class="stat-item">Bidirectional: <span class="stat-value" id="stat-bidirectional">0</span></div>
+            <div class="stat-item">Shared Deps: <span class="stat-value" id="stat-shared">0</span></div>
+            <div class="stat-item">Modules: <span class="stat-value" id="stat-modules">0</span></div>
+        </div>
+        
+        <div class="loading" id="loading">Loading Enhanced Module Federation Graph...</div>
         <script>
             // Store the graph data
             const graphRawData = ${JSON.stringify(d3GraphData)};
+            let simulation;
+            let svg, g, zoom;
+            let physicsEnabled = true;
+            
             // Check if we have data
             if (graphRawData.nodes.length === 0) {
                 document.getElementById('loading').style.display = 'none';
@@ -345,21 +1166,70 @@ export class DependencyGraphManager {
                 // Load D3.js from CDN
                 loadD3();
             }
+            
             // Function to load D3.js from CDN
             function loadD3() {
                 console.log("Loading D3.js from CDN...");
-                const d3Script = document.createElement('script');
-                d3Script.src = 'https://d3js.org/d3.v7.min.js';
-                d3Script.onload = () => { 
-                    console.log("D3.js loaded successfully");
-                    initializeGraph(); 
-                };
-                d3Script.onerror = (error) => {
-                    showError("Failed to load D3.js library. Please check your internet connection.");
-                    console.error("D3 load error:", error);
-                };
-                document.head.appendChild(d3Script);
+                
+                // List of CDN fallbacks
+                const d3CDNs = [
+                    'https://d3js.org/d3.v7.min.js',
+                    'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js',
+                    'https://unpkg.com/d3@7/dist/d3.min.js'
+                ];
+                
+                let currentCDNIndex = 0;
+                
+                function tryLoadD3(cdnIndex) {
+                    if (cdnIndex >= d3CDNs.length) {
+                        showError("Failed to load D3.js from all available CDNs. Please check your internet connection or try again later.");
+                        return;
+                    }
+                    
+                    console.log(\`Trying D3.js CDN \${cdnIndex + 1}/\${d3CDNs.length}: \${d3CDNs[cdnIndex]}\`);
+                    
+                    const d3Script = document.createElement('script');
+                    d3Script.src = d3CDNs[cdnIndex];
+                    
+                    // Set a timeout for loading
+                    const loadTimeout = setTimeout(() => {
+                        console.log(\`Timeout loading D3.js from \${d3CDNs[cdnIndex]}, trying next CDN...\`);
+                        d3Script.remove();
+                        tryLoadD3(cdnIndex + 1);
+                    }, 10000); // 10 second timeout
+                    
+                    d3Script.onload = () => {
+                        clearTimeout(loadTimeout);
+                        console.log("D3.js loaded successfully from:", d3CDNs[cdnIndex]);
+                        
+                        // Verify D3 is actually available
+                        if (typeof d3 !== 'undefined') {
+                            initializeGraph();
+                        } else {
+                            console.log("D3.js script loaded but d3 object not available, trying next CDN...");
+                            tryLoadD3(cdnIndex + 1);
+                        }
+                    };
+                    
+                    d3Script.onerror = (error) => {
+                        clearTimeout(loadTimeout);
+                        console.log(\`Failed to load D3.js from \${d3CDNs[cdnIndex]}:\`, error);
+                        d3Script.remove();
+                        tryLoadD3(cdnIndex + 1);
+                    };
+                    
+                    document.head.appendChild(d3Script);
+                }
+                
+                // Start loading from the first CDN
+                tryLoadD3(0);
             }
+            
+            // Logging function that works in webview context
+            function log(message, ...args) {
+                console.log('[MF Graph]', message, ...args);
+            }
+            
             // Error handling function
             function showError(message) {
                 document.getElementById('loading').style.display = 'none';
@@ -373,72 +1243,268 @@ export class DependencyGraphManager {
                         text: message
                     });
                 } catch (err) {
-                    console.error("Failed to communicate with VS Code extension:", err);
+                    console.log("Failed to communicate with VS Code extension:", err);
                 }
             }
+            
+            // Control functions
+            function resetZoom() {
+                if (svg && zoom) {
+                    svg.transition().duration(750).call(
+                        zoom.transform,
+                        d3.zoomIdentity
+                    );
+                }
+            }
+            
+            function togglePhysics() {
+                physicsEnabled = !physicsEnabled;
+                if (simulation) {
+                    if (physicsEnabled) {
+                        simulation.alpha(0.3).restart();
+                    } else {
+                        simulation.stop();
+                    }
+                }
+            }
+            
+            function exportGraph() {
+                // Simple export functionality
+                const graphData = {
+                    nodes: graphRawData.nodes,
+                    links: graphRawData.links,
+                    metadata: ${JSON.stringify(graph.metadata || {})}
+                };
+                const dataStr = JSON.stringify(graphData, null, 2);
+                const dataBlob = new Blob([dataStr], {type: 'application/json'});
+                const url = URL.createObjectURL(dataBlob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'module-federation-graph.json';
+                link.click();
+                URL.revokeObjectURL(url);
+            }
+            
+            // Function to update statistics
+            function updateStats(nodes) {
+                const stats = {
+                    hosts: nodes.filter(n => n.type === 'host').length,
+                    workspaceRemotes: nodes.filter(n => n.type === 'remote' && !n.id.startsWith('external-')).length,
+                    externalRemotes: nodes.filter(n => n.type === 'remote' && n.id.startsWith('external-')).length,
+                    bidirectional: nodes.filter(n => n.group === 'bidirectional').length,
+                    shared: nodes.filter(n => n.type === 'shared-dependency').length,
+                    modules: nodes.filter(n => n.type === 'exposed-module').length
+                };
+                
+                document.getElementById('stat-hosts').textContent = stats.hosts;
+                document.getElementById('stat-workspace-remotes').textContent = stats.workspaceRemotes;
+                document.getElementById('stat-external-remotes').textContent = stats.externalRemotes;
+                document.getElementById('stat-bidirectional').textContent = stats.bidirectional;
+                document.getElementById('stat-shared').textContent = stats.shared;
+                document.getElementById('stat-modules').textContent = stats.modules;
+            }
+            
             // Function to initialize the graph once D3 is loaded
             function initializeGraph() {
                 try {
                     // Hide the loading message
                     document.getElementById('loading').style.display = 'none';
+                    
                     // Create the graph data structure
                     const graphData = {
                         nodes: graphRawData.nodes,
                         links: graphRawData.links
                     };
-                    console.log("Graph data for D3:", JSON.stringify(graphData));
+                    
+                    log("Enhanced graph data for D3:", JSON.stringify(graphData));
+                    updateStats(graphData.nodes);
+                    
                     const width = window.innerWidth;
                     const height = window.innerHeight;
+                    
                     // Create the SVG container
-                    const svg = d3.select('#graph-container')
+                    svg = d3.select('#graph-container')
                         .append('svg')
                         .attr('width', width)
                         .attr('height', height);
+                    
                     // Create a group for the graph
-                    const g = svg.append('g');
-                    // Add arrow marker definition
-                    svg.append("defs").append("marker")
-                        .attr("id", "arrow")
+                    g = svg.append('g');
+                    
+                    // Add enhanced arrow markers for different edge types
+                    const defs = svg.append("defs");
+                    
+                    // Add gradient for bidirectional nodes
+                    const gradient = defs.append("linearGradient")
+                        .attr("id", "bidirectionalGradient")
+                        .attr("x1", "0%")
+                        .attr("y1", "0%")
+                        .attr("x2", "100%")
+                        .attr("y2", "100%");
+                    
+                    gradient.append("stop")
+                        .attr("offset", "0%")
+                        .attr("stop-color", "#007ACC")
+                        .attr("stop-opacity", 1);
+                    
+                    gradient.append("stop")
+                        .attr("offset", "100%")
+                        .attr("stop-color", "#6F42C1")
+                        .attr("stop-opacity", 1);
+                    
+                    // Consumes arrow
+                    defs.append("marker")
+                        .attr("id", "arrow-consumes")
                         .attr("viewBox", "0 -5 10 10")
-                        .attr("refX", 35)
+                        .attr("refX", 30)
                         .attr("refY", 0)
                         .attr("markerWidth", 6)
                         .attr("markerHeight", 6)
                         .attr("orient", "auto")
                         .append("path")
                         .attr("d", "M0,-5L10,0L0,5")
-                        .attr("fill", "#9E9E9E"); /* Match link color */
+                        .attr("fill", "#007ACC");
+                    
+                    // Exposes arrow
+                    defs.append("marker")
+                        .attr("id", "arrow-exposes")
+                        .attr("viewBox", "0 -5 10 10")
+                        .attr("refX", 30)
+                        .attr("refY", 0)
+                        .attr("markerWidth", 6)
+                        .attr("markerHeight", 6)
+                        .attr("orient", "auto")
+                        .append("path")
+                        .attr("d", "M0,-5L10,0L0,5")
+                        .attr("fill", "#FD7E14");
+                    
+                    // Shares arrow (bidirectional)
+                    defs.append("marker")
+                        .attr("id", "arrow-shares")
+                        .attr("viewBox", "0 -5 10 10")
+                        .attr("refX", 30)
+                        .attr("refY", 0)
+                        .attr("markerWidth", 5)
+                        .attr("markerHeight", 5)
+                        .attr("orient", "auto")
+                        .append("path")
+                        .attr("d", "M0,-5L10,0L0,5")
+                        .attr("fill", "#28A745");
+                    
+                    // Bidirectional consume arrow
+                    defs.append("marker")
+                        .attr("id", "arrow-bidirectional")
+                        .attr("viewBox", "0 -5 10 10")
+                        .attr("refX", 30)
+                        .attr("refY", 0)
+                        .attr("markerWidth", 6)
+                        .attr("markerHeight", 6)
+                        .attr("orient", "auto")
+                        .append("path")
+                        .attr("d", "M0,-5L10,0L0,5")
+                        .attr("fill", "#FF6B35");
+                    
+                    // Bidirectional start arrow (for the other end)
+                    defs.append("marker")
+                        .attr("id", "arrow-bidirectional-start")
+                        .attr("viewBox", "0 -5 10 10")
+                        .attr("refX", -20)
+                        .attr("refY", 0)
+                        .attr("markerWidth", 6)
+                        .attr("markerHeight", 6)
+                        .attr("orient", "auto")
+                        .append("path")
+                        .attr("d", "M10,-5L0,0L10,5")
+                        .attr("fill", "#FF6B35");
+                    
                     // Create a zoom behavior
-                    const zoom = d3.zoom()
+                    zoom = d3.zoom()
                         .scaleExtent([0.1, 4])
                         .on('zoom', (event) => {
                             g.attr('transform', event.transform);
                         });
+                    
                     // Apply zoom behavior to SVG
                     svg.call(zoom);
-                    // Create a force simulation
-                    const simulation = d3.forceSimulation(graphData.nodes)
+                    
+                    // Create enhanced force simulation
+                    simulation = d3.forceSimulation(graphData.nodes)
                         .force('link', d3.forceLink(graphData.links)
                             .id(d => d.id)
-                            .distance(150))
-                        .force('charge', d3.forceManyBody().strength(-200))
+                            .distance(d => {
+                                // Vary distance based on relationship type
+                                switch(d.type) {
+                                    case 'exposes': return 80;
+                                    case 'shares': return 200;
+                                    case 'consumes': return 150;
+                                    default: return 120;
+                                }
+                            })
+                            .strength(d => d.strength || 0.5))
+                        .force('charge', d3.forceManyBody()
+                            .strength(d => {
+                                // Vary charge based on node type and size
+                                const baseStrength = -300;
+                                const sizeMultiplier = (d.size || 1) * 0.5;
+                                return baseStrength * sizeMultiplier;
+                            }))
                         .force('center', d3.forceCenter(width / 2, height / 2))
-                        .force('collide', d3.forceCollide().radius(60));
-                    // Draw edges
+                        .force('collide', d3.forceCollide()
+                            .radius(d => {
+                                // Vary collision radius based on node size
+                                const baseRadius = 30;
+                                return baseRadius + (d.size || 1) * 5;
+                            }))
+                        .force('x', d3.forceX(width / 2).strength(0.1))
+                        .force('y', d3.forceY(height / 2).strength(0.1));
+                    
+                    // Draw enhanced edges
                     const edges = g.selectAll('.edge')
                         .data(graphData.links)
                         .enter()
                         .append('line')
-                        .attr('class', 'edge')
-                        .attr('marker-end', 'url(#arrow)');
-                    // Add edge labels if they exist
+                        .attr('class', d => {
+                            let classes = \`edge \${d.type || 'default'}\`;
+                            if (d.bidirectional) {
+                                classes += ' bidirectional';
+                            }
+                            return classes;
+                        })
+                        .attr('marker-end', d => {
+                            if (d.bidirectional && d.type === 'consumes') {
+                                return 'url(#arrow-bidirectional)';
+                            }
+                            switch(d.type) {
+                                case 'consumes': return 'url(#arrow-consumes)';
+                                case 'exposes': return 'url(#arrow-exposes)';
+                                case 'shares': return 'url(#arrow-shares)';
+                                default: return 'url(#arrow-consumes)';
+                            }
+                        })
+                        .attr('marker-start', d => {
+                            // Add start marker for bidirectional consume edges
+                            if (d.bidirectional && d.type === 'consumes') {
+                                return 'url(#arrow-bidirectional-start)';
+                            }
+                            return null;
+                        })
+                        .style('stroke-width', d => (d.strength || 1) * 2);
+                    
+                    // Add edge labels for important relationships
                     const edgeLabels = g.selectAll('.edge-label')
-                        .data(graphData.links.filter(d => d.label))
+                        .data(graphData.links.filter(d => d.label && d.type !== 'shares'))
                         .enter()
                         .append('text')
                         .attr('class', 'edge-label')
-                        .text(d => d.label);
-                    // Create node groups
+                        .text(d => {
+                            // Truncate long URLs
+                            if (d.label && d.label.length > 30) {
+                                return d.label.substring(0, 30) + '...';
+                            }
+                            return d.label;
+                        });
+                    
+                    // Create enhanced node groups
                     const nodeGroups = g.selectAll('.node')
                         .data(graphData.nodes)
                         .enter()
@@ -448,43 +1514,117 @@ export class DependencyGraphManager {
                             .on('start', dragstarted)
                             .on('drag', dragged)
                             .on('end', dragended));
-                    // Add circles for nodes
+                    
+                    // Add enhanced circles for nodes with size variation
                     nodeGroups.append('circle')
-                        .attr('r', 25)
-                        .attr('class', d => d.type === 'host' ? 'host-node' : 'remote-node')
+                        .attr('r', d => {
+                            // Vary radius based on node type and size
+                            const baseRadius = {
+                                'host': 30,
+                                'remote': 25,
+                                'shared-dependency': 20,
+                                'exposed-module': 15
+                            };
+                            const base = baseRadius[d.type] || 20;
+                            return base + Math.min((d.size || 1) * 2, 15);
+                        })
+                        .attr('class', d => {
+                            // More precise node styling based on actual configuration
+                            if (d.type === 'host' && d.group === 'bidirectional') {
+                                return 'bidirectional-node';
+                            } else if (d.type === 'host') {
+                                return 'host-node';
+                            } else if (d.type === 'remote') {
+                                if (d.group === 'bidirectional') return 'bidirectional-node';
+                                if (d.id.startsWith('external-')) return 'external-remote-node';
+                                return 'remote-node';
+                            } else if (d.type === 'shared-dependency') {
+                                return 'shared-dependency-node';
+                            } else if (d.type === 'exposed-module') {
+                                return 'exposed-module-node';
+                            } else {
+                                return 'host-node';
+                            }
+                        })
                         .on('mouseover', showTooltip)
-                        .on('mouseout', hideTooltip);
-                    // Add labels to nodes
+                        .on('mouseout', hideTooltip)
+                        .on('click', nodeClick);
+                    
+                    // Add enhanced labels to nodes
                     nodeGroups.append('text')
                         .attr('class', 'node-label')
                         .attr('dy', 5)
-                        .text(d => d.label.length > 10 ? d.label.substring(0, 10) + '...' : d.label);
-                    // Define drag behavior
+                        .text(d => {
+                            const maxLength = d.type === 'exposed-module' ? 8 : 12;
+                            return d.label.length > maxLength ? 
+                                d.label.substring(0, maxLength) + '...' : d.label;
+                        });
+                    
+                    // Define enhanced drag behavior
                     function dragstarted(event, d) {
-                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        if (!event.active && physicsEnabled) simulation.alphaTarget(0.3).restart();
                         d.fx = d.x;
                         d.fy = d.y;
                     }
+                    
                     function dragged(event, d) {
                         d.fx = event.x;
                         d.fy = event.y;
                     }
+                    
                     function dragended(event, d) {
-                        if (!event.active) simulation.alphaTarget(0);
+                        if (!event.active && physicsEnabled) simulation.alphaTarget(0);
                     }
-                    // Define tooltip behavior
+                    
+                    // Enhanced tooltip behavior
                     function showTooltip(event, d) {
                         const tooltip = d3.select('#tooltip');
+                        let content = \`<h4>\${d.label}</h4>\`;
+                        content += \`<div class="detail"><strong>Type:</strong> \${d.type.replace('-', ' ')}</div>\`;
+                        content += \`<div class="detail"><strong>Config:</strong> \${d.configType}</div>\`;
+                        
+                        if (d.url) {
+                            content += \`<div class="detail"><strong>URL:</strong> \${d.url}</div>\`;
+                        }
+                        if (d.version) {
+                            content += \`<div class="detail"><strong>Version:</strong> \${d.version}</div>\`;
+                        }
+                        if (d.exposedModules && d.exposedModules.length > 0) {
+                            content += \`<div class="detail"><strong>Exposes:</strong> \${d.exposedModules.join(', ')}</div>\`;
+                        }
+                        if (d.sharedDependencies && d.sharedDependencies.length > 0) {
+                            content += \`<div class="detail"><strong>Shared Deps:</strong> \${d.sharedDependencies.join(', ')}</div>\`;
+                        }
+                        if (d.size && d.size > 1) {
+                            content += \`<div class="detail"><strong>Connections:</strong> \${d.size}</div>\`;
+                        }
+                        if (d.status) {
+                            content += \`<div class="detail"><strong>Status:</strong> \${d.status}</div>\`;
+                        }
+                        
                         tooltip.style('opacity', 1)
-                            .html(\`<div><strong>\${d.label}</strong></div>
-                                <div>Type: \${d.type}</div>
-                                <div>Config Type: \${d.configType}</div>\`)
+                            .html(content)
                             .style('left', (event.pageX + 15) + 'px')
                             .style('top', (event.pageY - 30) + 'px');
                     }
+                    
                     function hideTooltip() {
                         d3.select('#tooltip').style('opacity', 0);
                     }
+                    
+                    function nodeClick(event, d) {
+                        log('Node clicked:', d);
+                        // Could send message to extension for navigation
+                        try {
+                            acquireVsCodeApi().postMessage({
+                                command: 'nodeClick',
+                                node: d
+                            });
+                        } catch (err) {
+                            log("Failed to communicate node click to extension:", err);
+                        }
+                    }
+                    
                     // Update positions on each tick of the simulation
                     simulation.on('tick', () => {
                         edges
@@ -492,22 +1632,35 @@ export class DependencyGraphManager {
                             .attr('y1', d => d.source.y)
                             .attr('x2', d => d.target.x)
                             .attr('y2', d => d.target.y);
+                        
                         edgeLabels
                             .attr('x', d => (d.source.x + d.target.x) / 2)
                             .attr('y', d => (d.source.y + d.target.y) / 2);
+                        
                         nodeGroups.attr('transform', d => \`translate(\${d.x}, \${d.y})\`);
                     });
+                    
+                    // Handle window resize
+                    window.addEventListener('resize', () => {
+                        const newWidth = window.innerWidth;
+                        const newHeight = window.innerHeight;
+                        svg.attr('width', newWidth).attr('height', newHeight);
+                        simulation.force('center', d3.forceCenter(newWidth / 2, newHeight / 2));
+                        simulation.alpha(0.3).restart();
+                    });
+                    
                     // Notify extension that graph loaded successfully
                     try {
                         acquireVsCodeApi().postMessage({
-                            command: 'loaded'
+                            command: 'loaded',
+                            metadata: ${JSON.stringify(graph.metadata || {})}
                         });
                     } catch (err) {
-                        console.warn("Failed to communicate with VS Code extension:", err);
+                        log("Failed to communicate with VS Code extension:", err);
                     }
                 } catch (error) {
-                    showError("Error initializing graph: " + error.message);
-                    console.error("Graph initialization error:", error);
+                    showError("Error initializing enhanced graph: " + error.message);
+                    log("Graph initialization error:", error);
                 }
             }
         </script>

@@ -9,19 +9,16 @@ import {
     RemotesFolder,
     ExposesFolder,
     RootFolder,
-    UnifiedRootConfig,
-    FederationRoot
+    UnifiedRootConfig
 } from './types';
-import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS } from './configExtractors';
+import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS, extractConfigFromRSBuild } from './configExtractors';
 import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
-import { outputChannel, log, show, clear } from './outputChannel';
+import { outputChannel, log } from './outputChannel';
 import { DependencyGraphManager } from './dependencyGraph';
+import { DialogUtils } from './dialogUtils';
 
 // Type guard functions to narrow down types
-function isFederationRoot(element: any): element is FederationRoot {
-  return element && element.type === 'federationRoot';
-}
 
 function isRootFolder(element: any): element is RootFolder {
   return element && element.type === 'rootFolder';
@@ -63,12 +60,12 @@ interface EmptyState {
   description: string;
 }
 
-export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState>, 
-  vscode.TreeDragAndDropController<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState> {
-  private _onDidChangeTreeData: vscode.EventEmitter<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
-    new vscode.EventEmitter<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined>();
+export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState>, 
+  vscode.TreeDragAndDropController<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState> {
+  private _onDidChangeTreeData: vscode.EventEmitter<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
+    new vscode.EventEmitter<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined>();
   
-  readonly onDidChangeTreeData: vscode.Event<FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
+  readonly onDidChangeTreeData: vscode.Event<RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined> = 
     this._onDidChangeTreeData.event;
   
   // DragAndDrop properties required for the controller
@@ -78,7 +75,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   private rootConfigs: Map<string, ModuleFederationConfig[]> = new Map();
   private rootConfigManager: RootConfigManager;
   private isLoading = false;
-  public runningRemotes: Map<string, { terminal: vscode.Terminal }> = new Map();
+  public runningRemotes: Map<string, { buildTerminal?: vscode.Terminal; startTerminal: vscode.Terminal }> = new Map();
   // Store running Host app information
   private runningRootApps: Map<string, { terminal: vscode.Terminal }> = new Map();
   
@@ -100,6 +97,13 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         this.log('No host directories configured yet. Waiting for user to set up configuration.');
       }
     });
+  }
+
+  /**
+   * Get the workspace root path
+   */
+  getWorkspaceRoot(): string | undefined {
+    return this.workspaceRoot;
   }
 
   /**
@@ -161,12 +165,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
             rootPath: root
           }));
           
-          const selectedRoot = await vscode.window.showQuickPick(rootItems, {
-            placeHolder: 'Select a Host to remove',
-            title: 'Remove Invalid Host'
+          const selectedRoot = await DialogUtils.showQuickPick(rootItems, {
+            title: 'Remove Invalid Host',
+            placeholder: 'Select a Host to remove'
           });
           
-          if (selectedRoot) {
+          if (selectedRoot && !Array.isArray(selectedRoot)) {
             await this.rootConfigManager.removeRoot(selectedRoot.rootPath);
             this.reloadConfigurations();
           }
@@ -188,15 +192,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     
     // Show error message with actions if available
     if (actions.length > 0) {
-      const actionTitles = actions.map(a => a.title);
-      vscode.window.showErrorMessage(userMessage, ...actionTitles).then(selected => {
+      DialogUtils.showError(userMessage, {
+        actions: actions.map(a => ({ title: a.title }))
+      }).then(selected => {
         const selectedAction = actions.find(a => a.title === selected);
         if (selectedAction) {
           selectedAction.action();
         }
       });
     } else {
-      vscode.window.showErrorMessage(userMessage);
+      DialogUtils.showError(userMessage);
     }
   }
 
@@ -233,9 +238,15 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
             
             // Show informational message after a short delay
             setTimeout(() => {
-              vscode.window.showInformationMessage(
-                'No Host directories are configured. Use the Add Host button to configure your first Host, then add more Hosts.',
-                'Add Host', 'Later'
+              DialogUtils.showInfo(
+                'No Host directories are configured.',
+                {
+                  detail: 'Use the Add Host button to configure your first Host, then add more Hosts.',
+                  actions: [
+                    { title: 'Add Host' },
+                    { title: 'Later', isCloseAffordance: true }
+                  ]
+                }
               ).then(selection => {
                 if (selection === 'Add Host') {
                   vscode.commands.executeCommand('moduleFederation.addRoot');
@@ -301,14 +312,15 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         return;
       }
 
-      // Find all webpack, vite, and ModernJS config files in this Host, excluding node_modules
-      const [webpackFiles, viteFiles, modernJSFiles] = await Promise.all([
+      // Find all webpack, vite, ModernJS, and RSBuild config files in this Host, excluding node_modules
+      const [webpackFiles, viteFiles, modernJSFiles, rsbuildFiles] = await Promise.all([
         this.findFiles(rootPath, '**/{webpack.config.js,webpack.config.ts}', '**/node_modules/**'),
         this.findFiles(rootPath, '**/{vite.config.js,vite.config.ts}', '**/node_modules/**'),
-        this.findFiles(rootPath, '**/module-federation.config.{js,ts}', '**/node_modules/**')
+        this.findFiles(rootPath, '**/module-federation.config.{js,ts}', '**/node_modules/**'),
+        this.findFiles(rootPath, '**/{rsbuild.config.js,rsbuild.config.ts}', '**/node_modules/**')
       ]);
 
-      this.log(`Found ${webpackFiles.length} webpack configs, ${viteFiles.length} vite configs, and ${modernJSFiles.length} ModernJS configs in ${rootPath}`);
+      this.log(`Found ${webpackFiles.length} webpack configs, ${viteFiles.length} vite configs, ${modernJSFiles.length} ModernJS configs, and ${rsbuildFiles.length} RSBuild configs in ${rootPath}`);
 
       // Process webpack configs
       const webpackConfigs = await this.processConfigFiles(
@@ -334,8 +346,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         rootPath
       );
       
+      // Process RSBuild configs
+      const rsbuildConfigs = await this.processConfigFiles(
+        rsbuildFiles,
+        extractConfigFromRSBuild,
+        'rsbuild',
+        rootPath
+      );
+      
       // Store configs for this Host
-      const configs = [...webpackConfigs, ...viteConfigs, ...modernJSConfigs];
+      const configs = [...webpackConfigs, ...viteConfigs, ...modernJSConfigs, ...rsbuildConfigs];
       if (configs.length > 0) {
         this.rootConfigs.set(rootPath, configs);
         
@@ -435,7 +455,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     return results;
   }
 
-  getTreeItem(element: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): vscode.TreeItem {
+  getTreeItem(element: RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): vscode.TreeItem {
     // Handle loading placeholder
     if (isLoadingPlaceholder(element)) {
       const treeItem = new vscode.TreeItem(
@@ -459,21 +479,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         'To get started:\n\n' +
         '1. Click the "+" button in the toolbar to add a Host folder\n' +
         '2. Select a folder containing Module Federation configurations\n' +
-        '3. The extension will automatically scan for webpack, Vite, or ModernJS configurations'
+        '3. The extension will automatically scan for webpack, Vite, ModernJS, or RSBuild configurations'
       );
       return treeItem;
     }
     
-    if (isFederationRoot(element)) {
-      // If it's a federation root (top level)
-      const treeItem = new vscode.TreeItem(
-        element.name,
-        vscode.TreeItemCollapsibleState.Expanded
-      );
-      treeItem.tooltip = new vscode.MarkdownString(`## ${element.name}\n\n**Path:** ${element.path}\n\n${element.configs.length} configurations found`);
-      treeItem.iconPath = new vscode.ThemeIcon('server');
-      return treeItem;
-    } else if (isRootFolder(element)) {
+    if (isRootFolder(element)) {
       // If it's a root folder
       const treeItem = new vscode.TreeItem(
         element.name,
@@ -537,6 +548,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const isRunning = this.runningRemotes.has(`remote-${element.name}`);
       const hasFolder = !!element.folder;
       const hasStartCommand = !!element.startCommand;
+      const isExternal = element.isExternal || element.configType === 'external';
       
       const treeItem = new vscode.TreeItem(
         element.name,
@@ -546,6 +558,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Create rich tooltip with configuration details
       let tooltip = new vscode.MarkdownString(`## Remote: ${element.name}\n\n`);
       
+      if (isExternal) {
+        tooltip.appendMarkdown(`**Type:** External Remote\n\n`);
+      }
+      
       if (element.url) {
         tooltip.appendMarkdown(`**URL:** ${element.url}\n\n`);
       }
@@ -554,21 +570,26 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         tooltip.appendMarkdown(`**Remote entry:** ${element.remoteEntry}\n\n`);
       }
       
-      if (element.folder) {
+      if (element.folder && !isExternal) {
         tooltip.appendMarkdown(`**Folder:** ${element.folder}\n\n`);
       }
       
-      if (element.startCommand) {
+      if (element.startCommand && !isExternal) {
         tooltip.appendMarkdown(`**Serve build command:** \`${element.startCommand}\`\n\n`);
       }
       
-      if (element.buildCommand) {
+      if (element.buildCommand && !isExternal) {
         tooltip.appendMarkdown(`**Build command:** \`${element.buildCommand}\`\n\n`);
       }
       
       tooltip.appendMarkdown(`**Config type:** ${element.configType}`);
       
-      if (isRunning) {
+      if (isExternal) {
+        // External remotes have different styling and context
+        treeItem.iconPath = new vscode.ThemeIcon('globe');
+        treeItem.contextValue = 'externalRemote';
+        tooltip.appendMarkdown(`\n\n$(globe) **External Remote**`);
+      } else if (isRunning) {
         tooltip.appendMarkdown(`\n\n$(play) **Running**`);
         treeItem.iconPath = new vscode.ThemeIcon('vm-running');
         treeItem.contextValue = 'runningRemote';
@@ -597,11 +618,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
       treeItem.tooltip = new vscode.MarkdownString(`## Exposed Module: ${element.name}\n\n**Path:** ${element.path}\n\n**From remote:** ${element.remoteName}`);
       treeItem.description = element.path;
-      treeItem.command = {
-        command: 'moduleFederation.openExposedPath',
-        arguments: [element],
-        title: 'Open File'
-      };
+
       
       return treeItem;
     }
@@ -609,7 +626,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     throw new Error(`Unknown element type`);
   }
 
-  getChildren(element?: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): Thenable<(FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[]> {
+  getChildren(element?: RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): Thenable<(RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[]> {
     try {
       // If we're still loading, show a loading placeholder
       if (this.isLoading) {
@@ -628,9 +645,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           }
           return rootFolders;
         });
-      } else if (isFederationRoot(element)) {
-        // Return all configured Host folders
-        return this.getRootFolders();
       } else if (isRootFolder(element)) {
         // Show remotes folder and exposes folder for this Host
         const children: (RemotesFolder | ExposesFolder)[] = [];
@@ -750,12 +764,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     // Check if the terminal is still valid (not disposed)
     if (runningRemote) {
       try {
-        // Try to reference the terminal - if it's disposed, this will throw an error
-        const disposedCheck = runningRemote.terminal.processId;
-        return runningRemote.terminal;
+        // Try to reference the start terminal - if it's disposed, this will throw an error
+        const disposedCheck = runningRemote.startTerminal.processId;
+        return runningRemote.startTerminal;
       } catch (error) {
         // Terminal was disposed externally, clean up our reference
+        this.log(`Detected disposed terminal for remote ${remoteKey}, cleaning up`);
         this.runningRemotes.delete(remoteKey);
+        this._onDidChangeTreeData.fire(undefined);
         return undefined;
       }
     }
@@ -766,8 +782,8 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   /**
    * Set a remote as running
    */
-  setRunningRemote(remoteKey: string, terminal: vscode.Terminal): void {
-    this.runningRemotes.set(remoteKey, { terminal });
+  setRunningRemote(remoteKey: string, startTerminal: vscode.Terminal, buildTerminal?: vscode.Terminal): void {
+    this.runningRemotes.set(remoteKey, { startTerminal, buildTerminal });
     this._onDidChangeTreeData.fire(undefined);
   }
   
@@ -777,7 +793,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   stopRemote(remoteKey: string): void {
     const runningRemote = this.runningRemotes.get(remoteKey);
     if (runningRemote) {
-      runningRemote.terminal.dispose();
+      // Dispose both terminals if they exist
+      if (runningRemote.buildTerminal) {
+        runningRemote.buildTerminal.dispose();
+      }
+      runningRemote.startTerminal.dispose();
       this.runningRemotes.delete(remoteKey);
       this._onDidChangeTreeData.fire(undefined);
     }
@@ -791,10 +811,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Make sure configuration is set up first
       if (!this.rootConfigManager.getConfigPath()) {
         // Configuration isn't set up, prompt user
-        const result = await vscode.window.showInformationMessage(
+        const result = await DialogUtils.showInfo(
           'You need to set up your configuration file before adding hosts.',
-          'Configure Settings',
-          'Cancel'
+          {
+            actions: [
+              { title: 'Configure Settings' },
+              { title: 'Cancel', isCloseAffordance: true }
+            ]
+          }
         );
         
         if (result === 'Configure Settings') {
@@ -811,26 +835,31 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       }
 
       // Now we should have a valid config path, ask user to select a host folder
-      const selectedFolder = await vscode.window.showOpenDialog({
-        canSelectFiles: false,
-        canSelectFolders: true,
-        canSelectMany: false,
-        openLabel: 'Select Host Folder',
-        title: 'Select a folder to add to the Module Federation Explorer'
-      });
-
-      if (!selectedFolder || selectedFolder.length === 0) {
-        return;
+      // Set default URI to parent of workspace root if available
+      let defaultUri: vscode.Uri | undefined;
+      if (this.workspaceRoot) {
+        const parentPath = path.dirname(this.workspaceRoot);
+        defaultUri = vscode.Uri.file(parentPath);
       }
 
-      const rootPath = selectedFolder[0].fsPath;
+      const rootPath = await DialogUtils.showFolderPicker({
+        title: 'Select a folder to add to the Module Federation Explorer',
+        openLabel: 'Select Host Folder',
+        defaultUri: defaultUri
+      });
+
+      if (!rootPath) {
+        return;
+      }
       await this.rootConfigManager.addRoot(rootPath);
       
       // After adding a root, reload configurations to scan for Module Federation configs
       this.reloadConfigurations();
     } catch (error) {
       this.logError('Failed to add root', error);
-      vscode.window.showErrorMessage(`Failed to add root: ${error}`);
+      await DialogUtils.showError('Failed to add root', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -842,10 +871,13 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log(`Removing Host ${rootFolder.path}`);
       
       // Confirm with user
-      const confirmed = await vscode.window.showWarningMessage(
+      const confirmed = await DialogUtils.showConfirmation(
         `Are you sure you want to remove "${rootFolder.path}" from the configuration?`,
-        { modal: true },
-        'Yes'
+        {
+          destructive: true,
+          confirmText: 'Remove',
+          cancelText: 'Cancel'
+        }
       );
       
       if (!confirmed) {
@@ -864,10 +896,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this._onDidChangeTreeData.fire(undefined);
       
-      vscode.window.showInformationMessage(`Removed Host ${rootFolder.path} from configuration`);
+      await DialogUtils.showSuccess(`Removed Host ${rootFolder.path} from configuration`);
     } catch (error) {
       this.logError(`Failed to remove Host ${rootFolder.path}`, error);
-      vscode.window.showErrorMessage(`Failed to remove Host: ${error}`);
+      await DialogUtils.showError('Failed to remove Host', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -904,7 +938,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Check if already running
       if (this.isRootAppRunning(rootPath)) {
-        vscode.window.showInformationMessage(`Host app is already running: ${rootFolder.name}`);
+        await DialogUtils.showInfo(`Host app is already running: ${rootFolder.name}`);
         return;
       }
       
@@ -927,7 +961,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Started Host app: ${rootFolder.name}`);
+      await DialogUtils.showSuccess(`Started Host app: ${rootFolder.name}`);
     } catch (error) {
       this.logError(`Failed to start Host app: ${rootFolder.name}`, error);
     }
@@ -941,49 +975,139 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const rootPath = rootFolder.path;
       this.log(`Editing commands for Host app: ${rootPath}`);
       
-      // Get current start command or default
-      const currentCommand = rootFolder.startCommand || '';
-      
-      // Detect common package managers in the directory
-      let defaultCommand = '';
+      // Get current package manager or detect it
+      let packageManager = '';
       try {
         if (fsSync.existsSync(path.join(rootFolder.path, 'package-lock.json'))) {
-          defaultCommand = 'npm run start';
+          packageManager = 'npm';
         } else if (fsSync.existsSync(path.join(rootFolder.path, 'yarn.lock'))) {
-          defaultCommand = 'yarn start';
+          packageManager = 'yarn';
         } else if (fsSync.existsSync(path.join(rootFolder.path, 'pnpm-lock.yaml'))) {
-          defaultCommand = 'pnpm run start';
+          packageManager = 'pnpm';
         } else {
-          defaultCommand = 'npm run start';
+          packageManager = 'npm'; // Default to npm
         }
       } catch {
-        defaultCommand = 'npm run start';
+        packageManager = 'npm';
       }
-
-      // Ask user for the start command
-      const startCommand = await vscode.window.showInputBox({
-        prompt: `Configure app start command for ${rootFolder.name}`,
-        value: currentCommand || defaultCommand,
-        placeHolder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
+      
+      // Show quick pick for options to edit
+      const options = [
+        { label: '▶️ Edit Start Command - eg. npm run start, yarn dev, etc. the command to start the app', description: rootFolder.startCommand || 'Not configured' },
+        { label: '📁 Change Project Folder', description: rootFolder.path || 'Not configured' },
+      ];
+      
+      const selectedOption = await DialogUtils.showQuickPick(options, {
+        title: `Edit Configuration for ${rootFolder.name}`,
+        placeholder: 'What would you like to edit?'
       });
-
-      if (!startCommand) {
+      
+      if (!selectedOption || Array.isArray(selectedOption)) {
         return; // User cancelled
       }
       
-      // Update the Host folder start command
-      rootFolder.startCommand = startCommand;
+      // Handle folder change option
+      if (selectedOption.label.includes('Change Project Folder')) {
+        // Set default URI to parent of workspace root if available
+        let defaultUri: vscode.Uri | undefined;
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (workspaceRoot) {
+          const parentPath = path.dirname(workspaceRoot);
+          defaultUri = vscode.Uri.file(parentPath);
+        }
+
+        const newFolder = await DialogUtils.showFolderPicker({
+          title: `Select New Project Folder for Host App "${rootFolder.name}"`,
+          openLabel: `Select "${rootFolder.name}" Project Folder`,
+          defaultUri: defaultUri,
+          validateFolder: async (folderPath: string) => {
+            const packageJsonPath = path.join(folderPath, 'package.json');
+            if (!fsSync.existsSync(packageJsonPath)) {
+              const continueAnyway = await DialogUtils.showConfirmation(
+                'The selected folder doesn\'t contain a package.json file.',
+                {
+                  detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
+                  confirmText: 'Continue Anyway',
+                  cancelText: 'Select Different Folder'
+                }
+              );
+              return { valid: continueAnyway, message: 'Invalid Node.js project folder' };
+            }
+            return { valid: true };
+          }
+        });
+
+        if (!newFolder) {
+          await DialogUtils.showWarning(
+            `No folder selected for Host app "${rootFolder.name}".`,
+            {
+              detail: 'Folder configuration was not changed.'
+            }
+          );
+          return;
+        }
+        
+        // Update the root folder path
+        const oldPath = rootFolder.path;
+        rootFolder.path = newFolder;
+        this.log(`Updated project folder for Host app ${rootFolder.name}: ${newFolder}`);
+        
+        // Update the rootConfigs map with the new path
+        const configs = this.rootConfigs.get(oldPath);
+        if (configs) {
+          this.rootConfigs.delete(oldPath);
+          this.rootConfigs.set(newFolder, configs);
+        }
+        
+        // Re-detect package manager for the new folder
+        if (fsSync.existsSync(path.join(newFolder, 'package-lock.json'))) {
+          packageManager = 'npm';
+        } else if (fsSync.existsSync(path.join(newFolder, 'yarn.lock'))) {
+          packageManager = 'yarn';
+        } else if (fsSync.existsSync(path.join(newFolder, 'pnpm-lock.yaml'))) {
+          packageManager = 'pnpm';
+        } else {
+          packageManager = 'npm'; // Default to npm
+        }
+        
+        // Save the updated configuration
+        await this.saveRootFolderConfig(rootFolder);
+        
+        // Refresh the tree view to reflect changes
+        this.refresh();
+        
+        await DialogUtils.showSuccess(`Updated project folder for ${rootFolder.name}`);
+        return;
+      }
       
-      // Save Host folder configuration
-      await this.saveRootFolderConfig(rootFolder);
-      
-      // Refresh the tree view
-      this.refresh();
-      
-      vscode.window.showInformationMessage(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
+      // Handle start command editing
+      if (selectedOption.label.includes('Edit Start Command')) {
+        // Ask user for start command using the enhanced command config dialog
+        const startCommand = await DialogUtils.showCommandConfig({
+          title: `Configure Start Command for ${rootFolder.name}`,
+          commandType: 'start',
+          currentCommand: rootFolder.startCommand,
+          packageManager: packageManager,
+          projectPath: rootFolder.path
+        });
+        
+        if (startCommand !== undefined) { // Allow empty string but not undefined (cancelled)
+          rootFolder.startCommand = startCommand;
+          
+          // Save the updated configuration
+          await this.saveRootFolderConfig(rootFolder);
+          
+          // Refresh the tree view to reflect changes
+          this.refresh();
+          
+          await DialogUtils.showSuccess(`Updated start command for ${rootFolder.name}`);
+        }
+      }
     } catch (error) {
-      this.logError(`Failed to configure serve build command for ${rootFolder.name}`, error);
-      return undefined;
+      this.logError(`Failed to edit commands for ${rootFolder.name}`, error);
+      await DialogUtils.showError(`Failed to edit commands for ${rootFolder.name}`, {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
   
@@ -998,7 +1122,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Check if it's running
       const runningApp = this.runningRootApps.get(rootPath);
       if (!runningApp) {
-        vscode.window.showInformationMessage(`Host app is not running: ${rootFolder.name}`);
+        await DialogUtils.showInfo(`Host app is not running: ${rootFolder.name}`);
         return;
       }
       
@@ -1009,7 +1133,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Stopped Host app: ${rootFolder.name}`);
+      await DialogUtils.showSuccess(`Stopped Host app: ${rootFolder.name}`);
     } catch (error) {
       this.logError(`Failed to stop Host app: ${rootFolder.name}`, error);
     }
@@ -1040,10 +1164,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       }
       
       // Ask user for the start command
-      const startCommand = await vscode.window.showInputBox({
+      const startCommand = await DialogUtils.showInput({
+        title: `Configure App Start Command for ${rootFolder.name}`,
         prompt: `Configure app start command for ${rootFolder.name}`,
         value: currentCommand || defaultCommand,
-        placeHolder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
+        placeholder: 'e.g., npm run start, yarn dev, etc. the command to start the app',
       });
       
       if (!startCommand) {
@@ -1059,7 +1184,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view
       this.refresh();
       
-      vscode.window.showInformationMessage(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
+      await DialogUtils.showSuccess(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
       return startCommand;
     } catch (error) {
       this.logError(`Failed to configure serve build command for ${rootFolder.name}`, error);
@@ -1153,6 +1278,136 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   clearAllRunningApps(): void {
     this.runningRemotes.clear();
     this.runningRootApps.clear();
+  }
+
+  /**
+   * Check for disposed terminals and clean them up
+   */
+  cleanupDisposedTerminals(): void {
+    this.log('Checking for disposed terminals...');
+    
+    // Check remotes
+    const remotesToRemove: string[] = [];
+    for (const [remoteKey, remoteInfo] of this.runningRemotes.entries()) {
+      try {
+        // Try to access processId to check if terminal is still alive
+        const startTerminalAlive = remoteInfo.startTerminal.processId !== undefined;
+        const buildTerminalAlive = !remoteInfo.buildTerminal || remoteInfo.buildTerminal.processId !== undefined;
+        
+        if (!startTerminalAlive || !buildTerminalAlive) {
+          this.log(`Found disposed terminal for remote ${remoteKey}`);
+          remotesToRemove.push(remoteKey);
+        }
+      } catch (error) {
+        this.log(`Found disposed terminal for remote ${remoteKey} (exception)`);
+        remotesToRemove.push(remoteKey);
+      }
+    }
+    
+    // Check root apps
+    const rootAppsToRemove: string[] = [];
+    for (const [rootPath, appInfo] of this.runningRootApps.entries()) {
+      try {
+        const terminalAlive = appInfo.terminal.processId !== undefined;
+        if (!terminalAlive) {
+          this.log(`Found disposed terminal for root app ${rootPath}`);
+          rootAppsToRemove.push(rootPath);
+        }
+      } catch (error) {
+        this.log(`Found disposed terminal for root app ${rootPath} (exception)`);
+        rootAppsToRemove.push(rootPath);
+      }
+    }
+    
+    // Remove disposed terminals
+    let removedAny = false;
+    for (const remoteKey of remotesToRemove) {
+      this.runningRemotes.delete(remoteKey);
+      removedAny = true;
+    }
+    
+    for (const rootPath of rootAppsToRemove) {
+      this.runningRootApps.delete(rootPath);
+      removedAny = true;
+    }
+    
+    if (removedAny) {
+      this.log(`Cleaned up ${remotesToRemove.length} remotes and ${rootAppsToRemove.length} root apps`);
+      this._onDidChangeTreeData.fire(undefined);
+    } else {
+      this.log('No disposed terminals found');
+    }
+  }
+
+  /**
+   * Handle terminal closure events to clean up running apps
+   */
+  handleTerminalClosed(closedTerminal: vscode.Terminal): void {
+    this.log(`Terminal closed: ${closedTerminal.name}`);
+    this.log(`Currently tracking ${this.runningRemotes.size} running remotes and ${this.runningRootApps.size} running root apps`);
+    
+    let foundMatch = false;
+    
+    // Helper function to compare terminals by name and process ID
+    const terminalsMatch = (terminal1: vscode.Terminal, terminal2: vscode.Terminal): boolean => {
+      try {
+        // First try direct reference comparison
+        if (terminal1 === terminal2) {
+          return true;
+        }
+        
+        // Then try comparing by name and process ID
+        return terminal1.name === terminal2.name && 
+               terminal1.processId === terminal2.processId;
+      } catch (error) {
+        // If there's an error accessing processId (terminal disposed), try name only
+        return terminal1.name === terminal2.name;
+      }
+    };
+    
+    // Check if this terminal belongs to a running remote
+    for (const [remoteKey, remoteInfo] of this.runningRemotes.entries()) {
+      this.log(`Checking remote ${remoteKey}: start terminal name="${remoteInfo.startTerminal.name}", build terminal name="${remoteInfo.buildTerminal?.name || 'none'}"`);
+      
+      let shouldRemove = false;
+      
+      // Check if the closed terminal is either the build or start terminal
+      if (terminalsMatch(remoteInfo.startTerminal, closedTerminal)) {
+        this.log(`Start terminal closed for remote: ${remoteKey}`);
+        shouldRemove = true;
+        foundMatch = true;
+      } else if (remoteInfo.buildTerminal && terminalsMatch(remoteInfo.buildTerminal, closedTerminal)) {
+        this.log(`Build terminal closed for remote: ${remoteKey}`);
+        shouldRemove = true;
+        foundMatch = true;
+      }
+      
+      if (shouldRemove) {
+        this.log(`Removing remote ${remoteKey} from running list due to terminal closure`);
+        this.runningRemotes.delete(remoteKey);
+        this._onDidChangeTreeData.fire(undefined);
+        break; // Exit loop since we found the terminal
+      }
+    }
+    
+    // Check if this terminal belongs to a running root app
+    if (!foundMatch) {
+      for (const [rootPath, appInfo] of this.runningRootApps.entries()) {
+        this.log(`Checking root app ${rootPath}: terminal name="${appInfo.terminal.name}"`);
+        
+        if (terminalsMatch(appInfo.terminal, closedTerminal)) {
+          this.log(`Root app terminal closed for: ${rootPath}`);
+          this.runningRootApps.delete(rootPath);
+          this._onDidChangeTreeData.fire(undefined);
+          foundMatch = true;
+          break; // Exit loop since we found the terminal
+        }
+      }
+    }
+    
+    if (!foundMatch) {
+      this.log(`No matching tracked terminal found for closed terminal: ${closedTerminal.name}`);
+    }
   }
 
   /**
@@ -1285,25 +1540,57 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Go through each Host configuration
       for (const [rootPath, rootConfig] of Object.entries(safeConfig.rootConfigs)) {
-        // Skip if no remotes section
-        if (!rootConfig.remotes) {
-          continue;
+        // Process regular remotes
+        if (rootConfig.remotes) {
+          // Process each remote in this Host
+          for (const [remoteName, savedRemote] of Object.entries(rootConfig.remotes)) {
+            // Find the remote in our configs
+            for (const [configRootPath, configs] of this.rootConfigs.entries()) {
+              for (const mfeConfig of configs) {
+                for (const remote of mfeConfig.remotes) {
+                  if (remote.name === remoteName) {
+                    this.log(`Updating remote ${remote.name} with saved configuration from Host ${rootPath}`);
+                    // Update properties from saved config
+                    remote.folder = savedRemote.folder || remote.name;
+                    remote.url = savedRemote.url || remote.url;
+                    remote.packageManager = savedRemote.packageManager || remote.packageManager;
+                    remote.startCommand = savedRemote.startCommand || remote.startCommand;
+                    remote.buildCommand = savedRemote.buildCommand || remote.buildCommand;
+                  }
+                }
+              }
+            }
+          }
         }
-        
-        // Process each remote in this Host
-        for (const [remoteName, savedRemote] of Object.entries(rootConfig.remotes)) {
-          // Find the remote in our configs
-          for (const [configRootPath, configs] of this.rootConfigs.entries()) {
-            for (const mfeConfig of configs) {
-              for (const remote of mfeConfig.remotes) {
-                if (remote.name === remoteName) {
-                  this.log(`Updating remote ${remote.name} with saved configuration from Host ${rootPath}`);
-                  // Update properties from saved config
-                  remote.folder = savedRemote.folder || remote.name;
-                  remote.url = savedRemote.url || remote.url;
-                  remote.packageManager = savedRemote.packageManager || remote.packageManager;
-                  remote.startCommand = savedRemote.startCommand || remote.startCommand;
-                  remote.buildCommand = savedRemote.buildCommand || remote.buildCommand;
+
+        // Process external remotes
+        if (rootConfig.externalRemotes) {
+          this.log(`Loading ${Object.keys(rootConfig.externalRemotes).length} external remotes for root ${rootPath}`);
+          
+          // Find the configurations for this root path
+          const configs = this.rootConfigs.get(rootPath);
+          if (configs) {
+            // Add external remotes to each configuration in this root
+            for (const [externalRemoteName, externalRemoteConfig] of Object.entries(rootConfig.externalRemotes)) {
+              this.log(`Adding external remote ${externalRemoteName} to configurations in ${rootPath}`);
+              
+              // Create the external remote object
+              const externalRemote: Remote = {
+                name: externalRemoteConfig.name,
+                url: externalRemoteConfig.url,
+                folder: '', // External remotes don't have local folders
+                configType: 'external',
+                packageManager: '',
+                isExternal: true
+              };
+
+              // Add to each configuration in this root (they should all see the same external remotes)
+              for (const mfeConfig of configs) {
+                // Check if this external remote already exists in the config
+                const existingRemote = mfeConfig.remotes.find(r => r.name === externalRemoteName && r.isExternal);
+                if (!existingRemote) {
+                  mfeConfig.remotes.push(externalRemote);
+                  this.log(`Added external remote ${externalRemoteName} to config ${mfeConfig.name}`);
                 }
               }
             }
@@ -1327,7 +1614,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Check if we have any configurations loaded
       if (this.rootConfigs.size === 0) {
         this.log('No Host configurations found for dependency graph');
-        vscode.window.showInformationMessage('No Module Federation configurations found. Please add a Host folder first.');
+        await DialogUtils.showInfo('No Module Federation configurations found. Please add a Host folder first.');
         return;
       }
       
@@ -1357,7 +1644,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log('Dependency graph opened');
     } catch (error) {
       this.logError('Failed to generate dependency graph', error);
-      vscode.window.showErrorMessage(`Failed to generate dependency graph: ${error instanceof Error ? error.message : String(error)}`);
+      await DialogUtils.showError('Failed to generate dependency graph', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -1497,9 +1786,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           }
         }
         
-        // If no match found, return the directory itself
-        this.log(`No suitable file found in directory, returning directory path`);
-        return basePath;
+              // If no match found, return the directory itself
+      this.log(`No suitable file found in directory, returning directory path`);
+      return basePath;
       }
       
       // Not a directory or doesn't exist
@@ -1578,7 +1867,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   /**
    * Handles the drag event when an item is dragged in the tree view
    */
-  handleDrag(source: readonly (FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[], 
+  handleDrag(source: readonly (RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[], 
     dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void | Thenable<void> {
     // Only allow dragging root folders
     if (source.length === 1 && isRootFolder(source[0])) {
@@ -1591,7 +1880,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   /**
    * Handles the drop event when an item is dropped in the tree view
    */
-  async handleDrop(target: FederationRoot | RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined, 
+  async handleDrop(target: RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined, 
     dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
     const draggedItem = dataTransfer.get('application/vnd.code.tree.moduleFederation')?.value;
     
@@ -1659,7 +1948,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log(`Root folder ${draggedItem.name} moved to position ${targetIndex + 1}`);
     } catch (error) {
       this.logError('Failed to reorder root folders', error);
-      vscode.window.showErrorMessage('Failed to reorder root folders. See output panel for details.');
+      await DialogUtils.showError('Failed to reorder root folders', {
+        detail: 'See output panel for details.'
+      });
     }
   }
 
@@ -1672,15 +1963,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const resolvedFolderPath = this.resolveRemoteFolderPath(remote);
       this.log(`Editing commands for remote ${remote.name}, folder: ${resolvedFolderPath || 'not set'}`);
       
-      // If folder is not set, show error and exit
-      if (!resolvedFolderPath) {
-        vscode.window.showErrorMessage(`Cannot edit commands for ${remote.name}: Folder not configured`);
-        return;
-      }
-      
       // Get current package manager or detect it
       let packageManager = remote.packageManager;
-      if (!packageManager) {
+      if (resolvedFolderPath && !packageManager) {
         // Detect package manager
         if (fsSync.existsSync(path.join(resolvedFolderPath, 'package-lock.json'))) {
           packageManager = 'npm';
@@ -1696,51 +1981,128 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Show quick pick for options to edit
       const options = [
-        { label: 'Edit Build Command', description: remote.buildCommand || 'Not configured' },
-        { label: 'Edit Start Command', description: remote.startCommand || 'Not configured' },
-        { label: 'Edit Both Commands', description: 'Configure both build and start commands' }
+        { label: '📁 Change Project Folder', description: resolvedFolderPath || 'Not configured' },
+        { label: '🔨 Edit Build Command', description: remote.buildCommand || 'Not configured' },
+        { label: '▶️ Edit Preview Build Command', description: remote.startCommand || 'Not configured' },
+        { label: '⚙️ Edit Both Commands', description: 'Configure both build and start commands' }
       ];
       
-      const selectedOption = await vscode.window.showQuickPick(options, {
-        placeHolder: 'What would you like to edit?',
-        title: `Edit Commands for ${remote.name}`
+      const selectedOption = await DialogUtils.showQuickPick(options, {
+        title: `Edit Configuration for ${remote.name}`,
+        placeholder: 'What would you like to edit?'
       });
       
-      if (!selectedOption) {
+      if (!selectedOption || Array.isArray(selectedOption)) {
         return; // User cancelled
       }
       
+      // Handle folder change option
+      if (selectedOption.label.includes('Change Project Folder')) {
+        // Set default URI to parent of workspace root if available
+        let defaultUri: vscode.Uri | undefined;
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (workspaceRoot) {
+          const parentPath = path.dirname(workspaceRoot);
+          defaultUri = vscode.Uri.file(parentPath);
+        }
+
+        const newFolder = await DialogUtils.showFolderPicker({
+          title: `Select New Project Folder for Remote "${remote.name}"`,
+          openLabel: `Select "${remote.name}" Project Folder`,
+          defaultUri: defaultUri,
+          validateFolder: async (folderPath: string) => {
+            const packageJsonPath = path.join(folderPath, 'package.json');
+            if (!fsSync.existsSync(packageJsonPath)) {
+              const continueAnyway = await DialogUtils.showConfirmation(
+                'The selected folder doesn\'t contain a package.json file.',
+                {
+                  detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
+                  confirmText: 'Continue Anyway',
+                  cancelText: 'Select Different Folder'
+                }
+              );
+              return { valid: continueAnyway, message: 'Invalid Node.js project folder' };
+            }
+            return { valid: true };
+          }
+        });
+
+        if (!newFolder) {
+          await DialogUtils.showWarning(
+            `No folder selected for remote "${remote.name}".`,
+            {
+              detail: 'Folder configuration was not changed.'
+            }
+          );
+          return;
+        }
+        
+        // Update the remote folder
+        remote.folder = newFolder;
+        this.log(`Updated project folder for remote ${remote.name}: ${newFolder}`);
+        
+        // Re-detect package manager for the new folder
+        if (fsSync.existsSync(path.join(newFolder, 'package-lock.json'))) {
+          remote.packageManager = 'npm';
+        } else if (fsSync.existsSync(path.join(newFolder, 'yarn.lock'))) {
+          remote.packageManager = 'yarn';
+        } else if (fsSync.existsSync(path.join(newFolder, 'pnpm-lock.yaml'))) {
+          remote.packageManager = 'pnpm';
+        } else {
+          remote.packageManager = 'npm'; // Default to npm
+        }
+        
+        // Save the updated configuration
+        await this.saveRemoteConfiguration(remote);
+        
+        // Refresh the tree view to reflect changes
+        this.refresh();
+        
+        await DialogUtils.showSuccess(`Updated project folder for ${remote.name}`);
+        return;
+      }
+      
+      // If folder is not set for command editing, show error and exit
+      if (!resolvedFolderPath) {
+        await DialogUtils.showError(`Cannot edit commands for ${remote.name}: Folder not configured`, {
+          detail: 'Please configure the project folder first by selecting "Change Project Folder".'
+        });
+        return;
+      }
+      
       // Handle based on selection
-      if (selectedOption.label === 'Edit Build Command' || selectedOption.label === 'Edit Both Commands') {
+      if (selectedOption.label.includes('Edit Build Command') || selectedOption.label.includes('Edit Both Commands')) {
         // Ask user for build command
-        const defaultBuildCommand = remote.buildCommand || `${packageManager} run build`;
-        const buildCommand = await vscode.window.showInputBox({
-          prompt: `Enter the build command for ${remote.name}`,
-          value: defaultBuildCommand,
-          title: 'Configure Build Command',
-          placeHolder: `Example: ${packageManager} run build`
+        const buildCommand = await DialogUtils.showCommandConfig({
+          title: `Configure Build Command for ${remote.name}`,
+          commandType: 'build',
+          currentCommand: remote.buildCommand,
+          packageManager: packageManager,
+          projectPath: resolvedFolderPath,
+          configType: remote.configType
         });
         
         if (buildCommand !== undefined) { // Allow empty string but not undefined (cancelled)
           remote.buildCommand = buildCommand;
-        } else if (selectedOption.label === 'Edit Build Command') {
+        } else if (selectedOption.label.includes('Edit Build Command')) {
           return; // User cancelled just the build command
         }
       }
       
-      if (selectedOption.label === 'Edit Start Command' || selectedOption.label === 'Edit Both Commands') {
+      if (selectedOption.label.includes('Edit Preview Build Command') || selectedOption.label.includes('Edit Both Commands')) {
         // Ask user for start command
-        const defaultStartCommand = remote.startCommand || `${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`;
-        const startCommand = await vscode.window.showInputBox({
-          prompt: `Enter the start command for ${remote.name}`,
-          value: defaultStartCommand,
-          title: 'Configure Start Command',
-          placeHolder: `Example: ${packageManager} run ${remote.configType === 'vite' ? 'dev' : 'start'}`
+        const startCommand = await DialogUtils.showCommandConfig({
+          title: `Configure Start Command for ${remote.name}`,
+          commandType: 'start',
+          currentCommand: remote.startCommand,
+          packageManager: packageManager,
+          projectPath: resolvedFolderPath,
+          configType: remote.configType
         });
         
         if (startCommand !== undefined) { // Allow empty string but not undefined (cancelled)
           remote.startCommand = startCommand;
-        } else if (selectedOption.label === 'Edit Start Command') {
+        } else if (selectedOption.label.includes('Edit Start Command')) {
           return; // User cancelled just the start command
         }
       }
@@ -1751,10 +2113,266 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Refresh the tree view to reflect changes
       this.refresh();
       
-      vscode.window.showInformationMessage(`Updated commands for ${remote.name}`);
+      await DialogUtils.showSuccess(`Updated commands for ${remote.name}`);
     } catch (error) {
       this.logError(`Failed to edit commands for ${remote.name}`, error);
-      vscode.window.showErrorMessage(`Failed to edit commands for ${remote.name}: ${error}`);
+      await DialogUtils.showError(`Failed to edit commands for ${remote.name}`, {
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  /**
+   * Add an external remote to the current host
+   */
+  async addExternalRemote(remotesFolder: RemotesFolder): Promise<void> {
+    try {
+      this.log(`Adding external remote for host ${remotesFolder.parentName}`);
+      
+      // Get the remote name from user
+      const remoteName = await DialogUtils.showInput({
+        title: 'Add External Remote',
+        prompt: 'Enter the name of the external remote',
+        placeholder: 'e.g., shared-components, auth-service, etc.',
+        validateInput: (value: string) => {
+          if (!value || value.trim() === '') {
+            return 'Remote name is required';
+          }
+          if (!/^[a-zA-Z0-9_-]+$/.test(value.trim())) {
+            return 'Remote name can only contain letters, numbers, hyphens, and underscores';
+          }
+          return undefined;
+        }
+      });
+
+      if (!remoteName) {
+        return; // User cancelled
+      }
+
+      // Get the remote URL from user
+      const remoteUrl = await DialogUtils.showInput({
+        title: 'Add External Remote',
+        prompt: `Enter the URL for remote "${remoteName}"`,
+        placeholder: 'e.g., http://localhost:3001/remoteEntry.js, https://my-remote.com/remoteEntry.js',
+        validateInput: (value: string) => {
+          if (!value || value.trim() === '') {
+            return 'Remote URL is required';
+          }
+          try {
+            new URL(value.trim());
+            return undefined;
+          } catch {
+            return 'Please enter a valid URL';
+          }
+        }
+      });
+
+      if (!remoteUrl) {
+        return; // User cancelled
+      }
+
+      // Find the root path for this remotes folder
+      let targetRootPath = '';
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          if (config.name === remotesFolder.parentName) {
+            targetRootPath = rootPath;
+            break;
+          }
+        }
+        if (targetRootPath) break;
+      }
+
+      if (!targetRootPath) {
+        await DialogUtils.showError('Failed to find host configuration', {
+          detail: `Could not find configuration for host "${remotesFolder.parentName}"`
+        });
+        return;
+      }
+
+      // Check if remote name already exists
+      const existingRemote = remotesFolder.remotes.find(r => r.name === remoteName.trim());
+      if (existingRemote) {
+        await DialogUtils.showError('Remote already exists', {
+          detail: `A remote named "${remoteName.trim()}" already exists in host "${remotesFolder.parentName}"`
+        });
+        return;
+      }
+
+      // Create the external remote object
+      const externalRemote: Remote = {
+        name: remoteName.trim(),
+        url: remoteUrl.trim(),
+        folder: '', // External remotes don't have local folders
+        configType: 'external',
+        packageManager: '',
+        isExternal: true
+      };
+
+      // Save the external remote to configuration
+      await this.saveExternalRemoteConfiguration(targetRootPath, externalRemote);
+
+      // Add the external remote to the current configuration in memory
+      remotesFolder.remotes.push(externalRemote);
+
+      // Refresh the tree view
+      this.refresh();
+
+      await DialogUtils.showSuccess(`Added external remote "${remoteName.trim()}" to host "${remotesFolder.parentName}"`);
+    } catch (error) {
+      this.logError('Failed to add external remote', error);
+      await DialogUtils.showError('Failed to add external remote', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  /**
+   * Save external remote configuration
+   */
+  private async saveExternalRemoteConfiguration(rootPath: string, externalRemote: Remote): Promise<void> {
+    try {
+      this.log(`Saving external remote configuration for ${externalRemote.name} in root ${rootPath}`);
+      
+      // Get current config
+      const config = await this.rootConfigManager.loadRootConfig();
+      if (!config) {
+        throw new Error('No configuration found');
+      }
+
+      // Ensure rootConfigs exists
+      if (!config.rootConfigs) {
+        config.rootConfigs = {};
+      }
+
+      // Ensure the config for this root exists
+      if (!config.rootConfigs[rootPath]) {
+        config.rootConfigs[rootPath] = {};
+      }
+
+      // Ensure externalRemotes section exists for this root
+      if (!config.rootConfigs[rootPath].externalRemotes) {
+        config.rootConfigs[rootPath].externalRemotes = {};
+      }
+
+      // Store external remote configuration
+      config.rootConfigs[rootPath].externalRemotes![externalRemote.name] = {
+        name: externalRemote.name,
+        url: externalRemote.url!,
+        configType: 'external',
+        isExternal: true
+      };
+
+      // Save the config
+      await this.rootConfigManager.saveRootConfig(config);
+
+      this.log(`Saved external remote configuration for ${externalRemote.name} in root ${rootPath}`);
+    } catch (error) {
+      this.logError(`Failed to save external remote configuration for ${externalRemote.name}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove an external remote
+   */
+  async removeExternalRemote(remote: Remote): Promise<void> {
+    try {
+      this.log(`Removing external remote ${remote.name}`);
+      
+      // Confirm with user
+      const confirmed = await DialogUtils.showConfirmation(
+        `Are you sure you want to remove external remote "${remote.name}"?`,
+        {
+          destructive: true,
+          confirmText: 'Remove',
+          cancelText: 'Cancel'
+        }
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      // Find the root path that contains this external remote
+      let targetRootPath = '';
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          if (config.remotes.some(r => r.name === remote.name && r.isExternal)) {
+            targetRootPath = rootPath;
+            break;
+          }
+        }
+        if (targetRootPath) break;
+      }
+
+      if (!targetRootPath) {
+        await DialogUtils.showError('Failed to find external remote configuration', {
+          detail: `Could not find configuration for external remote "${remote.name}"`
+        });
+        return;
+      }
+
+      // Remove from configuration file
+      await this.removeExternalRemoteFromConfiguration(targetRootPath, remote.name);
+
+      // Remove from memory configurations
+      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const config of configs) {
+          const remoteIndex = config.remotes.findIndex(r => r.name === remote.name && r.isExternal);
+          if (remoteIndex !== -1) {
+            config.remotes.splice(remoteIndex, 1);
+            this.log(`Removed external remote ${remote.name} from config ${config.name}`);
+          }
+        }
+      }
+
+      // Refresh the tree view
+      this.refresh();
+
+      await DialogUtils.showSuccess(`Removed external remote "${remote.name}"`);
+    } catch (error) {
+      this.logError('Failed to remove external remote', error);
+      await DialogUtils.showError('Failed to remove external remote', {
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  /**
+   * Remove external remote from configuration file
+   */
+  private async removeExternalRemoteFromConfiguration(rootPath: string, remoteName: string): Promise<void> {
+    try {
+      this.log(`Removing external remote ${remoteName} from configuration in root ${rootPath}`);
+      
+      // Get current config
+      const config = await this.rootConfigManager.loadRootConfig();
+      if (!config) {
+        throw new Error('No configuration found');
+      }
+
+      // Check if the configuration structure exists
+      if (!config.rootConfigs || !config.rootConfigs[rootPath] || !config.rootConfigs[rootPath].externalRemotes) {
+        this.log(`No external remotes configuration found for root ${rootPath}`);
+        return;
+      }
+
+      // Remove the external remote
+      delete config.rootConfigs[rootPath].externalRemotes![remoteName];
+
+      // Clean up empty externalRemotes object if needed
+      if (Object.keys(config.rootConfigs[rootPath].externalRemotes!).length === 0) {
+        delete config.rootConfigs[rootPath].externalRemotes;
+      }
+
+      // Save the config
+      await this.rootConfigManager.saveRootConfig(config);
+
+      this.log(`Removed external remote ${remoteName} from configuration in root ${rootPath}`);
+    } catch (error) {
+      this.logError(`Failed to remove external remote ${remoteName} from configuration`, error);
+      throw error;
     }
   }
 }

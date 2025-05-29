@@ -2,8 +2,9 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
-import { UnifiedRootConfig, FederationRoot } from './types';
+import { UnifiedRootConfig } from './types';
 import { outputChannel } from './outputChannel';
+import { DialogUtils } from './dialogUtils';
 
 /**
  * Manages the unified root configuration
@@ -32,7 +33,9 @@ export class RootConfigManager {
     const timestamp = new Date().toISOString();
     outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
     console.error(`[Module Federation Roots] ${message}:\n`, errorDetails);
-    vscode.window.showErrorMessage(`${message}: ${error instanceof Error ? error.message : String(error)}`);
+    DialogUtils.showError(message, {
+      detail: error instanceof Error ? error.message : String(error)
+    });
   }
 
   /**
@@ -138,12 +141,12 @@ export class RootConfigManager {
       });
       
       // Show quick pick to select a configuration
-      const selected = await vscode.window.showQuickPick(configOptions, {
-        placeHolder: 'Select an existing configuration or create a new one',
-        title: 'Module Federation Configuration'
+      const selected = await DialogUtils.showQuickPick(configOptions, {
+        title: 'Module Federation Configuration',
+        placeholder: 'Select an existing configuration or create a new one'
       });
       
-      if (!selected) {
+      if (!selected || Array.isArray(selected)) {
         return undefined;
       }
       
@@ -194,7 +197,7 @@ export class RootConfigManager {
       // Let the user select where to create the configuration file
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
-        vscode.window.showErrorMessage('No workspace folder is open');
+        await DialogUtils.showError('No workspace folder is open');
         return undefined;
       }
       
@@ -209,12 +212,12 @@ export class RootConfigManager {
           description: folder.uri.fsPath
         }));
         
-        const selectedFolder = await vscode.window.showQuickPick(folderOptions, {
-          placeHolder: 'Select a workspace folder for the configuration',
-          title: 'Create Module Federation Configuration'
+        const selectedFolder = await DialogUtils.showQuickPick(folderOptions, {
+          title: 'Create Module Federation Configuration',
+          placeholder: 'Select a workspace folder for the configuration'
         });
         
-        if (!selectedFolder) {
+        if (!selectedFolder || Array.isArray(selectedFolder)) {
           return undefined;
         }
         
@@ -231,11 +234,11 @@ export class RootConfigManager {
       
       // Let user enter a custom file name
       const defaultFileName = RootConfigManager.CONFIG_FILENAME;
-      const fileName = await vscode.window.showInputBox({
+      const fileName = await DialogUtils.showInput({
+        title: 'Configuration File Name',
         prompt: 'Enter a name for your Module Federation configuration file',
         value: defaultFileName,
-        title: 'Configuration File Name',
-        placeHolder: 'Example: mf-explorer.roots.json'
+        placeholder: 'Example: mf-explorer.roots.json'
       });
       
       if (!fileName) {
@@ -249,13 +252,15 @@ export class RootConfigManager {
       // Check if the file already exists
       try {
         await fsPromises.access(configPath);
-        const overwrite = await vscode.window.showWarningMessage(
+        const overwrite = await DialogUtils.showConfirmation(
           `File ${configFileName} already exists. Overwrite?`,
-          { modal: true },
-          'Yes', 'No'
+          {
+            confirmText: 'Yes',
+            cancelText: 'No'
+          }
         );
         
-        if (overwrite !== 'Yes') {
+        if (!overwrite) {
           return undefined;
         }
       } catch {
@@ -397,7 +402,7 @@ export class RootConfigManager {
       if (!config) {
         const newConfig: UnifiedRootConfig = { roots: [rootPath] };
         await this.saveRootConfig(newConfig);
-        vscode.window.showInformationMessage(`Saved ${rootPath} to new configuration`);
+        await DialogUtils.showSuccess(`Saved ${rootPath} to new configuration`);
         return;
       }
       
@@ -410,7 +415,7 @@ export class RootConfigManager {
       config.roots.push(rootPath);
       await this.saveRootConfig(config);
       
-      vscode.window.showInformationMessage(`Saved ${rootPath} to configuration`);
+      await DialogUtils.showSuccess(`Saved ${rootPath} to configuration`);
     } catch (error) {
       this.logError(`Failed to add root ${rootPath}`, error);
     }
@@ -491,7 +496,7 @@ export class RootConfigManager {
         await this.createEmptyConfig(configPath);
       }
       
-      vscode.window.showInformationMessage(`Changed configuration to ${configPath}`);
+      await DialogUtils.showSuccess(`Changed configuration to ${configPath}`);
       return true;
     } catch (error) {
       this.logError('Failed to change configuration file', error);
