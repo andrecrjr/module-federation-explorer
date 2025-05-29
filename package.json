@@ -38,7 +38,7 @@
         "viewsWelcome": [
             {
                 "view": "moduleFederation",
-                "contents": "👋 Welcome to Module Federation Explorer!\n\nTo get started, follow these simple steps:\n\n🔧 STEP 1: Set Up Your Configuration File\n   Configure where your settings will be stored.\n   [Configure Settings](command:moduleFederation.changeConfigFile)\n\n📁 STEP 2: Add Host Folders\n   Add folders containing your Module Federation configurations\n   (e.g., Webpack, Vite, or ModernJS setups).\n   [Add Host Folder](command:moduleFederation.addRoot)\n\n🚀 STEP 3: Explore Features\n   Once configured, you can visualize dependencies, manage remotes,\n   and interact with your Module Federation architecture.\n\n📖 [Learn more in the Documentation](https://github.com/andrecrjr/module-federation-explorer)",
+                "contents": "👋 Welcome to Module Federation Explorer!\n\nTo get started, follow these simple steps:\n\n🔧 STEP 1: Set Up Your Configuration File\n   Configure where your settings will be stored.\n   [Configure Settings](command:moduleFederation.changeConfigFile)\n\n📁 STEP 2: Add Host Folders\n   Add folders containing your Module Federation configurations\n   (e.g., Webpack, Vite, or ModernJS setups).\n   [Add Host Folder](command:moduleFederation.addRoot)\n\n🚀 STEP 3: Explore Features\n   Once configured, you can visualize dependencies, manage remotes,\n   and interact with your Module Federation architecture.\n\n📖 [Learn more in the Documentation](https://github.com/andrecrjr/module-federation-explorer)\n\n💬 [Share Feedback](command:moduleFederation.showFeedback)",
                 "when": "!moduleFederation.hasRoots"
             }
         ],
@@ -117,6 +117,11 @@
             {
                 "command": "moduleFederation.openView",
                 "title": "Module Federation Explorer: Open View"
+            },
+            {
+                "command": "moduleFederation.showFeedback",
+                "title": "Module Federation Explorer: Share Feedback",
+                "icon": "$(feedback)"
             }
         ],
         "menus": {
@@ -138,6 +143,11 @@
                 },
                 {
                     "command": "moduleFederation.changeConfigFile",
+                    "when": "view == moduleFederation",
+                    "group": "navigation"
+                },
+                {
+                    "command": "moduleFederation.showFeedback",
                     "when": "view == moduleFederation",
                     "group": "navigation"
                 }

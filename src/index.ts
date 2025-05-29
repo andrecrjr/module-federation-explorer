@@ -103,6 +103,12 @@ export function activate(context: vscode.ExtensionContext) {
     });
     context.subscriptions.push(welcomeCommand);
     
+    // Register feedback command
+    const feedbackCommand = vscode.commands.registerCommand('moduleFederation.showFeedback', () => {
+      vscode.env.openExternal(vscode.Uri.parse('https://acjr.notion.site/202b5e58148c8017ba2ad355fc377e4b?pvs=105'));
+    });
+    context.subscriptions.push(feedbackCommand);
+    
     // Register commands and watchers
     const disposables = [
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.reloadConfigurations()),
@@ -475,6 +481,9 @@ function showWelcomePage(context: vscode.ExtensionContext) {
         case 'openDocs':
           vscode.env.openExternal(vscode.Uri.parse('https://github.com/andrecrjr/module-federation-explorer'));
           return;
+        case 'openFeedback':
+          vscode.env.openExternal(vscode.Uri.parse('https://acjr.notion.site/202b5e58148c8017ba2ad355fc377e4b?pvs=105'));
+          return;
       }
     },
     undefined,
@@ -674,6 +683,20 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
         <img src="https://cdn.prod.website-files.com/5c14e387dab576fe667689cf/670f5a01c01ea9191809398c_support_me_on_kofi_blue-p-500.png" alt="KoFi Donation" width="200"/>
       </a>
 
+      <h2>📝 Feedback & Support</h2>
+      <div style="margin: 20px 0; text-align: center;">
+        <p>Help us improve Module Federation Explorer by sharing your feedback!</p>
+        <div style="margin: 15px 0;">
+          <button class="button" id="feedbackBtn">📝 Share Feedback</button>
+          <button class="button" id="feedbackIframeBtn">💬 Quick Feedback</button>
+        </div>
+        
+        <!-- Feedback iframe (initially hidden) -->
+        <div id="feedbackIframe" style="display: none; margin: 20px 0; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);">
+          <iframe src="https://acjr.notion.site/ebd/202b5e58148c8017ba2ad355fc377e4b" width="100%" height="600" frameborder="0" allowfullscreen></iframe>
+        </div>
+      </div>
+
     </div>
 
     <script>
@@ -690,6 +713,21 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
       document.getElementById('directViewLink').addEventListener('click', (e) => {
         e.preventDefault();
         vscode.postMessage({ command: 'openExtensionExplorer' });
+      });
+      
+      document.getElementById('feedbackBtn').addEventListener('click', () => {
+        vscode.postMessage({ command: 'openFeedback' });
+      });
+      
+      document.getElementById('feedbackIframeBtn').addEventListener('click', () => {
+        const iframe = document.getElementById('feedbackIframe');
+        if (iframe.style.display === 'none') {
+          iframe.style.display = 'block';
+          document.getElementById('feedbackIframeBtn').textContent = '🔼 Hide Feedback';
+        } else {
+          iframe.style.display = 'none';
+          document.getElementById('feedbackIframeBtn').textContent = '💬 Quick Feedback';
+        }
       });
     </script>
     </body>

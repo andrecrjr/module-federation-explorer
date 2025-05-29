@@ -117,88 +117,9 @@ export class DependencyGraphManager {
       });
     });
     
-    // Second pass: Create unified nodes based on capabilities and track relationships
+    // Second pass: Build the remote consumption map first
     appCapabilities.forEach((capabilities, appId) => {
-      const { isHost, isRemote, config } = capabilities;
-      
-      // Determine basic capabilities
-      const hasRemotes = config.remotes.length > 0;
-      const hasExposes = config.exposes.length > 0;
-      
-      // Check if this app is being consumed as a remote by other apps
-      const isConsumedAsRemote = remoteToHostMap.has(appId);
-      
-      // True bidirectional: has remotes/exposes AND is consumed by others
-      const isBidirectional = (hasRemotes || hasExposes) && isConsumedAsRemote;
-      
-      // Determine the primary type
-      let nodeType: 'host' | 'remote';
-      let nodeGroup: string;
-      
-      if (isBidirectional) {
-        // True bidirectional app (has capabilities AND is consumed by others)
-        nodeType = 'host'; 
-        nodeGroup = 'bidirectional';
-      } else if (hasRemotes && !hasExposes) {
-        // Pure consumer host (only consumes)
-        nodeType = 'host';
-        nodeGroup = 'hosts';
-      } else if (hasExposes && !hasRemotes) {
-        // Provider host (only exposes - still a host that provides services)
-        nodeType = 'host';
-        nodeGroup = 'hosts';
-      } else {
-        // Standalone app (neither consumes nor exposes)
-        nodeType = 'host';
-        nodeGroup = 'hosts';
-      }
-      
-      log(`[Graph] App '${config.name}' node type determination: ${JSON.stringify({
-        isHost,
-        isRemote,
-        nodeType,
-        nodeGroup,
-        hasRemotes,
-        hasExposes,
-        isConsumedAsRemote,
-        isBidirectional,
-        remotesCount: config.remotes.length,
-        exposesCount: config.exposes.length,
-        sharedCount: config.shared.length,
-        reason: isBidirectional 
-          ? `bidirectional: has capabilities (${hasRemotes ? 'remotes' : ''}${hasRemotes && hasExposes ? '+' : ''}${hasExposes ? 'exposes' : ''}) AND is consumed by ${remoteToHostMap.get(appId)?.length || 0} other apps`
-          : hasRemotes 
-            ? `consumer host: consumes ${config.remotes.length} remotes`
-            : hasExposes
-              ? `provider host: exposes ${config.exposes.length} modules`
-              : 'standalone host (no remotes or exposes)'
-      })}`);
-      
-      // Create a single unified node for this application
-      const appNode: DependencyGraphNode = {
-        id: appId,
-        label: config.name,
-        type: nodeType,
-        configType: config.configType,
-        exposedModules: hasExposes ? config.exposes.map(e => e.name) : undefined,
-        sharedDependencies: config.shared.map(s => s.name),
-        size: Math.max(1, config.remotes.length + config.exposes.length + config.shared.length),
-        group: nodeGroup
-      };
-      
-      nodeMap.set(appId, appNode);
-      graph.nodes.push(appNode);
-      
-      // Update metadata based on capabilities
-      if (isHost) {
-        graph.metadata!.totalHosts++;
-      }
-      if (isRemote) {
-        graph.metadata!.totalRemotes++;
-      }
-      if (config.exposes.length > 0) {
-        graph.metadata!.totalExposedModules += config.exposes.length;
-      }
+      const { config } = capabilities;
       
       // Track remote consumption relationships
       config.remotes.forEach(remote => {
@@ -262,7 +183,115 @@ export class DependencyGraphManager {
       });
     });
     
-    // Third pass: Create consolidated consumption edges (avoid overlapping bidirectional edges)
+    // Third pass: Create unified nodes based on capabilities and consumption relationships
+    appCapabilities.forEach((capabilities, appId) => {
+      const { isHost, isRemote, config } = capabilities;
+      
+      // Determine basic capabilities
+      const hasRemotes = config.remotes.length > 0;
+      const hasExposes = config.exposes.length > 0;
+      
+      // Check if this app is being consumed as a remote by other apps (now the map is complete)
+      const isConsumedAsRemote = remoteToHostMap.has(appId);
+      
+      // Determine the primary type based on actual usage patterns
+      let nodeType: 'host' | 'remote';
+      let nodeGroup: string;
+      
+      if (hasRemotes && hasExposes) {
+        // Bidirectional: both consumes and exposes
+        if (isConsumedAsRemote) {
+          // True bidirectional - consumed by others AND consumes others
+          nodeType = 'host'; // Keep as host since it actively consumes
+          nodeGroup = 'bidirectional';
+        } else {
+          // Self-contained bidirectional - has both capabilities but not consumed
+          nodeType = 'host';
+          nodeGroup = 'hosts';
+        }
+      } else if (hasRemotes && !hasExposes) {
+        // Pure consumer - only consumes remotes
+        nodeType = 'host';
+        nodeGroup = 'hosts';
+      } else if (!hasRemotes && hasExposes) {
+        // Pure provider - only exposes modules
+        if (isConsumedAsRemote) {
+          // This app is being consumed as a remote by other apps
+          nodeType = 'remote';
+          nodeGroup = 'remotes';
+        } else {
+          // Exposes modules but nobody is consuming it (orphaned provider)
+          nodeType = 'host'; // Still treat as host since it's a workspace app
+          nodeGroup = 'hosts';
+        }
+      } else {
+        // Standalone app - neither consumes nor exposes
+        nodeType = 'host';
+        nodeGroup = 'hosts';
+      }
+      
+      log(`[Graph] App '${config.name}' node type determination: ${JSON.stringify({
+        isHost,
+        isRemote,
+        nodeType,
+        nodeGroup,
+        hasRemotes,
+        hasExposes,
+        isConsumedAsRemote,
+        remotesCount: config.remotes.length,
+        exposesCount: config.exposes.length,
+        sharedCount: config.shared.length,
+        consumedByApps: isConsumedAsRemote ? remoteToHostMap.get(appId)?.length || 0 : 0,
+        reason: (() => {
+          if (hasRemotes && hasExposes) {
+            return isConsumedAsRemote 
+              ? `bidirectional: consumes ${config.remotes.length} remotes AND consumed by ${remoteToHostMap.get(appId)?.length || 0} apps`
+              : `self-contained: has both capabilities but not consumed by others`;
+          } else if (hasRemotes && !hasExposes) {
+            return `consumer host: consumes ${config.remotes.length} remotes`;
+          } else if (!hasRemotes && hasExposes) {
+            return isConsumedAsRemote
+              ? `remote provider: exposes ${config.exposes.length} modules, consumed by ${remoteToHostMap.get(appId)?.length || 0} apps`
+              : `orphaned provider: exposes ${config.exposes.length} modules but not consumed`;
+          } else {
+            return 'standalone host (no remotes or exposes)';
+          }
+        })()
+      })}`);
+      
+      // Create a single unified node for this application
+      const appNode: DependencyGraphNode = {
+        id: appId,
+        label: config.name,
+        type: nodeType,
+        configType: config.configType,
+        exposedModules: hasExposes ? config.exposes.map(e => e.name) : undefined,
+        sharedDependencies: config.shared.map(s => s.name),
+        size: Math.max(1, config.remotes.length + config.exposes.length + config.shared.length),
+        group: nodeGroup
+      };
+      
+      nodeMap.set(appId, appNode);
+      graph.nodes.push(appNode);
+      
+      // Update metadata based on capabilities
+      if (isHost) {
+        graph.metadata!.totalHosts++;
+      }
+      if (isRemote) {
+        graph.metadata!.totalRemotes++;
+      }
+      if (config.exposes.length > 0) {
+        graph.metadata!.totalExposedModules += config.exposes.length;
+      }
+      
+      // Track exposed modules for later reference
+      if (config.exposes.length > 0) {
+        exposedModulesMap.set(appId, config.exposes.map(e => e.name));
+      }
+    });
+    
+    // Fourth pass: Create consolidated consumption edges (avoid overlapping bidirectional edges)
     const edgeMap = new Map<string, DependencyGraphEdge>(); // Track unique edges
     const processedPairs = new Set<string>(); // Track processed node pairs
     
@@ -336,7 +365,7 @@ export class DependencyGraphManager {
         });
       });
     
-    // Fourth pass: Create exposed module nodes for applications that expose modules
+    // Fifth pass: Create exposed module nodes for applications that expose modules
     exposedModulesMap.forEach((moduleNames, appId) => {
       const appNode = nodeMap.get(appId);
       if (appNode) {
@@ -369,7 +398,7 @@ export class DependencyGraphManager {
       }
     });
     
-    // Fifth pass: Create shared dependency nodes from actual configurations
+    // Sixth pass: Create shared dependency nodes from actual configurations
     const sharedDepsMap = new Map<string, Set<string>>(); // Track which apps share each dependency
     
     // Collect all shared dependencies from configurations
@@ -460,6 +489,7 @@ export class DependencyGraphManager {
     let providerHosts = 0;
     let bidirectionalApps = 0;
     let standaloneApps = 0;
+    let workspaceRemotes = 0;
     
     appCapabilities.forEach((capabilities) => {
       const hasRemotes = capabilities.config.remotes.length > 0;
@@ -476,25 +506,34 @@ export class DependencyGraphManager {
       }
     });
     
-    // Set metadata based on actual app types
-    // All workspace apps are now hosts (consumer, provider, bidirectional, or standalone)
-    graph.metadata!.totalHosts = consumerHosts + providerHosts + bidirectionalApps + standaloneApps;
-    // Only external remotes count as remotes
-    graph.metadata!.totalRemotes = graph.nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length;
+    // Count workspace applications that are classified as remotes
+    workspaceRemotes = graph.nodes.filter(n => n.type === 'remote' && !n.id.startsWith('external-')).length;
+    
+    // Count external remotes
+    const externalRemotes = graph.nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length;
+    
+    // Set metadata based on actual node classifications
+    graph.metadata!.totalHosts = graph.nodes.filter(n => n.type === 'host').length;
+    graph.metadata!.totalRemotes = graph.nodes.filter(n => n.type === 'remote').length;
     
     // Debug log the enhanced graph data
-    log(`Generated bidirectional-aware dependency graph: ${JSON.stringify({
+    log(`Generated enhanced dependency graph: ${JSON.stringify({
       nodes: graph.nodes.length,
       edges: graph.edges.length,
       consumerHosts,
       providerHosts,
       bidirectionalApps,
       standaloneApps,
-      externalRemotes: graph.nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length,
+      workspaceRemotes,
+      externalRemotes,
       totalHosts: graph.metadata!.totalHosts,
       totalRemotes: graph.metadata!.totalRemotes,
       sharedDeps: graph.metadata!.totalSharedDeps,
-      exposedModules: graph.metadata!.totalExposedModules
+      exposedModules: graph.metadata!.totalExposedModules,
+      nodeBreakdown: {
+        hostNodes: graph.nodes.filter(n => n.type === 'host').map(n => ({ label: n.label, group: n.group })),
+        remoteNodes: graph.nodes.filter(n => n.type === 'remote').map(n => ({ label: n.label, group: n.group, isExternal: n.id.startsWith('external-') }))
+      }
     })}`);
     
     // Debug: Show all created nodes and their types
@@ -708,7 +747,7 @@ export class DependencyGraphManager {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' https://d3js.org;">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' https://d3js.org https://cdn.jsdelivr.net https://unpkg.com;">
         <title>Module Federation Dependency Graph</title>
         <style>
             body, html {
@@ -1045,19 +1084,19 @@ export class DependencyGraphManager {
                 <h4>Node Types</h4>
             <div class="legend-item">
                 <div class="legend-color host-color"></div>
-                <span>Host Application<br><small>(Workspace Apps)</small></span>
+                <span>Host Application<br><small>(Consumes remotes or standalone)</small></span>
             </div>
             <div class="legend-item">
                 <div class="legend-color remote-color"></div>
-                <span>Remote Module<br><small>(External Apps)</small></span>
+                <span>Remote Application<br><small>(Workspace apps consumed by others)</small></span>
             </div>
             <div class="legend-item">
                 <div class="legend-color bidirectional-color"></div>
-                <span>Bidirectional App<br><small>(Host + Consumed as Remote)</small></span>
+                <span>Bidirectional App<br><small>(Consumes remotes + consumed by others)</small></span>
             </div>
             <div class="legend-item">
                 <div class="legend-color external-color"></div>
-                <span>External Remote</span>
+                <span>External Remote<br><small>(Outside workspace)</small></span>
             </div>
             <div class="legend-item">
                 <div class="legend-color shared-color"></div>
@@ -1091,9 +1130,9 @@ export class DependencyGraphManager {
         
         <div class="stats">
             <div class="stat-item">Hosts: <span class="stat-value" id="stat-hosts">0</span></div>
-            <div class="stat-item">Remotes: <span class="stat-value" id="stat-remotes">0</span></div>
+            <div class="stat-item">Workspace Remotes: <span class="stat-value" id="stat-workspace-remotes">0</span></div>
+            <div class="stat-item">External Remotes: <span class="stat-value" id="stat-external-remotes">0</span></div>
             <div class="stat-item">Bidirectional: <span class="stat-value" id="stat-bidirectional">0</span></div>
-            <div class="stat-item">External: <span class="stat-value" id="stat-external">0</span></div>
             <div class="stat-item">Shared Deps: <span class="stat-value" id="stat-shared">0</span></div>
             <div class="stat-item">Modules: <span class="stat-value" id="stat-modules">0</span></div>
         </div>
@@ -1117,18 +1156,65 @@ export class DependencyGraphManager {
             
             // Function to load D3.js from CDN
             function loadD3() {
-                log("Loading D3.js from CDN...");
-                const d3Script = document.createElement('script');
-                d3Script.src = 'https://d3js.org/d3.v7.min.js';
-                d3Script.onload = () => { 
-                    log("D3.js loaded successfully");
-                    initializeGraph(); 
-                };
-                d3Script.onerror = (error) => {
-                    showError("Failed to load D3.js library. Please check your internet connection.");
-                    log("D3 load error:", error);
-                };
-                document.head.appendChild(d3Script);
+                console.log("Loading D3.js from CDN...");
+                
+                // List of CDN fallbacks
+                const d3CDNs = [
+                    'https://d3js.org/d3.v7.min.js',
+                    'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js',
+                    'https://unpkg.com/d3@7/dist/d3.min.js'
+                ];
+                
+                let currentCDNIndex = 0;
+                
+                function tryLoadD3(cdnIndex) {
+                    if (cdnIndex >= d3CDNs.length) {
+                        showError("Failed to load D3.js from all available CDNs. Please check your internet connection or try again later.");
+                        return;
+                    }
+                    
+                    console.log(\`Trying D3.js CDN \${cdnIndex + 1}/\${d3CDNs.length}: \${d3CDNs[cdnIndex]}\`);
+                    
+                    const d3Script = document.createElement('script');
+                    d3Script.src = d3CDNs[cdnIndex];
+                    
+                    // Set a timeout for loading
+                    const loadTimeout = setTimeout(() => {
+                        console.log(\`Timeout loading D3.js from \${d3CDNs[cdnIndex]}, trying next CDN...\`);
+                        d3Script.remove();
+                        tryLoadD3(cdnIndex + 1);
+                    }, 10000); // 10 second timeout
+                    
+                    d3Script.onload = () => {
+                        clearTimeout(loadTimeout);
+                        console.log("D3.js loaded successfully from:", d3CDNs[cdnIndex]);
+                        
+                        // Verify D3 is actually available
+                        if (typeof d3 !== 'undefined') {
+                            initializeGraph();
+                        } else {
+                            console.log("D3.js script loaded but d3 object not available, trying next CDN...");
+                            tryLoadD3(cdnIndex + 1);
+                        }
+                    };
+                    
+                    d3Script.onerror = (error) => {
+                        clearTimeout(loadTimeout);
+                        console.log(\`Failed to load D3.js from \${d3CDNs[cdnIndex]}:\`, error);
+                        d3Script.remove();
+                        tryLoadD3(cdnIndex + 1);
+                    };
+                    
+                    document.head.appendChild(d3Script);
+                }
+                
+                // Start loading from the first CDN
+                tryLoadD3(0);
+            }
+            
+            // Logging function that works in webview context
+            function log(message, ...args) {
+                console.log('[MF Graph]', message, ...args);
             }
             
             // Error handling function
@@ -1144,7 +1230,7 @@ export class DependencyGraphManager {
                         text: message
                     });
                 } catch (err) {
-                    log("Failed to communicate with VS Code extension:", err);
+                    console.log("Failed to communicate with VS Code extension:", err);
                 }
             }
             
@@ -1190,17 +1276,17 @@ export class DependencyGraphManager {
             function updateStats(nodes) {
                 const stats = {
                     hosts: nodes.filter(n => n.type === 'host').length,
-                    remotes: nodes.filter(n => n.type === 'remote').length,
+                    workspaceRemotes: nodes.filter(n => n.type === 'remote' && !n.id.startsWith('external-')).length,
+                    externalRemotes: nodes.filter(n => n.type === 'remote' && n.id.startsWith('external-')).length,
                     bidirectional: nodes.filter(n => n.group === 'bidirectional').length,
-                    external: nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length,
                     shared: nodes.filter(n => n.type === 'shared-dependency').length,
                     modules: nodes.filter(n => n.type === 'exposed-module').length
                 };
                 
                 document.getElementById('stat-hosts').textContent = stats.hosts;
-                document.getElementById('stat-remotes').textContent = stats.remotes;
+                document.getElementById('stat-workspace-remotes').textContent = stats.workspaceRemotes;
+                document.getElementById('stat-external-remotes').textContent = stats.externalRemotes;
                 document.getElementById('stat-bidirectional').textContent = stats.bidirectional;
-                document.getElementById('stat-external').textContent = stats.external;
                 document.getElementById('stat-shared').textContent = stats.shared;
                 document.getElementById('stat-modules').textContent = stats.modules;
             }
