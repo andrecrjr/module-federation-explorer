@@ -66,17 +66,17 @@ const packageManagerCache = new Map<string, { packageManager: 'npm' | 'pnpm' | '
 /**
  * Detect package manager and get appropriate start command based on project type
  */
-async function detectPackageManagerAndStartCommand(folder: string, configType: 'webpack' | 'vite'): Promise<{ packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }> {
-  // Check cache first
+async function detectPackageManagerAndStartCommand(folder: string, configType: 'webpack' | 'vite' | 'rsbuild'): Promise<{ packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }> {
   const cacheKey = `${folder}-${configType}`;
   if (packageManagerCache.has(cacheKey)) {
     return packageManagerCache.get(cacheKey)!;
   }
 
   try {
-    const startScript = configType === 'vite' ? 'dev' : 'start';
+    // Determine the default start script based on config type
+    const startScript = configType === 'vite' ? 'dev' : configType === 'rsbuild' ? 'dev' : 'start';
     
-    // Check for lock files in order of preference
+    // Check for lock files to determine package manager
     const lockFiles = [
       { file: 'package-lock.json', manager: 'npm' as const },
       { file: 'pnpm-lock.yaml', manager: 'pnpm' as const },
@@ -104,7 +104,7 @@ async function detectPackageManagerAndStartCommand(folder: string, configType: '
   } catch (error) {
     console.error('Error detecting package manager:', error);
     // Default to npm if there's an error
-    const result = { packageManager: 'npm' as const, startCommand: `npm run ${configType === 'vite' ? 'dev' : 'start'}` };
+    const result = { packageManager: 'npm' as const, startCommand: `npm run ${configType === 'vite' || configType === 'rsbuild' ? 'dev' : 'start'}` };
     packageManagerCache.set(cacheKey, result);
     return result;
   }
@@ -298,6 +298,37 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
     },
     fallback
   });
+  
+  await updateRemotePackageManagers(config);
+  return config;
+}
+
+/**
+ * Extract Module Federation configuration from RSBuild config AST
+ */
+export async function extractConfigFromRSBuild(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
+  const config: ModuleFederationConfig = {
+    name: '',
+    remotes: [],
+    exposes: [],
+    shared: [],
+    configType: 'rsbuild',
+    configPath: ''
+  };
+  
+  const configObj = findRSBuildConfigObject(ast);
+  if (!configObj) return config;
+  
+  // Find moduleFederation property
+  const moduleFederationProp = findProperty(configObj, 'moduleFederation');
+  if (moduleFederationProp?.value.type === 'ObjectExpression') {
+    // Look for options property within moduleFederation
+    const optionsProp = findProperty(moduleFederationProp.value, 'options');
+    if (optionsProp?.value.type === 'ObjectExpression') {
+      extractConfigFromOptions(optionsProp.value, config);
+      logConfig('RSBuild', config);
+    }
+  }
   
   await updateRemotePackageManagers(config);
   return config;
@@ -533,4 +564,48 @@ function extractSharedDependencies(valueNode: any): SharedDependency[] {
   }
   
   return shared;
+}
+
+function findRSBuildConfigObject(ast: any): any {
+  let configObj = null;
+  
+  estraverse.traverse(ast, {
+    enter(node: any) {
+      if (node.type === 'ExportDefaultDeclaration') {
+        if (node.declaration.type === 'CallExpression' &&
+            node.declaration.callee.type === 'Identifier' &&
+            node.declaration.callee.name === 'defineConfig') {
+          // Handle defineConfig({ ... })
+          if (node.declaration.arguments.length > 0 && 
+              node.declaration.arguments[0].type === 'ObjectExpression') {
+            configObj = node.declaration.arguments[0];
+          }
+          // Handle defineConfig(({ mode }) => ({ ... }))
+          else if (node.declaration.arguments.length > 0 && 
+                  node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
+                  node.declaration.arguments[0].body.type === 'ObjectExpression') {
+            configObj = node.declaration.arguments[0].body;
+          }
+          // Handle defineConfig(({ mode }) => { return { ... }; })
+          else if (node.declaration.arguments.length > 0 && 
+                  node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
+                  node.declaration.arguments[0].body.type === 'BlockStatement') {
+            // Try to find the return statement
+            const returnStatement = node.declaration.arguments[0].body.body.find(
+              (stmt: any) => stmt.type === 'ReturnStatement'
+            );
+            if (returnStatement && returnStatement.argument && 
+                returnStatement.argument.type === 'ObjectExpression') {
+              configObj = returnStatement.argument;
+            }
+          }
+        } else if (node.declaration.type === 'ObjectExpression') {
+          configObj = node.declaration;
+        }
+      }
+    },
+    fallback
+  });
+  
+  return configObj;
 } 

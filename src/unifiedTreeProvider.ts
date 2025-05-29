@@ -11,7 +11,7 @@ import {
     RootFolder,
     UnifiedRootConfig
 } from './types';
-import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS } from './configExtractors';
+import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS, extractConfigFromRSBuild } from './configExtractors';
 import { RootConfigManager } from './rootConfigManager';
 import { parse } from '@typescript-eslint/parser';
 import { outputChannel, log } from './outputChannel';
@@ -312,14 +312,15 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         return;
       }
 
-      // Find all webpack, vite, and ModernJS config files in this Host, excluding node_modules
-      const [webpackFiles, viteFiles, modernJSFiles] = await Promise.all([
+      // Find all webpack, vite, ModernJS, and RSBuild config files in this Host, excluding node_modules
+      const [webpackFiles, viteFiles, modernJSFiles, rsbuildFiles] = await Promise.all([
         this.findFiles(rootPath, '**/{webpack.config.js,webpack.config.ts}', '**/node_modules/**'),
         this.findFiles(rootPath, '**/{vite.config.js,vite.config.ts}', '**/node_modules/**'),
-        this.findFiles(rootPath, '**/module-federation.config.{js,ts}', '**/node_modules/**')
+        this.findFiles(rootPath, '**/module-federation.config.{js,ts}', '**/node_modules/**'),
+        this.findFiles(rootPath, '**/{rsbuild.config.js,rsbuild.config.ts}', '**/node_modules/**')
       ]);
 
-      this.log(`Found ${webpackFiles.length} webpack configs, ${viteFiles.length} vite configs, and ${modernJSFiles.length} ModernJS configs in ${rootPath}`);
+      this.log(`Found ${webpackFiles.length} webpack configs, ${viteFiles.length} vite configs, ${modernJSFiles.length} ModernJS configs, and ${rsbuildFiles.length} RSBuild configs in ${rootPath}`);
 
       // Process webpack configs
       const webpackConfigs = await this.processConfigFiles(
@@ -345,8 +346,16 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         rootPath
       );
       
+      // Process RSBuild configs
+      const rsbuildConfigs = await this.processConfigFiles(
+        rsbuildFiles,
+        extractConfigFromRSBuild,
+        'rsbuild',
+        rootPath
+      );
+      
       // Store configs for this Host
-      const configs = [...webpackConfigs, ...viteConfigs, ...modernJSConfigs];
+      const configs = [...webpackConfigs, ...viteConfigs, ...modernJSConfigs, ...rsbuildConfigs];
       if (configs.length > 0) {
         this.rootConfigs.set(rootPath, configs);
         
@@ -470,7 +479,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         'To get started:\n\n' +
         '1. Click the "+" button in the toolbar to add a Host folder\n' +
         '2. Select a folder containing Module Federation configurations\n' +
-        '3. The extension will automatically scan for webpack, Vite, or ModernJS configurations'
+        '3. The extension will automatically scan for webpack, Vite, ModernJS, or RSBuild configurations'
       );
       return treeItem;
     }

@@ -412,9 +412,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
     };
     
-    // Watch for webpack, vite, and ModernJS config changes
+    // Watch for webpack, vite, ModernJS, and RSBuild config changes
     const fileWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/{webpack,vite}.config.{js,ts},**/module-federation.config.{js,ts}',
+      '**/{webpack,vite,rsbuild}.config.{js,ts},**/module-federation.config.{js,ts}',
       false, // ignoreCreateEvents
       false, // ignoreChangeEvents
       false  // ignoreDeleteEvents
@@ -619,8 +619,8 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
                     </div>
         <div class="feature-card">
           <h3>⚙️ Auto-Configuration</h3>
-          <p>Supports Webpack, Vite, and ModernJS Module Federation configurations.</p>
-                    </div>
+          <p>Supports Webpack, Vite, ModernJS, and RSBuild Module Federation configurations.</p>
+        </div>
                 </div>
                 
         <h2>Dependency Graph Visualization</h2>

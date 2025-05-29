@@ -10,7 +10,7 @@ export interface Remote {
   remoteEntry?: string; // The remote entry point
   startCommand?: string; // The command to start the remote application
   buildCommand?: string; // The command to build the remote application
-  configType: 'webpack' | 'vite' | 'modernjs'; // The type of configuration that defined this remote
+  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild'; // The type of configuration that defined this remote
 }
 
 /**
@@ -31,7 +31,7 @@ export interface ModuleFederationConfig {
   remotes: Remote[];
   exposes: ExposedModule[];
   shared: SharedDependency[]; // Add shared dependencies
-  configType: 'webpack' | 'vite' | 'modernjs';
+  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild';
   configPath: string;
 }
 
@@ -83,7 +83,7 @@ export interface DependencyGraphNode {
   id: string;
   label: string;
   type: 'host' | 'remote' | 'shared-dependency' | 'exposed-module';
-  configType: 'webpack' | 'vite' | 'modernjs';
+  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild';
   // Enhanced metadata
   version?: string;
   url?: string;

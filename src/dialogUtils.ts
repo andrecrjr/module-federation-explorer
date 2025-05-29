@@ -273,8 +273,8 @@ export class DialogUtils {
     const defaultCommands = {
       build: `${packageManager} run build`,
       start: `${packageManager} run preview`,
-      dev: `${packageManager} run ${options.configType === 'vite' ? 'dev' : 'start'}`,
-      preview: `${packageManager} run ${options.configType === 'vite' ? 'preview' : 'serve'}`
+      dev: `${packageManager} run ${options.configType === 'vite' || options.configType === 'rsbuild' ? 'dev' : 'start'}`,
+      preview: `${packageManager} run ${options.configType === 'vite' || options.configType === 'rsbuild' ? 'preview' : 'serve'}`
     };
 
     const defaultCommand = defaultCommands[options.commandType];
