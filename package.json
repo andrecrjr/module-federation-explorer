@@ -1,8 +1,8 @@
 {
     "name": "mf-explorer",
     "displayName": "Module Federation Explorer",
-    "description": "Explore and manage Module Federation remotes in VS Code",
-    "version": "2.0.0",
+    "description": "Explore your module federation's projects in a tree or graph view, inspect dependencies, and manage all in your own terminals",
+    "version": "2.0.1",
     "engines": {
         "vscode": "^1.80.0"
     },
