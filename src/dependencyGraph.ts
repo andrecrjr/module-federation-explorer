@@ -23,7 +23,7 @@ export class DependencyGraphManager {
    * Generate a dependency graph from the provided configurations
    */
   generateDependencyGraph(configs: Map<string, ModuleFederationConfig[]>): DependencyGraph {
-    console.log(`[Graph] Starting dependency graph generation with ${configs.size} root paths:`, 
+    log(`[Graph] Starting dependency graph generation with ${configs.size} root paths: ${JSON.stringify(
       Array.from(configs.entries()).map(([path, cfgs]) => ({
         path,
         configCount: cfgs.length,
@@ -35,7 +35,7 @@ export class DependencyGraphManager {
           shared: c.shared.length
         }))
       }))
-    );
+    )}`);
     const graph: DependencyGraph = {
       nodes: [],
       edges: [],
@@ -58,11 +58,22 @@ export class DependencyGraphManager {
       rootConfigs.forEach(config => {
         // Skip configurations without names
         if (!config.name || config.name.trim() === '') {
-          console.log(`[Graph] ⚠️  Skipping config without name in ${rootPath}:`, config);
+          log(`[Graph] ⚠️  Skipping config without name in ${rootPath}: ${JSON.stringify(config)}`);
           return;
         }
         const rootPathHash = this.hashPath(rootPath);
         const appId = `${rootPathHash}-${config.name}-${config.configType}`;
+        
+        // Log potential self-reference scenarios
+        const selfReferencingRemotes = config.remotes.filter(remote => remote.name === config.name);
+        if (selfReferencingRemotes.length > 0) {
+          log(`[Graph] 🔍 Detected potential self-reference in app '${config.name}': ${JSON.stringify({
+            appId,
+            appName: config.name,
+            selfReferencingRemotes: selfReferencingRemotes.map(r => ({ name: r.name, url: r.url })),
+            allRemotes: config.remotes.map(r => ({ name: r.name, url: r.url }))
+          })}`);
+        }
         
         // Revised logic for Module Federation roles:
         // - Host: Consumes remotes (has remotes array) 
@@ -85,7 +96,7 @@ export class DependencyGraphManager {
           config
         });
         
-        console.log(`[Graph] App '${config.name}' capabilities:`, {
+        log(`[Graph] App '${config.name}' capabilities: ${JSON.stringify({
           isHost: isHost || isStandaloneHost || isBidirectional,
           isRemote: isRemote || isBidirectional,
           isBidirectional,
@@ -97,7 +108,7 @@ export class DependencyGraphManager {
           sharedCount: config.shared.length,
           configType: config.configType,
           role: isBidirectional ? 'bidirectional' : (isHost ? 'host' : (isRemote ? 'remote' : 'standalone'))
-        });
+        })}`);
         
         // Track exposed modules for later reference
         if (config.exposes.length > 0) {
@@ -142,7 +153,7 @@ export class DependencyGraphManager {
         nodeGroup = 'hosts';
       }
       
-      console.log(`[Graph] App '${config.name}' node type determination:`, {
+      log(`[Graph] App '${config.name}' node type determination: ${JSON.stringify({
         isHost,
         isRemote,
         nodeType,
@@ -161,7 +172,7 @@ export class DependencyGraphManager {
             : hasExposes
               ? `provider host: exposes ${config.exposes.length} modules`
               : 'standalone host (no remotes or exposes)'
-      });
+      })}`);
       
       // Create a single unified node for this application
       const appNode: DependencyGraphNode = {
@@ -194,11 +205,18 @@ export class DependencyGraphManager {
         // Find if this remote exists as an application in our configurations
         const remoteAppId = this.findAppIdByName(remote.name, appCapabilities);
         
-        console.log(`[Graph] Processing remote '${remote.name}' for app '${config.name}':`, {
+        log(`[Graph] Processing remote '${remote.name}' for app '${config.name}': ${JSON.stringify({
           remoteAppId: remoteAppId ? 'found in workspace' : 'not in workspace',
           remoteUrl: remote.url,
-          remoteConfigType: remote.configType
-        });
+          remoteConfigType: remote.configType,
+          isSelfReference: remoteAppId === appId
+        })}`);
+        
+        // Skip self-references to prevent self-loops
+        if (remoteAppId === appId) {
+          log(`[Graph] ⚠️  Skipping self-reference: app '${config.name}' references itself as remote '${remote.name}'`);
+          return;
+        }
         
         if (remoteAppId) {
           // This remote is another app in our workspace
@@ -254,6 +272,12 @@ export class DependencyGraphManager {
         const remoteNode = nodeMap.get(remoteId);
         
         if (hostNode && remoteNode) {
+          // Skip self-loops (safety check)
+          if (hostId === remoteId) {
+            log(`[Graph] ⚠️  Skipping self-loop edge for app '${hostNode.label}'`);
+            return;
+          }
+          
           // Create a unique pair identifier (always use lexicographically smaller ID first)
           const pairId = hostId < remoteId ? `${hostId}-${remoteId}` : `${remoteId}-${hostId}`;
           
@@ -290,7 +314,7 @@ export class DependencyGraphManager {
               bidirectional: true
             };
             
-            console.log(`[Graph] Created bidirectional consume edge: ${hostNode.label} ↔ ${remoteNode.label}`);
+            log(`[Graph] Created bidirectional consume edge: ${hostNode.label} ↔ ${remoteNode.label}`);
           } else {
             // Unidirectional relationship
             edge = {
@@ -302,7 +326,7 @@ export class DependencyGraphManager {
               bidirectional: false
             };
             
-            console.log(`[Graph] Created unidirectional consume edge: ${hostNode.label} → ${remoteNode.label}`);
+            log(`[Graph] Created unidirectional consume edge: ${hostNode.label} → ${remoteNode.label}`);
           }
           
           // Add the edge and mark this pair as processed
@@ -350,11 +374,11 @@ export class DependencyGraphManager {
     
     // Collect all shared dependencies from configurations
     appCapabilities.forEach((capabilities, appId) => {
-      console.log(`[Graph] Processing shared deps for app '${capabilities.config.name}':`, {
+      log(`[Graph] Processing shared deps for app '${capabilities.config.name}': ${JSON.stringify({
         appId,
         sharedDeps: capabilities.config.shared.map(s => s.name),
         sharedCount: capabilities.config.shared.length
-      });
+      })}`);
       
       capabilities.config.shared.forEach(sharedDep => {
         if (!sharedDepsMap.has(sharedDep.name)) {
@@ -364,24 +388,24 @@ export class DependencyGraphManager {
       });
     });
     
-    console.log(`[Graph] Shared dependencies map:`, Array.from(sharedDepsMap.entries()).map(([depName, appIds]) => ({
+    log(`[Graph] Shared dependencies map: ${JSON.stringify(Array.from(sharedDepsMap.entries()).map(([depName, appIds]) => ({
       dependency: depName,
       usedByApps: Array.from(appIds).map(appId => {
         const app = Array.from(appCapabilities.entries()).find(([id]) => id === appId);
         return app ? app[1].config.name : appId;
       }),
       count: appIds.size
-    })));
+    })))}`);
     
     // Create shared dependency nodes for dependencies used by multiple apps
     sharedDepsMap.forEach((hostIds, depName) => {
       if (hostIds.size > 1 && depName !== '[DYNAMIC_SHARED]') {
-        console.log(`[Graph] Creating shared dependency node for '${depName}' used by ${hostIds.size} apps:`, 
+        log(`[Graph] Creating shared dependency node for '${depName}' used by ${hostIds.size} apps: ${JSON.stringify(
           Array.from(hostIds).map(appId => {
             const app = Array.from(appCapabilities.entries()).find(([id]) => id === appId);
             return app ? app[1].config.name : appId;
           })
-        );
+        )}`);
         
         const sharedDepId = `shared-${depName}`;
         
@@ -423,11 +447,11 @@ export class DependencyGraphManager {
             };
             graph.edges.push(shareEdge);
             
-            console.log(`[Graph] Created sharing edge: ${hostNode.label} ↔ ${depName}`);
+            log(`[Graph] Created sharing edge: ${hostNode.label} ↔ ${depName}`);
           }
         });
       } else {
-        console.log(`[Graph] Skipping shared dependency '${depName}' - used by ${hostIds.size} apps (need 2+)`);
+        log(`[Graph] Skipping shared dependency '${depName}' - used by ${hostIds.size} apps (need 2+)`);
       }
     });
     
@@ -459,7 +483,7 @@ export class DependencyGraphManager {
     graph.metadata!.totalRemotes = graph.nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length;
     
     // Debug log the enhanced graph data
-    console.log(`Generated bidirectional-aware dependency graph:`, {
+    log(`Generated bidirectional-aware dependency graph: ${JSON.stringify({
       nodes: graph.nodes.length,
       edges: graph.edges.length,
       consumerHosts,
@@ -471,15 +495,26 @@ export class DependencyGraphManager {
       totalRemotes: graph.metadata!.totalRemotes,
       sharedDeps: graph.metadata!.totalSharedDeps,
       exposedModules: graph.metadata!.totalExposedModules
-    });
+    })}`);
     
     // Debug: Show all created nodes and their types
-    console.log(`[Graph] Created nodes:`, graph.nodes.map(node => ({
+    log(`[Graph] Created nodes: ${JSON.stringify(graph.nodes.map(node => ({
       label: node.label,
       type: node.type,
       group: node.group,
       size: node.size
-    })));
+    })))}`);
+    
+    // Summary of self-reference prevention
+    let totalSelfReferences = 0;
+    appCapabilities.forEach((capabilities) => {
+      const selfRefs = capabilities.config.remotes.filter(remote => remote.name === capabilities.config.name);
+      totalSelfReferences += selfRefs.length;
+    });
+    
+    if (totalSelfReferences > 0) {
+      log(`[Graph] ✅ Successfully prevented ${totalSelfReferences} self-reference(s) from creating self-loop edges`);
+    }
     
     return graph;
   }
@@ -581,9 +616,9 @@ export class DependencyGraphManager {
               vscode.window.showErrorMessage(`Graph Error: ${message.text}`);
               break;
             case 'loaded':
-              console.log("Enhanced dependency graph loaded successfully");
+              log("Enhanced dependency graph loaded successfully");
               if (message.metadata) {
-                console.log("Graph metadata:", message.metadata);
+                log(`Graph metadata: ${JSON.stringify(message.metadata)}`);
               }
               break;
             case 'nodeClick':
@@ -608,7 +643,7 @@ export class DependencyGraphManager {
    * Handle node click events from the webview
    */
   private handleNodeClick(node: DependencyGraphNode): void {
-    console.log('Node clicked in graph:', node);
+    log(`Node clicked in graph: ${JSON.stringify(node)}`);
     
     // Show information about the clicked node
     const nodeType = node.type.replace('-', ' ');
@@ -1082,16 +1117,16 @@ export class DependencyGraphManager {
             
             // Function to load D3.js from CDN
             function loadD3() {
-                console.log("Loading D3.js from CDN...");
+                log("Loading D3.js from CDN...");
                 const d3Script = document.createElement('script');
                 d3Script.src = 'https://d3js.org/d3.v7.min.js';
                 d3Script.onload = () => { 
-                    console.log("D3.js loaded successfully");
+                    log("D3.js loaded successfully");
                     initializeGraph(); 
                 };
                 d3Script.onerror = (error) => {
                     showError("Failed to load D3.js library. Please check your internet connection.");
-                    console.error("D3 load error:", error);
+                    log("D3 load error:", error);
                 };
                 document.head.appendChild(d3Script);
             }
@@ -1109,7 +1144,7 @@ export class DependencyGraphManager {
                         text: message
                     });
                 } catch (err) {
-                    console.error("Failed to communicate with VS Code extension:", err);
+                    log("Failed to communicate with VS Code extension:", err);
                 }
             }
             
@@ -1182,7 +1217,7 @@ export class DependencyGraphManager {
                         links: graphRawData.links
                     };
                     
-                    console.log("Enhanced graph data for D3:", JSON.stringify(graphData));
+                    log("Enhanced graph data for D3:", JSON.stringify(graphData));
                     updateStats(graphData.nodes);
                     
                     const width = window.innerWidth;
@@ -1479,7 +1514,7 @@ export class DependencyGraphManager {
                     }
                     
                     function nodeClick(event, d) {
-                        console.log('Node clicked:', d);
+                        log('Node clicked:', d);
                         // Could send message to extension for navigation
                         try {
                             acquireVsCodeApi().postMessage({
@@ -1487,7 +1522,7 @@ export class DependencyGraphManager {
                                 node: d
                             });
                         } catch (err) {
-                            console.warn("Failed to communicate node click to extension:", err);
+                            log("Failed to communicate node click to extension:", err);
                         }
                     }
                     
@@ -1522,11 +1557,11 @@ export class DependencyGraphManager {
                             metadata: ${JSON.stringify(graph.metadata || {})}
                         });
                     } catch (err) {
-                        console.warn("Failed to communicate with VS Code extension:", err);
+                        log("Failed to communicate with VS Code extension:", err);
                     }
                 } catch (error) {
                     showError("Error initializing enhanced graph: " + error.message);
-                    console.error("Graph initialization error:", error);
+                    log("Graph initialization error:", error);
                 }
             }
         </script>

@@ -19,6 +19,11 @@ export function activate(context: vscode.ExtensionContext) {
       showWelcomePage(context);
       // Mark as shown
       context.globalState.update('mfExplorer.hasShownWelcomePage', true);
+      
+      // Guide the user through the setup process after a short delay (only for first-time users)
+      setTimeout(() => {
+        showSetupGuide(provider);
+      }, 2000);
     }
     
     // Create the unified provider instead of the old one
@@ -48,11 +53,6 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('Module Federation Explorer is now active!');
     provider.log('Extension activated successfully');
 
-    // Guide the user through the setup process after a short delay
-    setTimeout(() => {
-      showSetupGuide(provider);
-    }, 2000);
-    
     // Register the tree data provider and create tree view
     const viewId = 'moduleFederation';
     vscode.window.registerTreeDataProvider(viewId, provider);
@@ -700,36 +700,24 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
  * Show a setup guide for first-time users
  */
 function showSetupGuide(provider: UnifiedModuleFederationProvider) {
-  // Check if configuration exists and has any roots
-  (provider as any).rootConfigManager.hasConfiguredRoots().then((hasRoots: boolean) => {
-    // Only show the guide if there are no configured roots
-    if (!hasRoots) {
-      // Check if the config file exists at all
-      const configPath = (provider as any).rootConfigManager.getConfigPath();
-      if (!configPath || !fs.existsSync(configPath)) {
-        // Show guide message to help users get started
-        DialogUtils.showSetupGuide({
-          title: 'Getting Started with Module Federation Explorer',
-          steps: [
-            {
-              title: 'Create Settings',
-              description: 'Set up your configuration file to store Module Federation settings',
-              action: async () => {
-                await vscode.commands.executeCommand('moduleFederation.changeConfigFile');
-              }
-            },
-            {
-              title: 'Show Welcome Page',
-              description: 'View the welcome page with detailed setup instructions',
-              action: async () => {
-                await vscode.commands.executeCommand('moduleFederation.showWelcome');
-              }
-            }
-          ]
-        });
+  // Show guide message to help first-time users get started
+  DialogUtils.showSetupGuide({
+    title: 'Getting Started with Module Federation Explorer',
+    steps: [
+      {
+        title: 'Create Settings',
+        description: 'Set up your configuration file to store Module Federation settings',
+        action: async () => {
+          await vscode.commands.executeCommand('moduleFederation.changeConfigFile');
+        }
+      },
+      {
+        title: 'Show Welcome Page',
+        description: 'View the welcome page with detailed setup instructions',
+        action: async () => {
+          await vscode.commands.executeCommand('moduleFederation.showWelcome');
+        }
       }
-    }
-  }).catch((error: unknown) => {
-    console.error('[Module Federation] Failed to check for configured roots:', error);
+    ]
   });
 }

@@ -1832,15 +1832,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const resolvedFolderPath = this.resolveRemoteFolderPath(remote);
       this.log(`Editing commands for remote ${remote.name}, folder: ${resolvedFolderPath || 'not set'}`);
       
-      // If folder is not set, show error and exit
-      if (!resolvedFolderPath) {
-        await DialogUtils.showError(`Cannot edit commands for ${remote.name}: Folder not configured`);
-        return;
-      }
-      
       // Get current package manager or detect it
       let packageManager = remote.packageManager;
-      if (!packageManager) {
+      if (resolvedFolderPath && !packageManager) {
         // Detect package manager
         if (fsSync.existsSync(path.join(resolvedFolderPath, 'package-lock.json'))) {
           packageManager = 'npm';
@@ -1856,18 +1850,93 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       
       // Show quick pick for options to edit
       const options = [
+        { label: '📁 Change Project Folder', description: resolvedFolderPath || 'Not configured' },
         { label: '🔨 Edit Build Command', description: remote.buildCommand || 'Not configured' },
         { label: '▶️ Edit Preview Build Command', description: remote.startCommand || 'Not configured' },
         { label: '⚙️ Edit Both Commands', description: 'Configure both build and start commands' }
       ];
       
       const selectedOption = await DialogUtils.showQuickPick(options, {
-        title: `Edit Commands for ${remote.name}`,
+        title: `Edit Configuration for ${remote.name}`,
         placeholder: 'What would you like to edit?'
       });
       
       if (!selectedOption || Array.isArray(selectedOption)) {
         return; // User cancelled
+      }
+      
+      // Handle folder change option
+      if (selectedOption.label.includes('Change Project Folder')) {
+        // Set default URI to parent of workspace root if available
+        let defaultUri: vscode.Uri | undefined;
+        const workspaceRoot = this.getWorkspaceRoot();
+        if (workspaceRoot) {
+          const parentPath = path.dirname(workspaceRoot);
+          defaultUri = vscode.Uri.file(parentPath);
+        }
+
+        const newFolder = await DialogUtils.showFolderPicker({
+          title: `Select New Project Folder for Remote "${remote.name}"`,
+          openLabel: `Select "${remote.name}" Project Folder`,
+          defaultUri: defaultUri,
+          validateFolder: async (folderPath: string) => {
+            const packageJsonPath = path.join(folderPath, 'package.json');
+            if (!fsSync.existsSync(packageJsonPath)) {
+              const continueAnyway = await DialogUtils.showConfirmation(
+                'The selected folder doesn\'t contain a package.json file.',
+                {
+                  detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
+                  confirmText: 'Continue Anyway',
+                  cancelText: 'Select Different Folder'
+                }
+              );
+              return { valid: continueAnyway, message: 'Invalid Node.js project folder' };
+            }
+            return { valid: true };
+          }
+        });
+
+        if (!newFolder) {
+          await DialogUtils.showWarning(
+            `No folder selected for remote "${remote.name}".`,
+            {
+              detail: 'Folder configuration was not changed.'
+            }
+          );
+          return;
+        }
+        
+        // Update the remote folder
+        remote.folder = newFolder;
+        this.log(`Updated project folder for remote ${remote.name}: ${newFolder}`);
+        
+        // Re-detect package manager for the new folder
+        if (fsSync.existsSync(path.join(newFolder, 'package-lock.json'))) {
+          remote.packageManager = 'npm';
+        } else if (fsSync.existsSync(path.join(newFolder, 'yarn.lock'))) {
+          remote.packageManager = 'yarn';
+        } else if (fsSync.existsSync(path.join(newFolder, 'pnpm-lock.yaml'))) {
+          remote.packageManager = 'pnpm';
+        } else {
+          remote.packageManager = 'npm'; // Default to npm
+        }
+        
+        // Save the updated configuration
+        await this.saveRemoteConfiguration(remote);
+        
+        // Refresh the tree view to reflect changes
+        this.refresh();
+        
+        await DialogUtils.showSuccess(`Updated project folder for ${remote.name}`);
+        return;
+      }
+      
+      // If folder is not set for command editing, show error and exit
+      if (!resolvedFolderPath) {
+        await DialogUtils.showError(`Cannot edit commands for ${remote.name}: Folder not configured`, {
+          detail: 'Please configure the project folder first by selecting "Change Project Folder".'
+        });
+        return;
       }
       
       // Handle based on selection
