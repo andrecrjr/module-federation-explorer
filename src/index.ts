@@ -612,6 +612,7 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
       <div style="margin: 30px 0 30px 0;">
         <button class="button" id="openExplorerBtn">Open Module Federation Explorer</button>
         <button class="button" id="openDocsBtn">Documentation</button>
+        <button class="button" id="feedbackBtn">📝 Share Feedback</button>
       </div>
       <div class="feature-grid">
         <div class="feature-card">
@@ -688,13 +689,8 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
         <p>Help us improve Module Federation Explorer by sharing your feedback!</p>
         <div style="margin: 15px 0;">
           <button class="button" id="feedbackBtn">📝 Share Feedback</button>
-          <button class="button" id="feedbackIframeBtn">💬 Quick Feedback</button>
         </div>
         
-        <!-- Feedback iframe (initially hidden) -->
-        <div id="feedbackIframe" style="display: none; margin: 20px 0; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);">
-          <iframe src="https://acjr.notion.site/ebd/202b5e58148c8017ba2ad355fc377e4b" width="100%" height="600" frameborder="0" allowfullscreen></iframe>
-        </div>
       </div>
 
     </div>
@@ -718,17 +714,7 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
       document.getElementById('feedbackBtn').addEventListener('click', () => {
         vscode.postMessage({ command: 'openFeedback' });
       });
-      
-      document.getElementById('feedbackIframeBtn').addEventListener('click', () => {
-        const iframe = document.getElementById('feedbackIframe');
-        if (iframe.style.display === 'none') {
-          iframe.style.display = 'block';
-          document.getElementById('feedbackIframeBtn').textContent = '🔼 Hide Feedback';
-        } else {
-          iframe.style.display = 'none';
-          document.getElementById('feedbackIframeBtn').textContent = '💬 Quick Feedback';
-        }
-      });
+
     </script>
     </body>
     </html>`;
