@@ -1,4 +1,5 @@
 # Module Federation Explorer for Visual Studio Code
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/andrecrjr/module-federation-explorer)
 
 <div style="display:flex;width:100%;justify-content:center">
 <img src="./media/mfe-explorer-logo-big.png" alt="Module Federation Explorer Logo" width="450"/>
