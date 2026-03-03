@@ -2,7 +2,7 @@
     "name": "mf-explorer",
     "displayName": "Module Federation Explorer",
     "description": "Explore your module federation's projects in a tree or graph view, inspect dependencies, and manage all in your own terminals",
-    "version": "1.0.0",
+    "version": "2.1.0",
     "engines": {
         "vscode": "^1.80.0"
     },

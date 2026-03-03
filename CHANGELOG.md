@@ -1,3 +1,14 @@
+## [2.1.0](https://github.com/andrecrjr/module-federation-explorer/compare/2.0.1...2.1.0) (2026-03-03)
+
+### Features
+
+* add GitHub Actions workflow to automate publishing the VS Code extension to marketplaces and creating GitHub releases. ([d3533db](https://github.com/andrecrjr/module-federation-explorer/commit/d3533dbe03410e8fde5f2634340af9da7c8715d7))
+* Add semantic-release for automated versioning and publishing, replacing manual release steps in the CI workflow. ([c2fd865](https://github.com/andrecrjr/module-federation-explorer/commit/c2fd865c2fc9dcc7c60b4ea8af84a199f2141d5f))
+
+### Bug Fixes
+
+* version for vsce ([79113b0](https://github.com/andrecrjr/module-federation-explorer/commit/79113b06f63689abd8414ac6c8605e7035954b0c))
+
 ## 1.0.0 (2026-03-03)
 
 ### Features
