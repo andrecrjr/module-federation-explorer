@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: lts/*
 
-      - run: npm ci
+      - run: npm install
 
       # Execute Semantic Release to auto-bump version, create GitHub Release + Tag, and publish
       - name: Semantic Release
