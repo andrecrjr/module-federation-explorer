@@ -1,0 +1,44 @@
+name: Publish Extension
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # needed to create tags + releases
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - run: npm ci
+
+      # Read version from package.json for tagging
+      - name: Get version
+        id: version
+        run: echo "VERSION=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      - run: npx @vscode/vsce package
+        # Produces mf-explorer-<version>.vsix
+
+      - name: Publish to VS Code Marketplace
+        run: npx @vscode/vsce publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX Registry
+        run: npx ovsx publish *.vsix -p ${{ secrets.OVSX_PAT }}
+
+      # Create a GitHub Release tagged with the package.json version
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: v${{ steps.version.outputs.VERSION }}
+          generate_release_notes: true   # auto-generates changelog from merged PRs
+          files: "*.vsix"
