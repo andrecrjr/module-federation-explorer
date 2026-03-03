@@ -241,11 +241,63 @@
     "devDependencies": {
         "@rspack/cli": "^1.2.8",
         "@rspack/core": "^1.2.8",
+        "@semantic-release/changelog": "^6.0.3",
+        "@semantic-release/commit-analyzer": "^13.0.1",
+        "@semantic-release/git": "^10.0.1",
+        "@semantic-release/github": "^12.0.6",
+        "@semantic-release/npm": "^13.1.5",
+        "@semantic-release/release-notes-generator": "^14.1.0",
         "@types/d3": "^7.4.3",
         "@types/estraverse": "^5.1.3",
         "@types/node": "^16.11.7",
         "@types/vscode": "^1.80.0",
+        "conventional-changelog-conventionalcommits": "^9.2.0",
+        "semantic-release": "^25.0.3",
+        "semantic-release-vsce": "^6.0.24",
         "ts-loader": "^9.5.2",
         "typescript": "^5.1.3"
+    },
+    "release": {
+        "branches": [
+            "main"
+        ],
+        "plugins": [
+            [
+                "@semantic-release/commit-analyzer",
+                {
+                    "preset": "conventionalcommits"
+                }
+            ],
+            [
+                "@semantic-release/release-notes-generator",
+                {
+                    "preset": "conventionalcommits"
+                }
+            ],
+            "@semantic-release/changelog",
+            [
+                "@semantic-release/npm",
+                {
+                    "npmPublish": false
+                }
+            ],
+            "semantic-release-vsce",
+            [
+                "@semantic-release/git",
+                {
+                    "assets": [
+                        "package.json",
+                        "CHANGELOG.md"
+                    ],
+                    "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+                }
+            ],
+            [
+                "@semantic-release/github",
+                {
+                    "assets": "*.vsix"
+                }
+            ]
+        ]
     }
 }
