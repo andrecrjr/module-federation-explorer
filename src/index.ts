@@ -4,30 +4,40 @@ import * as path from 'path';
 import { Remote } from './types';
 import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
 import { DialogUtils } from './dialogUtils';
+import { detectModuleFederationProjects } from './workspaceScanner';
+import { showOnboardingPage } from './onboarding';
 
 /**
  * Activate the extension
  */
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   try {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-    // Check if this is the first time the extension is being activated
-    const hasShownWelcomePage = context.globalState.get('mfExplorer.hasShownWelcomePage', false);
-    if (!hasShownWelcomePage) {
-      // Show welcome page
-      showWelcomePage(context);
-      // Mark as shown
-      context.globalState.update('mfExplorer.hasShownWelcomePage', true);
-
-      // Guide the user through the setup process after a short delay (only for first-time users)
-      setTimeout(() => {
-        showSetupGuide(provider);
-      }, 2000);
-    }
-
     // Create the unified provider instead of the old one
     const provider = new UnifiedModuleFederationProvider(workspaceRoot, context);
+
+    // Smart Onboarding Logic: Run if the workspace has no roots configured
+    setTimeout(async () => {
+      try {
+        // Check if user already configured roots
+        const hasRoots = await (provider as any).rootConfigManager.hasConfiguredRoots();
+
+        if (!hasRoots) {
+          provider.log('Running auto-detection for Module Federation projects');
+          const detectedProjects = await detectModuleFederationProjects();
+
+          if (detectedProjects.length > 0) {
+            provider.log(`Detected ${detectedProjects.length} MF projects. Showing onboarding UI.`);
+            showOnboardingPage(context, provider, detectedProjects);
+          } else {
+            provider.log('No MF projects detected automatically.');
+          }
+        }
+      } catch (e) {
+        provider.logError('Background onboarding scan failed', e);
+      }
+    }, 1500);
 
     // Clear any previously running remotes (in case of extension restart)
     provider.clearAllRunningApps();

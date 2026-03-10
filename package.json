@@ -26,6 +26,10 @@
         "workspaceContains:**/vite.config.ts",
         "workspaceContains:**/rsbuild.config.js",
         "workspaceContains:**/rsbuild.config.ts",
+        "workspaceContains:**/rspack.config.js",
+        "workspaceContains:**/rspack.config.ts",
+        "workspaceContains:**/modern.config.js",
+        "workspaceContains:**/modern.config.ts",
         "workspaceContains:**/module-federation.config.js",
         "workspaceContains:**/module-federation.config.ts",
         "workspaceContains:**/.vscode/mf-explorer.roots.json"
