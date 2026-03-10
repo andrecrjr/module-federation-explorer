@@ -6,8 +6,8 @@ const path = require('path');
 const config = {
     target: 'node',
 
-    entry: './src/index.ts', 
-    output: { 
+    entry: './src/index.ts',
+    output: {
         path: path.resolve(__dirname, 'dist'),
         filename: 'extension.js',
         libraryTarget: "commonjs2",
@@ -23,9 +23,15 @@ const config = {
         rules: [{
             test: /\.ts$/,
             exclude: /node_modules/,
-            use: [{
-                loader: 'ts-loader',
-            }]
+            loader: 'builtin:swc-loader',
+            options: {
+                jsc: {
+                    parser: {
+                        syntax: 'typescript',
+                    },
+                },
+            },
+            type: 'javascript/auto',
         }]
     },
 }
