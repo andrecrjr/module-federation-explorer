@@ -1,3 +1,9 @@
+## [2.2.0](https://github.com/andrecrjr/module-federation-explorer/compare/2.1.0...2.2.0) (2026-03-10)
+
+### Features
+
+* Add initial architecture overview and project roadmap documentation. ([d24a5fe](https://github.com/andrecrjr/module-federation-explorer/commit/d24a5fed26626c07812307e2757bae06b10ce765))
+
 ## [2.1.0](https://github.com/andrecrjr/module-federation-explorer/compare/2.0.1...2.1.0) (2026-03-03)
 
 ### Features
