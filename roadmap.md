@@ -4,8 +4,8 @@ This document tracks planned improvements, technical debt, and future features f
 
 ## Critical Fixes (Pain Points)
 
-- [ ] **Fix Bundle Issues**: Replace `@typescript-eslint/parser` with a lighter parser or externalize it to avoid massive `dist/` bloat (~3.9MB) and dynamic import warnings that risk runtime crashes.
-- [ ] **Make Webview Offline Ready**: Bundle `D3.js` inside the extension `media/` folder and update CSP. Loading from CDN will fail for offline users or those behind corporate proxies.
+- [x] **Make Webview Offline Ready**: Bundle `D3.js` inside the extension `media/` folder and update CSP. Loading from CDN will fail for offline users or those behind corporate proxies.
+- [x] **Sync View IDs**: Fixed mismatched view ID references in `src/index.ts` (was 'moduleFederationExplorer', should be 'moduleFederation').
 - [x] **Complete Activation Support**: Add `.ts` config files (`vite.config.ts`, etc.) to `activationEvents` in `package.json` to ensure the extension auto-activates in TypeScript projects.
 - [x] **Rspack Performance**: Switch from `ts-loader` to build-in `builtin:swc-loader` in `rspack.config.js` to significantly speed up builds.
 - [x] **Redundant Dependency Audit**: Moved bundled dependencies (`d3`, `estraverse`, etc.) to `devDependencies` to clarify the extension is standalone.

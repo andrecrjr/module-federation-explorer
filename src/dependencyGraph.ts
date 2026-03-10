@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { 
-  DependencyGraph, 
-  DependencyGraphNode, 
-  DependencyGraphEdge, 
-  Remote, 
+import {
+  DependencyGraph,
+  DependencyGraphNode,
+  DependencyGraphEdge,
+  Remote,
   ModuleFederationConfig,
   SharedDependency
 } from './types';
@@ -16,8 +16,8 @@ import { log } from './outputChannel';
  */
 export class DependencyGraphManager {
   private _panel: vscode.WebviewPanel | undefined;
-  
-  constructor(private readonly context: vscode.ExtensionContext) {}
+
+  constructor(private readonly context: vscode.ExtensionContext) { }
 
   /**
    * Generate a dependency graph from the provided configurations
@@ -47,12 +47,12 @@ export class DependencyGraphManager {
         totalExposedModules: 0
       }
     };
-    
+
     const nodeMap = new Map<string, DependencyGraphNode>();
     const exposedModulesMap = new Map<string, string[]>(); // Track exposed modules per app
     const remoteToHostMap = new Map<string, string[]>(); // Track which hosts consume each remote
     const appCapabilities = new Map<string, { isHost: boolean; isRemote: boolean; config: ModuleFederationConfig }>(); // Track app capabilities
-    
+
     // First pass: Analyze all applications to determine their capabilities (host, remote, or both)
     configs.forEach((rootConfigs, rootPath) => {
       rootConfigs.forEach(config => {
@@ -63,7 +63,7 @@ export class DependencyGraphManager {
         }
         const rootPathHash = this.hashPath(rootPath);
         const appId = `${rootPathHash}-${config.name}-${config.configType}`;
-        
+
         // Log potential self-reference scenarios
         const selfReferencingRemotes = config.remotes.filter(remote => remote.name === config.name);
         if (selfReferencingRemotes.length > 0) {
@@ -74,28 +74,28 @@ export class DependencyGraphManager {
             allRemotes: config.remotes.map(r => ({ name: r.name, url: r.url }))
           })}`);
         }
-        
+
         // Revised logic for Module Federation roles:
         // - Host: Consumes remotes (has remotes array) 
         // - Remote: Exposes modules to be consumed by others (has exposes array)
         // - Bidirectional: Both consumes remotes AND exposes modules
         const hasRemotes = config.remotes.length > 0;
         const hasExposes = config.exposes.length > 0;
-        
+
         // Determine roles based on actual capabilities
         const isHost = hasRemotes; // Only true hosts consume remotes
         const isRemote = hasExposes; // Only true remotes expose modules
         const isBidirectional = hasRemotes && hasExposes; // Both consume and expose
-        
+
         // If app has neither remotes nor exposes, treat it as a standalone host
         const isStandaloneHost = !hasRemotes && !hasExposes;
-        
+
         appCapabilities.set(appId, {
           isHost: isHost || isStandaloneHost || isBidirectional,
           isRemote: isRemote || isBidirectional,
           config
         });
-        
+
         log(`[Graph] App '${config.name}' capabilities: ${JSON.stringify({
           isHost: isHost || isStandaloneHost || isBidirectional,
           isRemote: isRemote || isBidirectional,
@@ -109,36 +109,36 @@ export class DependencyGraphManager {
           configType: config.configType,
           role: isBidirectional ? 'bidirectional' : (isHost ? 'host' : (isRemote ? 'remote' : 'standalone'))
         })}`);
-        
+
         // Track exposed modules for later reference
         if (config.exposes.length > 0) {
           exposedModulesMap.set(appId, config.exposes.map(e => e.name));
         }
       });
     });
-    
+
     // Second pass: Build the remote consumption map first
     appCapabilities.forEach((capabilities, appId) => {
       const { config } = capabilities;
-      
+
       // Track remote consumption relationships
       config.remotes.forEach(remote => {
         // Find if this remote exists as an application in our configurations
         const remoteAppId = this.findAppIdByName(remote.name, appCapabilities);
-        
+
         log(`[Graph] Processing remote '${remote.name}' for app '${config.name}': ${JSON.stringify({
           remoteAppId: remoteAppId ? 'found in workspace' : 'not in workspace',
           remoteUrl: remote.url,
           remoteConfigType: remote.configType,
           isSelfReference: remoteAppId === appId
         })}`);
-        
+
         // Skip self-references to prevent self-loops
         if (remoteAppId === appId) {
           log(`[Graph] ⚠️  Skipping self-reference: app '${config.name}' references itself as remote '${remote.name}'`);
           return;
         }
-        
+
         if (remoteAppId) {
           // This remote is another app in our workspace
           if (!remoteToHostMap.has(remoteAppId)) {
@@ -161,7 +161,7 @@ export class DependencyGraphManager {
             nodeMap.set(externalRemoteId, externalRemoteNode);
             graph.nodes.push(externalRemoteNode);
             graph.metadata!.totalRemotes++;
-            
+
             log(`[Graph] Created external remote node: ${JSON.stringify({
               id: externalRemoteId,
               name: remote.name,
@@ -186,7 +186,7 @@ export class DependencyGraphManager {
             // Increment size to reflect multiple consumers
             existingNode.size = (existingNode.size || 1) + 1;
           }
-          
+
           // Track the relationship
           if (!remoteToHostMap.has(externalRemoteId)) {
             remoteToHostMap.set(externalRemoteId, []);
@@ -195,22 +195,22 @@ export class DependencyGraphManager {
         }
       });
     });
-    
+
     // Third pass: Create unified nodes based on capabilities and consumption relationships
     appCapabilities.forEach((capabilities, appId) => {
       const { isHost, isRemote, config } = capabilities;
-      
+
       // Determine basic capabilities
       const hasRemotes = config.remotes.length > 0;
       const hasExposes = config.exposes.length > 0;
-      
+
       // Check if this app is being consumed as a remote by other apps (now the map is complete)
       const isConsumedAsRemote = remoteToHostMap.has(appId);
-      
+
       // Determine the primary type based on actual usage patterns
       let nodeType: 'host' | 'remote';
       let nodeGroup: string;
-      
+
       if (hasRemotes && hasExposes) {
         // Bidirectional: both consumes and exposes
         if (isConsumedAsRemote) {
@@ -242,7 +242,7 @@ export class DependencyGraphManager {
         nodeType = 'host';
         nodeGroup = 'hosts';
       }
-      
+
       log(`[Graph] App '${config.name}' node type determination: ${JSON.stringify({
         isHost,
         isRemote,
@@ -257,7 +257,7 @@ export class DependencyGraphManager {
         consumedByApps: isConsumedAsRemote ? remoteToHostMap.get(appId)?.length || 0 : 0,
         reason: (() => {
           if (hasRemotes && hasExposes) {
-            return isConsumedAsRemote 
+            return isConsumedAsRemote
               ? `bidirectional: consumes ${config.remotes.length} remotes AND consumed by ${remoteToHostMap.get(appId)?.length || 0} apps`
               : `self-contained: has both capabilities but not consumed by others`;
           } else if (hasRemotes && !hasExposes) {
@@ -271,7 +271,7 @@ export class DependencyGraphManager {
           }
         })()
       })}`);
-      
+
       // Create a single unified node for this application
       const appNode: DependencyGraphNode = {
         id: appId,
@@ -283,10 +283,10 @@ export class DependencyGraphManager {
         size: Math.max(1, config.remotes.length + config.exposes.length + config.shared.length),
         group: nodeGroup
       };
-      
+
       nodeMap.set(appId, appNode);
       graph.nodes.push(appNode);
-      
+
       // Update metadata based on capabilities
       if (isHost) {
         graph.metadata!.totalHosts++;
@@ -297,65 +297,65 @@ export class DependencyGraphManager {
       if (config.exposes.length > 0) {
         graph.metadata!.totalExposedModules += config.exposes.length;
       }
-      
+
       // Track exposed modules for later reference
       if (config.exposes.length > 0) {
         exposedModulesMap.set(appId, config.exposes.map(e => e.name));
       }
     });
-    
+
     // Fourth pass: Create consolidated consumption edges (avoid overlapping bidirectional edges)
     const edgeMap = new Map<string, DependencyGraphEdge>(); // Track unique edges
     const processedPairs = new Set<string>(); // Track processed node pairs
-    
+
     remoteToHostMap.forEach((hostIds, remoteId) => {
       hostIds.forEach(hostId => {
         const hostNode = nodeMap.get(hostId);
         const remoteNode = nodeMap.get(remoteId);
-        
+
         if (hostNode && remoteNode) {
           // Skip self-loops (safety check)
           if (hostId === remoteId) {
             log(`[Graph] ⚠️  Skipping self-loop edge for app '${hostNode.label}'`);
             return;
           }
-          
+
           // Create a unique pair identifier (always use lexicographically smaller ID first)
           const pairId = hostId < remoteId ? `${hostId}-${remoteId}` : `${remoteId}-${hostId}`;
-          
+
           // Skip if we've already processed this pair
           if (processedPairs.has(pairId)) {
             return;
           }
-          
+
           // Check if this is a bidirectional relationship
           const isHostAlsoRemote = remoteToHostMap.has(hostId) && remoteToHostMap.get(hostId)!.includes(remoteId);
-          
+
           // Find the specific remote configuration for edge labeling
           const hostConfig = appCapabilities.get(hostId)?.config;
-          const remoteConfig = hostConfig?.remotes.find(r => 
-            this.findAppIdByName(r.name, appCapabilities) === remoteId || 
+          const remoteConfig = hostConfig?.remotes.find(r =>
+            this.findAppIdByName(r.name, appCapabilities) === remoteId ||
             `external-${r.name}` === remoteId
           );
-          
+
           // Ensure remote node has proper URL information
           if (remoteConfig?.url && !remoteNode.url) {
             remoteNode.url = remoteConfig.url;
           }
-          
+
           let edge: DependencyGraphEdge;
-          
+
           if (isHostAlsoRemote) {
             // Bidirectional relationship - create a single bidirectional edge
             edge = {
-            from: hostId,
+              from: hostId,
               to: remoteId,
               type: 'consumes',
               label: `↔ ${remoteConfig?.url || remoteNode.url || remoteNode.label}`,
               strength: 1.5, // Stronger connection for bidirectional
               bidirectional: true
             };
-            
+
             log(`[Graph] Created bidirectional consume edge: ${hostNode.label} ↔ ${remoteNode.label}`);
           } else {
             // Unidirectional relationship
@@ -367,24 +367,24 @@ export class DependencyGraphManager {
               strength: 1,
               bidirectional: false
             };
-            
+
             log(`[Graph] Created unidirectional consume edge: ${hostNode.label} → ${remoteNode.label}`);
           }
-          
+
           // Add the edge and mark this pair as processed
           graph.edges.push(edge);
           processedPairs.add(pairId);
         }
-        });
       });
-    
+    });
+
     // Fifth pass: Create exposed module nodes for applications that expose modules
     exposedModulesMap.forEach((moduleNames, appId) => {
       const appNode = nodeMap.get(appId);
       if (appNode) {
         moduleNames.forEach(moduleName => {
           const moduleId = `${appId}-module-${moduleName}`;
-          
+
           const moduleNode: DependencyGraphNode = {
             id: moduleId,
             label: moduleName,
@@ -393,10 +393,10 @@ export class DependencyGraphManager {
             size: remoteToHostMap.get(appId)?.length || 1,
             group: appId
           };
-          
+
           nodeMap.set(moduleId, moduleNode);
           graph.nodes.push(moduleNode);
-          
+
           // Add expose edge
           const exposeEdge: DependencyGraphEdge = {
             from: appId,
@@ -405,15 +405,15 @@ export class DependencyGraphManager {
             label: moduleName,
             strength: 1
           };
-          
+
           graph.edges.push(exposeEdge);
         });
       }
     });
-    
+
     // Sixth pass: Create shared dependency nodes from actual configurations
     const sharedDepsMap = new Map<string, Set<string>>(); // Track which apps share each dependency
-    
+
     // Collect all shared dependencies from configurations
     appCapabilities.forEach((capabilities, appId) => {
       log(`[Graph] Processing shared deps for app '${capabilities.config.name}': ${JSON.stringify({
@@ -421,7 +421,7 @@ export class DependencyGraphManager {
         sharedDeps: capabilities.config.shared.map(s => s.name),
         sharedCount: capabilities.config.shared.length
       })}`);
-      
+
       capabilities.config.shared.forEach(sharedDep => {
         if (!sharedDepsMap.has(sharedDep.name)) {
           sharedDepsMap.set(sharedDep.name, new Set());
@@ -429,7 +429,7 @@ export class DependencyGraphManager {
         sharedDepsMap.get(sharedDep.name)!.add(appId);
       });
     });
-    
+
     log(`[Graph] Shared dependencies map: ${JSON.stringify(Array.from(sharedDepsMap.entries()).map(([depName, appIds]) => ({
       dependency: depName,
       usedByApps: Array.from(appIds).map(appId => {
@@ -438,7 +438,7 @@ export class DependencyGraphManager {
       }),
       count: appIds.size
     })))}`);
-    
+
     // Create shared dependency nodes for dependencies used by multiple apps
     sharedDepsMap.forEach((hostIds, depName) => {
       if (hostIds.size > 1 && depName !== '[DYNAMIC_SHARED]') {
@@ -448,9 +448,9 @@ export class DependencyGraphManager {
             return app ? app[1].config.name : appId;
           })
         )}`);
-        
+
         const sharedDepId = `shared-${depName}`;
-        
+
         // Find the most detailed shared dependency configuration
         let sharedDepConfig: SharedDependency | undefined;
         appCapabilities.forEach((capabilities) => {
@@ -459,7 +459,7 @@ export class DependencyGraphManager {
             sharedDepConfig = foundShared;
           }
         });
-        
+
         const sharedDepNode: DependencyGraphNode = {
           id: sharedDepId,
           label: depName,
@@ -470,11 +470,11 @@ export class DependencyGraphManager {
           version: sharedDepConfig?.version,
           sharedDependencies: [depName]
         };
-        
+
         nodeMap.set(sharedDepId, sharedDepNode);
         graph.nodes.push(sharedDepNode);
         graph.metadata!.totalSharedDeps++;
-        
+
         // Add sharing edges to all apps that use this dependency
         hostIds.forEach(hostId => {
           const hostNode = nodeMap.get(hostId);
@@ -488,7 +488,7 @@ export class DependencyGraphManager {
               bidirectional: true
             };
             graph.edges.push(shareEdge);
-            
+
             log(`[Graph] Created sharing edge: ${hostNode.label} ↔ ${depName}`);
           }
         });
@@ -496,18 +496,18 @@ export class DependencyGraphManager {
         log(`[Graph] Skipping shared dependency '${depName}' - used by ${hostIds.size} apps (need 2+)`);
       }
     });
-    
+
     // Update final metadata with accurate counts
     let consumerHosts = 0;
     let providerHosts = 0;
     let bidirectionalApps = 0;
     let standaloneApps = 0;
     let workspaceRemotes = 0;
-    
+
     appCapabilities.forEach((capabilities) => {
       const hasRemotes = capabilities.config.remotes.length > 0;
       const hasExposes = capabilities.config.exposes.length > 0;
-      
+
       if (hasRemotes && hasExposes) {
         bidirectionalApps++;
       } else if (hasRemotes && !hasExposes) {
@@ -518,17 +518,17 @@ export class DependencyGraphManager {
         standaloneApps++;
       }
     });
-    
+
     // Count workspace applications that are classified as remotes
     workspaceRemotes = graph.nodes.filter(n => n.type === 'remote' && !n.id.startsWith('external-')).length;
-    
+
     // Count external remotes
     const externalRemotes = graph.nodes.filter(n => n.group === 'remotes' && n.id.startsWith('external-')).length;
-    
+
     // Set metadata based on actual node classifications
     graph.metadata!.totalHosts = graph.nodes.filter(n => n.type === 'host').length;
     graph.metadata!.totalRemotes = graph.nodes.filter(n => n.type === 'remote').length;
-    
+
     // Debug log the enhanced graph data
     log(`Generated enhanced dependency graph: ${JSON.stringify({
       nodes: graph.nodes.length,
@@ -548,7 +548,7 @@ export class DependencyGraphManager {
         remoteNodes: graph.nodes.filter(n => n.type === 'remote').map(n => ({ label: n.label, group: n.group, isExternal: n.id.startsWith('external-') }))
       }
     })}`);
-    
+
     // Debug: Show all created nodes and their types
     log(`[Graph] Created nodes: ${JSON.stringify(graph.nodes.map(node => ({
       label: node.label,
@@ -556,18 +556,18 @@ export class DependencyGraphManager {
       group: node.group,
       size: node.size
     })))}`);
-    
+
     // Summary of self-reference prevention
     let totalSelfReferences = 0;
     appCapabilities.forEach((capabilities) => {
       const selfRefs = capabilities.config.remotes.filter(remote => remote.name === capabilities.config.name);
       totalSelfReferences += selfRefs.length;
     });
-    
+
     if (totalSelfReferences > 0) {
       log(`[Graph] ✅ Successfully prevented ${totalSelfReferences} self-reference(s) from creating self-loop edges`);
     }
-    
+
     return graph;
   }
 
@@ -581,7 +581,7 @@ export class DependencyGraphManager {
         return appId;
       }
     }
-    
+
     // Try case-insensitive match
     const lowerAppName = appName.toLowerCase();
     for (const [appId, capabilities] of appCapabilities.entries()) {
@@ -589,7 +589,7 @@ export class DependencyGraphManager {
         return appId;
       }
     }
-    
+
     // Try partial match (for cases where remote name might be a subset)
     for (const [appId, capabilities] of appCapabilities.entries()) {
       const configName = capabilities.config.name.toLowerCase();
@@ -597,7 +597,7 @@ export class DependencyGraphManager {
         return appId;
       }
     }
-    
+
     return undefined;
   }
 
@@ -623,7 +623,7 @@ export class DependencyGraphManager {
       vscode.window.showInformationMessage("No Module Federation configurations found to display in the graph.");
       return;
     }
-    
+
     const columnToShowIn = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
@@ -659,7 +659,7 @@ export class DependencyGraphManager {
         null,
         this.context.subscriptions
       );
-      
+
       // Handle messages from the webview
       this._panel.webview.onDidReceiveMessage(
         message => {
@@ -696,40 +696,40 @@ export class DependencyGraphManager {
    */
   private handleNodeClick(node: DependencyGraphNode): void {
     log(`Node clicked in graph: ${JSON.stringify(node)}`);
-    
+
     // Show information about the clicked node
     const nodeType = node.type.replace('-', ' ');
     let message = `**${node.label}** (${nodeType})\n\n`;
     message += `**Config Type:** ${node.configType}\n`;
-    
+
     if (node.url) {
       message += `**URL:** ${node.url}\n`;
     }
-    
+
     if (node.version) {
       message += `**Version:** ${node.version}\n`;
     }
-    
+
     if (node.exposedModules && node.exposedModules.length > 0) {
       message += `**Exposed Modules:** ${node.exposedModules.join(', ')}\n`;
     }
-    
+
     if (node.sharedDependencies && node.sharedDependencies.length > 0) {
       message += `**Shared Dependencies:** ${node.sharedDependencies.join(', ')}\n`;
     }
-    
+
     if (node.size && node.size > 1) {
       message += `**Connections:** ${node.size}\n`;
     }
-    
+
     if (node.status) {
       message += `**Status:** ${node.status}\n`;
     }
-    
+
     if (node.group) {
       message += `**Group:** ${node.group}\n`;
     }
-    
+
     // Show the information in a VS Code information message
     vscode.window.showInformationMessage(
       `Module Federation Node: ${node.label}`,
@@ -740,27 +740,29 @@ export class DependencyGraphManager {
   /**
    * Generate HTML for the webview panel
    */
-    private getWebviewContent(webview: vscode.Webview, graph: DependencyGraph): string {
+  private getWebviewContent(webview: vscode.Webview, graph: DependencyGraph): string {
     // Convert nodes and edges to JSON for the webview
     const graphData = JSON.stringify(graph);
     // Transform edges from 'from/to' naming format to 'source/target' for D3.js
     const d3GraphData = {
-        nodes: graph.nodes,
-        links: graph.edges.map(edge => ({
+      nodes: graph.nodes,
+      links: graph.edges.map(edge => ({
         source: edge.from,
         target: edge.to,
         label: edge.label,
         type: edge.type,
         strength: edge.strength || 1,
         bidirectional: edge.bidirectional || false
-        }))
+      }))
     };
+    const d3Uri = webview.asWebviewUri(vscode.Uri.file(path.join(this.context.extensionPath, 'media', 'd3.min.js')));
+
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' https://d3js.org https://cdn.jsdelivr.net https://unpkg.com;">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' ${webview.cspSource} https://d3js.org https://cdn.jsdelivr.net https://unpkg.com;">
         <title>Module Federation Dependency Graph</title>
         <style>
             body, html {
@@ -1173,6 +1175,7 @@ export class DependencyGraphManager {
                 
                 // List of CDN fallbacks
                 const d3CDNs = [
+                    '${d3Uri}',
                     'https://d3js.org/d3.v7.min.js',
                     'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js',
                     'https://unpkg.com/d3@7/dist/d3.min.js'
@@ -1666,5 +1669,5 @@ export class DependencyGraphManager {
         </script>
     </body>
     </html>`;
-    }
+  }
 } 
