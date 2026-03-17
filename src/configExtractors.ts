@@ -294,13 +294,15 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
   const configObj = findViteConfigObject(ast);
   if (!configObj) return config;
 
+  const federationCallees = getViteFederationCalleeNames(ast);
+
   // Find plugins array
   const pluginsProp = findProperty(configObj, 'plugins');
   if (pluginsProp?.value.type !== 'ArrayExpression') return config;
 
   // Process each plugin
   for (const plugin of pluginsProp.value.elements) {
-    if (isFederationPlugin(plugin)) {
+    if (isFederationPlugin(plugin, federationCallees)) {
       config.detected = true;
       extractConfigFromOptions(plugin.arguments[0], config);
       logConfig('Vite', config);
@@ -364,6 +366,7 @@ export async function extractConfigFromRSBuild(ast: any, workspaceRoot: string):
 
   const configObj = findRSBuildConfigObject(ast);
   if (!configObj) return config;
+  const rsbuildFederationCallees = getRSBuildFederationCalleeNames(ast);
 
   // Find moduleFederation property
   const moduleFederationProp = findProperty(configObj, 'moduleFederation');
@@ -383,9 +386,18 @@ export async function extractConfigFromRSBuild(ast: any, workspaceRoot: string):
     const pluginsProp = findProperty(configObj, 'plugins');
     if (pluginsProp?.value.type === 'ArrayExpression') {
       for (const plugin of pluginsProp.value.elements) {
-        if (isRSBuildFederationPlugin(plugin)) {
+        if (isRSBuildFederationPlugin(plugin, rsbuildFederationCallees)) {
           config.detected = true;
           extractConfigFromOptions(plugin.arguments[0], config);
+          logConfig('RSBuild', config);
+          break;
+        }
+      }
+    } else if (pluginsProp?.value.type === 'ObjectExpression') {
+      for (const property of pluginsProp.value.properties) {
+        if (property.type === 'Property' && isRSBuildFederationPlugin(property.value, rsbuildFederationCallees)) {
+          config.detected = true;
+          extractConfigFromOptions(property.value.arguments[0], config);
           logConfig('RSBuild', config);
           break;
         }
@@ -397,7 +409,7 @@ export async function extractConfigFromRSBuild(ast: any, workspaceRoot: string):
   return config;
 }
 
-function isRSBuildFederationPlugin(plugin: any): boolean {
+function isRSBuildFederationPlugin(plugin: any, federationCallees: Set<string>): boolean {
   if (!plugin || plugin.type !== 'CallExpression' || plugin.arguments.length === 0) {
     return false;
   }
@@ -410,13 +422,15 @@ function isRSBuildFederationPlugin(plugin: any): boolean {
   // Matches pluginModuleFederation({ ... }) and aliases like mf({ ... })
   // while still requiring a clear federation-like callee name.
   if (plugin.callee.type === 'Identifier') {
-    const calleeName = plugin.callee.name.toLowerCase();
-    return calleeName.includes('modulefederation') || calleeName === 'mf';
+    const calleeName = plugin.callee.name;
+    const normalized = calleeName.toLowerCase();
+    return federationCallees.has(calleeName) || normalized.includes('modulefederation') || normalized === 'mf';
   }
 
   if (plugin.callee.type === 'MemberExpression' && plugin.callee.property.type === 'Identifier') {
-    const calleeName = plugin.callee.property.name.toLowerCase();
-    return calleeName.includes('modulefederation') || calleeName === 'mf';
+    const calleeName = plugin.callee.property.name;
+    const normalized = calleeName.toLowerCase();
+    return federationCallees.has(calleeName) || normalized.includes('modulefederation') || normalized === 'mf';
   }
 
   return false;
@@ -440,55 +454,18 @@ function isModuleFederationPluginNode(node: any): boolean {
 }
 
 function findViteConfigObject(ast: any): any {
-  let configObj = null;
-
-  estraverse.traverse(ast, {
-    enter(node: any) {
-      if (node.type === 'ExportDefaultDeclaration') {
-        if (node.declaration.type === 'CallExpression' &&
-          node.declaration.callee.type === 'Identifier' &&
-          node.declaration.callee.name === 'defineConfig') {
-          // Handle defineConfig({ ... })
-          if (node.declaration.arguments.length > 0 &&
-            node.declaration.arguments[0].type === 'ObjectExpression') {
-            configObj = node.declaration.arguments[0];
-          }
-          // Handle defineConfig(({ mode }) => ({ ... }))
-          else if (node.declaration.arguments.length > 0 &&
-            node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
-            node.declaration.arguments[0].body.type === 'ObjectExpression') {
-            configObj = node.declaration.arguments[0].body;
-          }
-          // Handle defineConfig(({ mode }) => { return { ... }; })
-          else if (node.declaration.arguments.length > 0 &&
-            node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
-            node.declaration.arguments[0].body.type === 'BlockStatement') {
-            // Try to find the return statement
-            const returnStatement = node.declaration.arguments[0].body.body.find(
-              (stmt: any) => stmt.type === 'ReturnStatement'
-            );
-            if (returnStatement && returnStatement.argument &&
-              returnStatement.argument.type === 'ObjectExpression') {
-              configObj = returnStatement.argument;
-            }
-          }
-        } else if (node.declaration.type === 'ObjectExpression') {
-          configObj = node.declaration;
-        }
-      }
-    },
-    fallback
-  });
-
-  return configObj;
+  return findConfigObjectFromAst(ast);
 }
 
-function isFederationPlugin(plugin: any): boolean {
+function isFederationPlugin(plugin: any, federationCallees: Set<string>): boolean {
   return plugin.type === 'CallExpression' &&
-    plugin.callee.type === 'Identifier' &&
-    plugin.callee.name === 'federation' &&
     plugin.arguments.length > 0 &&
-    plugin.arguments[0].type === 'ObjectExpression';
+    plugin.arguments[0].type === 'ObjectExpression' &&
+    (
+      (plugin.callee.type === 'Identifier' && (federationCallees.has(plugin.callee.name) || plugin.callee.name.toLowerCase().includes('federation'))) ||
+      (plugin.callee.type === 'MemberExpression' && plugin.callee.property.type === 'Identifier' &&
+        (federationCallees.has(plugin.callee.property.name) || plugin.callee.property.name.toLowerCase().includes('federation')))
+    );
 }
 
 // This function will extract a simplified representation of various expressions that might be used for remote URLs
@@ -655,45 +632,173 @@ function extractSharedDependencies(valueNode: any): SharedDependency[] {
 }
 
 function findRSBuildConfigObject(ast: any): any {
-  let configObj = null;
+  return findConfigObjectFromAst(ast);
+} 
 
-  estraverse.traverse(ast, {
-    enter(node: any) {
-      if (node.type === 'ExportDefaultDeclaration') {
-        if (node.declaration.type === 'CallExpression' &&
-          node.declaration.callee.type === 'Identifier' &&
-          node.declaration.callee.name === 'defineConfig') {
-          // Handle defineConfig({ ... })
-          if (node.declaration.arguments.length > 0 &&
-            node.declaration.arguments[0].type === 'ObjectExpression') {
-            configObj = node.declaration.arguments[0];
-          }
-          // Handle defineConfig(({ mode }) => ({ ... }))
-          else if (node.declaration.arguments.length > 0 &&
-            node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
-            node.declaration.arguments[0].body.type === 'ObjectExpression') {
-            configObj = node.declaration.arguments[0].body;
-          }
-          // Handle defineConfig(({ mode }) => { return { ... }; })
-          else if (node.declaration.arguments.length > 0 &&
-            node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
-            node.declaration.arguments[0].body.type === 'BlockStatement') {
-            // Try to find the return statement
-            const returnStatement = node.declaration.arguments[0].body.body.find(
-              (stmt: any) => stmt.type === 'ReturnStatement'
-            );
-            if (returnStatement && returnStatement.argument &&
-              returnStatement.argument.type === 'ObjectExpression') {
-              configObj = returnStatement.argument;
-            }
-          }
-        } else if (node.declaration.type === 'ObjectExpression') {
-          configObj = node.declaration;
+function getProgramBody(ast: any): any[] {
+  return ast?.type === 'Program' && Array.isArray(ast.body) ? ast.body : [];
+}
+
+function isModuleExportsNode(node: any): boolean {
+  return node?.type === 'MemberExpression' &&
+    !node.computed &&
+    node.object?.type === 'Identifier' &&
+    node.object.name === 'module' &&
+    node.property?.type === 'Identifier' &&
+    node.property.name === 'exports';
+}
+
+function isExportsDefaultNode(node: any): boolean {
+  return node?.type === 'MemberExpression' &&
+    !node.computed &&
+    node.object?.type === 'Identifier' &&
+    node.object.name === 'exports' &&
+    node.property?.type === 'Identifier' &&
+    node.property.name === 'default';
+}
+
+function findTopLevelVariableInitializer(ast: any, name: string): any {
+  const body = getProgramBody(ast);
+  for (const statement of body) {
+    if (statement.type !== 'VariableDeclaration') {
+      continue;
+    }
+
+    for (const declaration of statement.declarations || []) {
+      if (declaration.id?.type === 'Identifier' && declaration.id.name === name) {
+        return declaration.init;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function resolveConfigExpressionToObject(expression: any, ast: any, seenIdentifiers = new Set<string>()): any {
+  if (!expression) {
+    return null;
+  }
+
+  if (expression.type === 'ObjectExpression') {
+    return expression;
+  }
+
+  if (expression.type === 'TSAsExpression' || expression.type === 'TSTypeAssertion' || expression.type === 'TSNonNullExpression') {
+    return resolveConfigExpressionToObject(expression.expression, ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'Identifier') {
+    const identifierName = expression.name;
+    if (seenIdentifiers.has(identifierName)) {
+      return null;
+    }
+
+    seenIdentifiers.add(identifierName);
+    const initializer = findTopLevelVariableInitializer(ast, identifierName);
+    return resolveConfigExpressionToObject(initializer, ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'CallExpression' && expression.arguments.length > 0) {
+    return resolveConfigExpressionToObject(expression.arguments[0], ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'ArrowFunctionExpression' || expression.type === 'FunctionExpression') {
+    if (expression.body?.type === 'ObjectExpression') {
+      return expression.body;
+    }
+
+    if (expression.body?.type === 'BlockStatement') {
+      const returnStatement = expression.body.body.find((statement: any) => statement.type === 'ReturnStatement');
+      if (returnStatement?.argument) {
+        return resolveConfigExpressionToObject(returnStatement.argument, ast, seenIdentifiers);
+      }
+    }
+  }
+
+  if (expression.type === 'ConditionalExpression') {
+    return resolveConfigExpressionToObject(expression.consequent, ast, seenIdentifiers) ||
+      resolveConfigExpressionToObject(expression.alternate, ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'LogicalExpression') {
+    return resolveConfigExpressionToObject(expression.right, ast, seenIdentifiers) ||
+      resolveConfigExpressionToObject(expression.left, ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'SequenceExpression' && Array.isArray(expression.expressions) && expression.expressions.length > 0) {
+    return resolveConfigExpressionToObject(expression.expressions[expression.expressions.length - 1], ast, seenIdentifiers);
+  }
+
+  return null;
+}
+
+function findConfigObjectFromAst(ast: any): any {
+  const body = getProgramBody(ast);
+
+  for (const statement of body) {
+    if (statement.type === 'ExportDefaultDeclaration') {
+      const resolved = resolveConfigExpressionToObject(statement.declaration, ast);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    if (statement.type === 'ExpressionStatement' && statement.expression?.type === 'AssignmentExpression') {
+      const assignment = statement.expression;
+      if (isModuleExportsNode(assignment.left) || isExportsDefaultNode(assignment.left)) {
+        const resolved = resolveConfigExpressionToObject(assignment.right, ast);
+        if (resolved) {
+          return resolved;
         }
       }
-    },
-    fallback
-  });
+    }
+  }
 
-  return configObj;
-} 
+  return null;
+}
+
+function getViteFederationCalleeNames(ast: any): Set<string> {
+  const calleeNames = new Set<string>(['federation']);
+  const knownSources = new Set<string>(['@module-federation/vite', '@originjs/vite-plugin-federation']);
+
+  for (const statement of getProgramBody(ast)) {
+    if (statement.type !== 'ImportDeclaration' || typeof statement.source?.value !== 'string') {
+      continue;
+    }
+
+    if (!knownSources.has(statement.source.value)) {
+      continue;
+    }
+
+    for (const specifier of statement.specifiers || []) {
+      if (specifier.type === 'ImportDefaultSpecifier' || specifier.type === 'ImportSpecifier') {
+        if (specifier.local?.name) {
+          calleeNames.add(specifier.local.name);
+        }
+      }
+    }
+  }
+
+  return calleeNames;
+}
+
+function getRSBuildFederationCalleeNames(ast: any): Set<string> {
+  const calleeNames = new Set<string>(['pluginModuleFederation']);
+  const knownSource = '@module-federation/rsbuild-plugin';
+
+  for (const statement of getProgramBody(ast)) {
+    if (statement.type !== 'ImportDeclaration' || statement.source?.value !== knownSource) {
+      continue;
+    }
+
+    for (const specifier of statement.specifiers || []) {
+      if (specifier.type === 'ImportDefaultSpecifier' || specifier.type === 'ImportSpecifier') {
+        if (specifier.local?.name) {
+          calleeNames.add(specifier.local.name);
+        }
+      }
+    }
+  }
+
+  return calleeNames;
+}
