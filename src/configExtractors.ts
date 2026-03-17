@@ -30,13 +30,13 @@ const fallback = (node: any) => {
     case 'TSTypeParameterDeclaration':
     case 'TSTypeParameterInstantiation':
       return ['params']; // Type parameters
-    case 'TSQualifiedName': 
+    case 'TSQualifiedName':
       return ['left', 'right']; // Namespace qualified names
     case 'TSEnumDeclaration':
       return ['id', 'members']; // Enum name and members
     case 'TSInterfaceDeclaration':
       return ['id', 'body', 'extends']; // Interface name, body, and extended interfaces
-    case 'TSTypeAliasDeclaration': 
+    case 'TSTypeAliasDeclaration':
       return ['id', 'typeParameters', 'typeAnnotation']; // Type alias name, parameters, and type
     case 'TSPropertySignature':
       return ['key', 'typeAnnotation', 'initializer']; // Property signature components
@@ -46,16 +46,16 @@ const fallback = (node: any) => {
 
   // Generic handling for other TS node types
   if (typeof node.type === 'string' && node.type.startsWith('TS')) {
-    return Object.keys(node).filter(key => 
-      typeof node[key] === 'object' && 
-      node[key] !== null && 
-      !key.startsWith('_') && 
-      key !== 'type' && 
-      key !== 'loc' && 
+    return Object.keys(node).filter(key =>
+      typeof node[key] === 'object' &&
+      node[key] !== null &&
+      !key.startsWith('_') &&
+      key !== 'type' &&
+      key !== 'loc' &&
       key !== 'range'
     );
   }
-  
+
   // For non-TS nodes, use estraverse's built-in visitor keys
   return (estraverse.VisitorKeys as any)[node.type] || [];
 };
@@ -75,7 +75,7 @@ async function detectPackageManagerAndStartCommand(folder: string, configType: '
   try {
     // Determine the default start script based on config type
     const startScript = configType === 'vite' ? 'dev' : configType === 'rsbuild' ? 'dev' : 'start';
-    
+
     // Check for lock files to determine package manager
     const lockFiles = [
       { file: 'package-lock.json', manager: 'npm' as const },
@@ -86,9 +86,9 @@ async function detectPackageManagerAndStartCommand(folder: string, configType: '
     for (const { file, manager } of lockFiles) {
       try {
         await fs.access(path.join(folder, file));
-        const result = { 
-          packageManager: manager, 
-          startCommand: `${manager}${manager === 'yarn' ? '' : ' run'} ${startScript}` 
+        const result = {
+          packageManager: manager,
+          startCommand: `${manager}${manager === 'yarn' ? '' : ' run'} ${startScript}`
         };
         packageManagerCache.set(cacheKey, result);
         return result;
@@ -116,7 +116,7 @@ function findProperty(obj: any, name: string): any {
   return obj.properties.find((p: any) =>
     p.type === 'Property' &&
     ((p.key.type === 'Identifier' && p.key.name === name) ||
-     (p.key.type === 'Literal' && p.key.value === name))
+      (p.key.type === 'Literal' && p.key.value === name))
   );
 }
 
@@ -128,8 +128,7 @@ function getPropertyKey(prop: any): string | undefined {
 
 function isValidRemoteProperty(prop: any): boolean {
   return prop.type === 'Property' &&
-         (prop.key.type === 'Identifier' || prop.key.type === 'Literal') &&
-         extractRemoteUrlFromExpression(prop.value) !== undefined;
+    (prop.key.type === 'Identifier' || prop.key.type === 'Literal');
 }
 
 // Common function to extract configuration from options object
@@ -139,7 +138,7 @@ function extractConfigFromOptions(options: any, config: ModuleFederationConfig):
   if (nameProp?.value.type === 'Literal') {
     config.name = nameProp.value.value;
   }
-  
+
   // Extract remotes
   const remotesProp = findProperty(options, 'remotes');
   if (remotesProp?.value.type === 'ObjectExpression') {
@@ -147,20 +146,45 @@ function extractConfigFromOptions(options: any, config: ModuleFederationConfig):
       if (isValidRemoteProperty(prop)) {
         const remoteName = getPropertyKey(prop);
         if (remoteName) {
-          const remoteUrl = extractRemoteUrlFromExpression(prop.value);
-          config.remotes.push({
-            name: remoteName,
-            url: remoteUrl,
-            folder: remoteName,
-            remoteEntry: remoteUrl,
-            packageManager: 'npm',
-            configType: config.configType
-          });
+          let remoteUrl: string | undefined;
+
+          // Handle array format, e.g., remote: ['url'] or object format { url: '...' }
+          if (prop.value.type === 'ObjectExpression') {
+            // Look for 'url' or 'entry' properties inside the remote object definition
+            const urlProp = findProperty(prop.value, 'url') || findProperty(prop.value, 'entry');
+            if (urlProp) {
+              remoteUrl = extractRemoteUrlFromExpression(urlProp.value);
+            }
+          } else {
+            remoteUrl = extractRemoteUrlFromExpression(prop.value);
+          }
+
+          if (remoteUrl) {
+            // Check if the URL string has the "name@url" pattern often used in Webpack
+            let finalName = remoteName;
+            let finalUrl = remoteUrl;
+            if (remoteUrl.includes('@') && !remoteUrl.startsWith('[') && !remoteUrl.startsWith('http')) {
+              const parts = remoteUrl.split('@');
+              if (parts.length === 2) {
+                finalName = parts[0];
+                finalUrl = parts[1];
+              }
+            }
+
+            config.remotes.push({
+              name: finalName,
+              url: finalUrl,
+              folder: remoteName, // keep original object key as folder heuristic
+              remoteEntry: finalUrl,
+              packageManager: 'npm',
+              configType: config.configType
+            });
+          }
         }
       }
     }
   }
-  
+
   // Extract exposes
   const exposesProp = findProperty(options, 'exposes');
   if (exposesProp?.value.type === 'ObjectExpression') {
@@ -175,7 +199,7 @@ function extractConfigFromOptions(options: any, config: ModuleFederationConfig):
       }
     }
   }
-  
+
   // Extract shared dependencies
   const sharedProp = findProperty(options, 'shared');
   if (sharedProp) {
@@ -209,6 +233,21 @@ async function updateRemotePackageManagers(config: ModuleFederationConfig): Prom
 }
 
 /**
+ * Helper to read and parse a file into an AST, then extract its configuration.
+ */
+export async function parseConfigFile(
+  filePath: string,
+  extractor: (ast: any, workspaceRoot: string) => Promise<ModuleFederationConfig>
+): Promise<ModuleFederationConfig> {
+  const content = await fs.readFile(filePath, 'utf8');
+  const ast = parse(content, {
+    sourceType: 'module',
+    ecmaVersion: 'latest'
+  });
+  return extractor(ast, path.dirname(filePath));
+}
+
+/**
  * Extract Module Federation configuration from webpack config AST
  */
 export async function extractConfigFromWebpack(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
@@ -217,21 +256,23 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
     remotes: [],
     exposes: [],
     shared: [],
+    detected: false,
     configType: 'webpack',
     configPath: ''
   };
-  
+
   estraverse.traverse(ast, {
     enter(node: any) {
       // Check for ModuleFederationPlugin instantiation
       if (isModuleFederationPluginNode(node)) {
+        config.detected = true;
         extractConfigFromOptions(node.arguments[0], config);
         logConfig('Webpack', config);
       }
     },
     fallback
   });
-  
+
   await updateRemotePackageManagers(config);
   return config;
 }
@@ -245,26 +286,30 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
     remotes: [],
     exposes: [],
     shared: [],
+    detected: false,
     configType: 'vite',
     configPath: ''
   };
-  
+
   const configObj = findViteConfigObject(ast);
   if (!configObj) return config;
-  
+
+  const federationCallees = getViteFederationCalleeNames(ast);
+
   // Find plugins array
   const pluginsProp = findProperty(configObj, 'plugins');
   if (pluginsProp?.value.type !== 'ArrayExpression') return config;
-  
+
   // Process each plugin
   for (const plugin of pluginsProp.value.elements) {
-    if (isFederationPlugin(plugin)) {
+    if (isFederationPlugin(plugin, federationCallees)) {
+      config.detected = true;
       extractConfigFromOptions(plugin.arguments[0], config);
       logConfig('Vite', config);
       break; // Assume only one federation plugin per config
     }
   }
-  
+
   await updateRemotePackageManagers(config);
   return config;
 }
@@ -278,27 +323,29 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
     remotes: [],
     exposes: [],
     shared: [],
+    detected: false,
     configType: 'modernjs',
     configPath: ''
   };
-  
+
   estraverse.traverse(ast, {
     enter(node: any) {
       // Look for export default createModuleFederationConfig({ ... })
       if (node.type === 'ExportDefaultDeclaration' &&
-          node.declaration.type === 'CallExpression' &&
-          node.declaration.callee.type === 'Identifier' &&
-          node.declaration.callee.name === 'createModuleFederationConfig' &&
-          node.declaration.arguments.length > 0 &&
-          node.declaration.arguments[0].type === 'ObjectExpression') {
-        
+        node.declaration.type === 'CallExpression' &&
+        node.declaration.callee.type === 'Identifier' &&
+        node.declaration.callee.name === 'createModuleFederationConfig' &&
+        node.declaration.arguments.length > 0 &&
+        node.declaration.arguments[0].type === 'ObjectExpression') {
+
+        config.detected = true;
         extractConfigFromOptions(node.declaration.arguments[0], config);
         logConfig('ModernJS', config);
       }
     },
     fallback
   });
-  
+
   await updateRemotePackageManagers(config);
   return config;
 }
@@ -312,95 +359,113 @@ export async function extractConfigFromRSBuild(ast: any, workspaceRoot: string):
     remotes: [],
     exposes: [],
     shared: [],
+    detected: false,
     configType: 'rsbuild',
     configPath: ''
   };
-  
+
   const configObj = findRSBuildConfigObject(ast);
   if (!configObj) return config;
-  
+  const rsbuildFederationCallees = getRSBuildFederationCalleeNames(ast);
+
   // Find moduleFederation property
   const moduleFederationProp = findProperty(configObj, 'moduleFederation');
   if (moduleFederationProp?.value.type === 'ObjectExpression') {
     // Look for options property within moduleFederation
     const optionsProp = findProperty(moduleFederationProp.value, 'options');
     if (optionsProp?.value.type === 'ObjectExpression') {
+      config.detected = true;
       extractConfigFromOptions(optionsProp.value, config);
       logConfig('RSBuild', config);
     }
   }
-  
+
+  // Handle common RSBuild plugin style:
+  // plugins: [pluginModuleFederation({ ... })]
+  if (!config.detected) {
+    const pluginsProp = findProperty(configObj, 'plugins');
+    if (pluginsProp?.value.type === 'ArrayExpression') {
+      for (const plugin of pluginsProp.value.elements) {
+        if (isRSBuildFederationPlugin(plugin, rsbuildFederationCallees)) {
+          config.detected = true;
+          extractConfigFromOptions(plugin.arguments[0], config);
+          logConfig('RSBuild', config);
+          break;
+        }
+      }
+    } else if (pluginsProp?.value.type === 'ObjectExpression') {
+      for (const property of pluginsProp.value.properties) {
+        if (property.type === 'Property' && isRSBuildFederationPlugin(property.value, rsbuildFederationCallees)) {
+          config.detected = true;
+          extractConfigFromOptions(property.value.arguments[0], config);
+          logConfig('RSBuild', config);
+          break;
+        }
+      }
+    }
+  }
+
   await updateRemotePackageManagers(config);
   return config;
+}
+
+function isRSBuildFederationPlugin(plugin: any, federationCallees: Set<string>): boolean {
+  if (!plugin || plugin.type !== 'CallExpression' || plugin.arguments.length === 0) {
+    return false;
+  }
+
+  const firstArg = plugin.arguments[0];
+  if (!firstArg || firstArg.type !== 'ObjectExpression') {
+    return false;
+  }
+
+  // Matches pluginModuleFederation({ ... }) and aliases like mf({ ... })
+  // while still requiring a clear federation-like callee name.
+  if (plugin.callee.type === 'Identifier') {
+    const calleeName = plugin.callee.name;
+    const normalized = calleeName.toLowerCase();
+    return federationCallees.has(calleeName) || normalized.includes('modulefederation') || normalized === 'mf';
+  }
+
+  if (plugin.callee.type === 'MemberExpression' && plugin.callee.property.type === 'Identifier') {
+    const calleeName = plugin.callee.property.name;
+    const normalized = calleeName.toLowerCase();
+    return federationCallees.has(calleeName) || normalized.includes('modulefederation') || normalized === 'mf';
+  }
+
+  return false;
 }
 
 function isModuleFederationPluginNode(node: any): boolean {
   if (node.type !== 'NewExpression' || node.arguments.length === 0) {
     return false;
   }
-  
+
   let calleeName: string | undefined;
-  
+
   if (node.callee.type === 'Identifier') {
     calleeName = node.callee.name;
   } else if (node.callee.type === 'MemberExpression' && node.callee.property.type === 'Identifier') {
     calleeName = node.callee.property.name;
   }
-  
-  return calleeName === 'ModuleFederationPlugin' && 
-         node.arguments[0]?.type === 'ObjectExpression';
+
+  return calleeName === 'ModuleFederationPlugin' &&
+    node.arguments[0]?.type === 'ObjectExpression';
 }
 
 function findViteConfigObject(ast: any): any {
-  let configObj = null;
-  
-  estraverse.traverse(ast, {
-    enter(node: any) {
-      if (node.type === 'ExportDefaultDeclaration') {
-        if (node.declaration.type === 'CallExpression' &&
-            node.declaration.callee.type === 'Identifier' &&
-            node.declaration.callee.name === 'defineConfig') {
-          // Handle defineConfig({ ... })
-          if (node.declaration.arguments.length > 0 && 
-              node.declaration.arguments[0].type === 'ObjectExpression') {
-            configObj = node.declaration.arguments[0];
-          }
-          // Handle defineConfig(({ mode }) => ({ ... }))
-          else if (node.declaration.arguments.length > 0 && 
-                  node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
-                  node.declaration.arguments[0].body.type === 'ObjectExpression') {
-            configObj = node.declaration.arguments[0].body;
-          }
-          // Handle defineConfig(({ mode }) => { return { ... }; })
-          else if (node.declaration.arguments.length > 0 && 
-                  node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
-                  node.declaration.arguments[0].body.type === 'BlockStatement') {
-            // Try to find the return statement
-            const returnStatement = node.declaration.arguments[0].body.body.find(
-              (stmt: any) => stmt.type === 'ReturnStatement'
-            );
-            if (returnStatement && returnStatement.argument && 
-                returnStatement.argument.type === 'ObjectExpression') {
-              configObj = returnStatement.argument;
-            }
-          }
-        } else if (node.declaration.type === 'ObjectExpression') {
-          configObj = node.declaration;
-        }
-      }
-    },
-    fallback
-  });
-  
-  return configObj;
+  return findConfigObjectFromAst(ast);
 }
 
-function isFederationPlugin(plugin: any): boolean {
+function isFederationPlugin(plugin: any, federationCallees: Set<string>): boolean {
   return plugin.type === 'CallExpression' &&
-         plugin.callee.type === 'Identifier' &&
-         plugin.callee.name === 'federation' &&
-         plugin.arguments.length > 0 &&
-         plugin.arguments[0].type === 'ObjectExpression';
+    plugin.arguments.length > 0 &&
+    plugin.arguments[0].type === 'ObjectExpression' &&
+    (
+      (plugin.callee.type === 'Identifier' && (federationCallees.has(plugin.callee.name) || plugin.callee.name.toLowerCase().includes('federation'))) ||
+      (plugin.callee.type === 'MemberExpression' && plugin.callee.property.type === 'Identifier' &&
+        (federationCallees.has(plugin.callee.property.name) || plugin.callee.property.name.toLowerCase().includes('federation')))
+    );
 }
 
 // This function will extract a simplified representation of various expressions that might be used for remote URLs
@@ -430,12 +495,12 @@ function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
     // Get the object part (env or process.env)
     if (valueNode.object.type === 'Identifier') {
       objectName = valueNode.object.name;
-    } else if (valueNode.object.type === 'MemberExpression' && 
-               valueNode.object.object.type === 'Identifier' && 
-               valueNode.object.property.type === 'Identifier') {
+    } else if (valueNode.object.type === 'MemberExpression' &&
+      valueNode.object.object.type === 'Identifier' &&
+      valueNode.object.property.type === 'Identifier') {
       objectName = `${valueNode.object.object.name}.${valueNode.object.property.name}`;
     }
-    
+
     // Get the property part (VAR_NAME)
     if (valueNode.property.type === 'Identifier') {
       return `[ENV: ${objectName}.${valueNode.property.name}]`;
@@ -487,11 +552,11 @@ function extractRemoteUrlFromExpression(valueNode: any): string | undefined {
 
 function extractSharedDependencies(valueNode: any): SharedDependency[] {
   const shared: SharedDependency[] = [];
-  
+
   if (!valueNode) {
     return shared;
   }
-  
+
   // Handle array format: shared: ['react', 'react-dom']
   if (valueNode.type === 'ArrayExpression') {
     for (const element of valueNode.elements) {
@@ -502,22 +567,22 @@ function extractSharedDependencies(valueNode: any): SharedDependency[] {
       }
     }
   }
-  
+
   // Handle object format: shared: { react: { singleton: true }, 'react-dom': { eager: true } }
   else if (valueNode.type === 'ObjectExpression') {
     for (const prop of valueNode.properties) {
       if (prop.type === 'Property') {
         const depName = getPropertyKey(prop);
-        
+
         if (depName) {
           const sharedDep: SharedDependency = { name: depName };
-          
+
           // Parse configuration object if present
           if (prop.value.type === 'ObjectExpression') {
             for (const configProp of prop.value.properties) {
               if (configProp.type === 'Property' && configProp.key.type === 'Identifier') {
                 const configKey = configProp.key.name;
-                
+
                 // Extract boolean values
                 if (configProp.value.type === 'Literal' && typeof configProp.value.value === 'boolean') {
                   switch (configKey) {
@@ -532,7 +597,7 @@ function extractSharedDependencies(valueNode: any): SharedDependency[] {
                       break;
                   }
                 }
-                
+
                 // Extract string values
                 else if (configProp.value.type === 'Literal' && typeof configProp.value.value === 'string') {
                   switch (configKey) {
@@ -547,13 +612,13 @@ function extractSharedDependencies(valueNode: any): SharedDependency[] {
               }
             }
           }
-          
+
           shared.push(sharedDep);
         }
       }
     }
   }
-  
+
   // Handle function calls or other complex expressions
   else if (valueNode.type === 'CallExpression') {
     // For function calls like shareAll() or share(), we can't statically analyze
@@ -562,50 +627,178 @@ function extractSharedDependencies(valueNode: any): SharedDependency[] {
       name: '[DYNAMIC_SHARED]'
     });
   }
-  
+
   return shared;
 }
 
 function findRSBuildConfigObject(ast: any): any {
-  let configObj = null;
-  
-  estraverse.traverse(ast, {
-    enter(node: any) {
-      if (node.type === 'ExportDefaultDeclaration') {
-        if (node.declaration.type === 'CallExpression' &&
-            node.declaration.callee.type === 'Identifier' &&
-            node.declaration.callee.name === 'defineConfig') {
-          // Handle defineConfig({ ... })
-          if (node.declaration.arguments.length > 0 && 
-              node.declaration.arguments[0].type === 'ObjectExpression') {
-            configObj = node.declaration.arguments[0];
-          }
-          // Handle defineConfig(({ mode }) => ({ ... }))
-          else if (node.declaration.arguments.length > 0 && 
-                  node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
-                  node.declaration.arguments[0].body.type === 'ObjectExpression') {
-            configObj = node.declaration.arguments[0].body;
-          }
-          // Handle defineConfig(({ mode }) => { return { ... }; })
-          else if (node.declaration.arguments.length > 0 && 
-                  node.declaration.arguments[0].type === 'ArrowFunctionExpression' &&
-                  node.declaration.arguments[0].body.type === 'BlockStatement') {
-            // Try to find the return statement
-            const returnStatement = node.declaration.arguments[0].body.body.find(
-              (stmt: any) => stmt.type === 'ReturnStatement'
-            );
-            if (returnStatement && returnStatement.argument && 
-                returnStatement.argument.type === 'ObjectExpression') {
-              configObj = returnStatement.argument;
-            }
-          }
-        } else if (node.declaration.type === 'ObjectExpression') {
-          configObj = node.declaration;
+  return findConfigObjectFromAst(ast);
+} 
+
+function getProgramBody(ast: any): any[] {
+  return ast?.type === 'Program' && Array.isArray(ast.body) ? ast.body : [];
+}
+
+function isModuleExportsNode(node: any): boolean {
+  return node?.type === 'MemberExpression' &&
+    !node.computed &&
+    node.object?.type === 'Identifier' &&
+    node.object.name === 'module' &&
+    node.property?.type === 'Identifier' &&
+    node.property.name === 'exports';
+}
+
+function isExportsDefaultNode(node: any): boolean {
+  return node?.type === 'MemberExpression' &&
+    !node.computed &&
+    node.object?.type === 'Identifier' &&
+    node.object.name === 'exports' &&
+    node.property?.type === 'Identifier' &&
+    node.property.name === 'default';
+}
+
+function findTopLevelVariableInitializer(ast: any, name: string): any {
+  const body = getProgramBody(ast);
+  for (const statement of body) {
+    if (statement.type !== 'VariableDeclaration') {
+      continue;
+    }
+
+    for (const declaration of statement.declarations || []) {
+      if (declaration.id?.type === 'Identifier' && declaration.id.name === name) {
+        return declaration.init;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function resolveConfigExpressionToObject(expression: any, ast: any, seenIdentifiers = new Set<string>()): any {
+  if (!expression) {
+    return null;
+  }
+
+  if (expression.type === 'ObjectExpression') {
+    return expression;
+  }
+
+  if (expression.type === 'TSAsExpression' || expression.type === 'TSTypeAssertion' || expression.type === 'TSNonNullExpression') {
+    return resolveConfigExpressionToObject(expression.expression, ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'Identifier') {
+    const identifierName = expression.name;
+    if (seenIdentifiers.has(identifierName)) {
+      return null;
+    }
+
+    seenIdentifiers.add(identifierName);
+    const initializer = findTopLevelVariableInitializer(ast, identifierName);
+    return resolveConfigExpressionToObject(initializer, ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'CallExpression' && expression.arguments.length > 0) {
+    return resolveConfigExpressionToObject(expression.arguments[0], ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'ArrowFunctionExpression' || expression.type === 'FunctionExpression') {
+    if (expression.body?.type === 'ObjectExpression') {
+      return expression.body;
+    }
+
+    if (expression.body?.type === 'BlockStatement') {
+      const returnStatement = expression.body.body.find((statement: any) => statement.type === 'ReturnStatement');
+      if (returnStatement?.argument) {
+        return resolveConfigExpressionToObject(returnStatement.argument, ast, seenIdentifiers);
+      }
+    }
+  }
+
+  if (expression.type === 'ConditionalExpression') {
+    return resolveConfigExpressionToObject(expression.consequent, ast, seenIdentifiers) ||
+      resolveConfigExpressionToObject(expression.alternate, ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'LogicalExpression') {
+    return resolveConfigExpressionToObject(expression.right, ast, seenIdentifiers) ||
+      resolveConfigExpressionToObject(expression.left, ast, seenIdentifiers);
+  }
+
+  if (expression.type === 'SequenceExpression' && Array.isArray(expression.expressions) && expression.expressions.length > 0) {
+    return resolveConfigExpressionToObject(expression.expressions[expression.expressions.length - 1], ast, seenIdentifiers);
+  }
+
+  return null;
+}
+
+function findConfigObjectFromAst(ast: any): any {
+  const body = getProgramBody(ast);
+
+  for (const statement of body) {
+    if (statement.type === 'ExportDefaultDeclaration') {
+      const resolved = resolveConfigExpressionToObject(statement.declaration, ast);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    if (statement.type === 'ExpressionStatement' && statement.expression?.type === 'AssignmentExpression') {
+      const assignment = statement.expression;
+      if (isModuleExportsNode(assignment.left) || isExportsDefaultNode(assignment.left)) {
+        const resolved = resolveConfigExpressionToObject(assignment.right, ast);
+        if (resolved) {
+          return resolved;
         }
       }
-    },
-    fallback
-  });
-  
-  return configObj;
-} 
+    }
+  }
+
+  return null;
+}
+
+function getViteFederationCalleeNames(ast: any): Set<string> {
+  const calleeNames = new Set<string>(['federation']);
+  const knownSources = new Set<string>(['@module-federation/vite', '@originjs/vite-plugin-federation']);
+
+  for (const statement of getProgramBody(ast)) {
+    if (statement.type !== 'ImportDeclaration' || typeof statement.source?.value !== 'string') {
+      continue;
+    }
+
+    if (!knownSources.has(statement.source.value)) {
+      continue;
+    }
+
+    for (const specifier of statement.specifiers || []) {
+      if (specifier.type === 'ImportDefaultSpecifier' || specifier.type === 'ImportSpecifier') {
+        if (specifier.local?.name) {
+          calleeNames.add(specifier.local.name);
+        }
+      }
+    }
+  }
+
+  return calleeNames;
+}
+
+function getRSBuildFederationCalleeNames(ast: any): Set<string> {
+  const calleeNames = new Set<string>(['pluginModuleFederation']);
+  const knownSource = '@module-federation/rsbuild-plugin';
+
+  for (const statement of getProgramBody(ast)) {
+    if (statement.type !== 'ImportDeclaration' || statement.source?.value !== knownSource) {
+      continue;
+    }
+
+    for (const specifier of statement.specifiers || []) {
+      if (specifier.type === 'ImportDefaultSpecifier' || specifier.type === 'ImportSpecifier') {
+        if (specifier.local?.name) {
+          calleeNames.add(specifier.local.name);
+        }
+      }
+    }
+  }
+
+  return calleeNames;
+}

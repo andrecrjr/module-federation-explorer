@@ -4,51 +4,64 @@ import * as path from 'path';
 import { Remote } from './types';
 import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
 import { DialogUtils } from './dialogUtils';
+import { detectModuleFederationProjects } from './workspaceScanner';
+import { showOnboardingPage } from './onboarding';
+import { initializeRatingState, openMarketplaceReview, trackSuccessAndPrompt } from './ratingPrompt';
 
 /**
  * Activate the extension
  */
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   try {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    
-    // Check if this is the first time the extension is being activated
-    const hasShownWelcomePage = context.globalState.get('mfExplorer.hasShownWelcomePage', false);
-    if (!hasShownWelcomePage) {
-      // Show welcome page
-      showWelcomePage(context);
-      // Mark as shown
-      context.globalState.update('mfExplorer.hasShownWelcomePage', true);
-      
-      // Guide the user through the setup process after a short delay (only for first-time users)
-      setTimeout(() => {
-        showSetupGuide(provider);
-      }, 2000);
-    }
-    
+
     // Create the unified provider instead of the old one
     const provider = new UnifiedModuleFederationProvider(workspaceRoot, context);
-    
+
+    await initializeRatingState(context);
+
+    // Smart Onboarding Logic: Run if the workspace has no roots configured
+    setTimeout(async () => {
+      try {
+        // Check if user already configured roots
+        const hasRoots = await (provider as any).rootConfigManager.hasConfiguredRoots();
+
+        if (!hasRoots) {
+          provider.log('Running auto-detection for Module Federation projects');
+          const detectedProjects = await detectModuleFederationProjects();
+
+          if (detectedProjects.length > 0) {
+            provider.log(`Detected ${detectedProjects.length} MF projects. Showing onboarding UI.`);
+            showOnboardingPage(context, provider, detectedProjects);
+          } else {
+            provider.log('No MF projects detected automatically.');
+          }
+        }
+      } catch (e) {
+        provider.logError('Background onboarding scan failed', e);
+      }
+    }, 1500);
+
     // Clear any previously running remotes (in case of extension restart)
     provider.clearAllRunningApps();
-    
+
     // Listen for terminal disposal events to clean up running apps
     const terminalDisposalListener = vscode.window.onDidCloseTerminal((terminal) => {
       provider.log(`[Event] Terminal disposal event fired for: ${terminal.name}`);
       provider.handleTerminalClosed(terminal);
     });
     context.subscriptions.push(terminalDisposalListener);
-    
+
     // Set up periodic cleanup of disposed terminals (every 10 seconds)
     const periodicCleanup = setInterval(() => {
       provider.cleanupDisposedTerminals();
     }, 10000);
-    
+
     // Clean up the interval when extension is deactivated
     context.subscriptions.push({
       dispose: () => clearInterval(periodicCleanup)
     });
-    
+
     // Show initial welcome message
     vscode.window.showInformationMessage('Module Federation Explorer is now active!');
     provider.log('Extension activated successfully');
@@ -56,7 +69,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Register the tree data provider and create tree view
     const viewId = 'moduleFederation';
     vscode.window.registerTreeDataProvider(viewId, provider);
-    
+
     // Create a tree view that will be shown in the explorer
     const treeView = vscode.window.createTreeView(viewId, {
       treeDataProvider: provider,
@@ -64,7 +77,7 @@ export function activate(context: vscode.ExtensionContext) {
       dragAndDropController: provider
     });
     context.subscriptions.push(treeView);
-    
+
     // Register the reveal command to show the Module Federation Explorer view
     context.subscriptions.push(
       vscode.commands.registerCommand('moduleFederation.reveal', () => {
@@ -74,7 +87,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.executeCommand('moduleFederation.focus');
       })
     );
-    
+
     // Add a direct command to open the view within explorer
     context.subscriptions.push(
       vscode.commands.registerCommand('moduleFederation.openView', () => {
@@ -83,12 +96,12 @@ export function activate(context: vscode.ExtensionContext) {
         // Try to focus specifically on our view using its id
         setTimeout(() => {
           // Try multiple approaches to ensure compatibility across different VS Code versions
-          const viewId = 'moduleFederationExplorer';
+          const viewId = 'moduleFederation';
           vscode.commands.executeCommand(`${viewId}.focus`);
         }, 300);
       })
     );
-    
+
     // Register focus command to focus the Module Federation view
     context.subscriptions.push(
       vscode.commands.registerCommand('moduleFederation.focus', () => {
@@ -102,34 +115,39 @@ export function activate(context: vscode.ExtensionContext) {
       showWelcomePage(context);
     });
     context.subscriptions.push(welcomeCommand);
-    
+
     // Register feedback command
     const feedbackCommand = vscode.commands.registerCommand('moduleFederation.showFeedback', () => {
       vscode.env.openExternal(vscode.Uri.parse('https://acjr.notion.site/202b5e58148c8017ba2ad355fc377e4b?pvs=105'));
     });
     context.subscriptions.push(feedbackCommand);
-    
+
+    const rateCommand = vscode.commands.registerCommand('moduleFederation.rateExtension', async () => {
+      await openMarketplaceReview(context);
+    });
+    context.subscriptions.push(rateCommand);
+
     // Register commands and watchers
     const disposables = [
       vscode.commands.registerCommand('moduleFederation.refresh', () => provider.reloadConfigurations()),
-      
+
       // Root management commands
       vscode.commands.registerCommand('moduleFederation.addRoot', () => provider.addRoot()),
       vscode.commands.registerCommand('moduleFederation.removeRoot', (rootFolder) => provider.removeRoot(rootFolder)),
       vscode.commands.registerCommand('moduleFederation.changeConfigFile', () => provider.changeConfigFile()),
-      
+
       // Root app commands
       vscode.commands.registerCommand('moduleFederation.startRootApp', (rootFolder) => provider.startRootApp(rootFolder)),
       vscode.commands.registerCommand('moduleFederation.stopRootApp', (rootFolder) => provider.stopRootApp(rootFolder)),
       vscode.commands.registerCommand('moduleFederation.configureRootApp', (rootFolder) => provider.configureRootAppStartCommand(rootFolder)),
       vscode.commands.registerCommand('moduleFederation.editRootAppCommand', (rootFolder) => provider.editRootAppCommands(rootFolder)),
-      
+
       // New Dependency Graph command
       vscode.commands.registerCommand('moduleFederation.showDependencyGraph', () => provider.showDependencyGraph()),
-      
+
       // Debug command to manually clean up disposed terminals
       vscode.commands.registerCommand('moduleFederation.cleanupTerminals', () => provider.cleanupDisposedTerminals()),
-      
+
       // Remote commands
       vscode.commands.registerCommand('moduleFederation.stopRemote', async (remote: Remote) => {
         try {
@@ -149,16 +167,16 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('moduleFederation.startRemote', async (remote: Remote) => {
         try {
           provider.log(`Starting remote ${remote.name}`);
-          
+
           // Check if remote is already user-configured (has both folder and start command)
           const isUserConfigured = !!(remote.folder && remote.startCommand);
-          
+
           let folder: string;
-          
+
           if (!isUserConfigured) {
             // Remote is not configured yet - show dialog to configure it
             provider.log(`Remote ${remote.name} is not configured yet, showing configuration dialog`);
-            
+
             // Show informative message first
             const proceed = await DialogUtils.showInfo(
               `Remote "${remote.name}" needs a project folder to be configured.`,
@@ -214,23 +232,23 @@ export function activate(context: vscode.ExtensionContext) {
               );
               return;
             }
-            
+
             folder = selectedFolder;
             remote.folder = folder;
             provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
-            
+
             // Save the folder configuration using the unified provider
             await (provider as any).saveRemoteConfiguration(remote);
-            
+
             // Refresh the tree view to reflect folder changes
             provider.reloadConfigurations();
           } else {
             // Remote is already configured - use the configured folder automatically
             const resolvedFolderPath = (provider as any).resolveRemoteFolderPath(remote);
-            
+
             if (!resolvedFolderPath || !fs.existsSync(resolvedFolderPath)) {
 
-              
+
               // Set default URI to parent of workspace root if available
               let defaultUri: vscode.Uri | undefined;
               const workspaceRoot = provider.getWorkspaceRoot();
@@ -269,14 +287,14 @@ export function activate(context: vscode.ExtensionContext) {
                 );
                 return;
               }
-              
+
               folder = newFolder;
               remote.folder = folder;
               provider.log(`User selected new project folder for remote ${remote.name}: ${folder}`);
-              
+
               // Save the folder configuration using the unified provider
               await (provider as any).saveRemoteConfiguration(remote);
-              
+
               // Refresh the tree view to reflect folder changes
               provider.reloadConfigurations();
             } else {
@@ -285,7 +303,7 @@ export function activate(context: vscode.ExtensionContext) {
               provider.log(`Using existing configured folder for remote ${remote.name}: ${folder}`);
             }
           }
-          
+
           // Check if build and start commands are configured
           if (!remote.buildCommand || !remote.startCommand) {
             provider.log(`Build or start command not configured for remote ${remote.name}`);
@@ -305,7 +323,7 @@ export function activate(context: vscode.ExtensionContext) {
               remote.packageManager = packageManager;
               provider.log(`Detected package manager for remote ${remote.name}: ${packageManager}`);
             }
-            
+
             const buildCommand = await DialogUtils.showCommandConfig({
               title: `Configure Build Command for ${remote.name}`,
               commandType: 'build',
@@ -314,12 +332,12 @@ export function activate(context: vscode.ExtensionContext) {
               projectPath: folder,
               configType: remote.configType
             });
-            
+
             if (!buildCommand) {
               await DialogUtils.showInfo('Build command not provided, remote configuration canceled.');
               return;
             }
-            
+
             const startCommand = await DialogUtils.showCommandConfig({
               title: `Configure Preview Build Command for ${remote.name}`,
               commandType: 'preview',
@@ -328,22 +346,22 @@ export function activate(context: vscode.ExtensionContext) {
               projectPath: folder,
               configType: remote.configType
             });
-            
+
             if (!startCommand) {
               await DialogUtils.showInfo('Preview Build command not provided, remote configuration canceled.');
               return;
             }
-            
+
             // Update remote configuration
             remote.buildCommand = buildCommand;
             remote.startCommand = startCommand;
-            
+
             // Save the updated configuration using the unified provider
             await (provider as any).saveRemoteConfiguration(remote);
-            
+
             // Refresh view to reflect new command configuration
             provider.reloadConfigurations();
-            
+
             await DialogUtils.showSuccess(`Commands configured for remote "${remote.name}"`);
           }
 
@@ -357,33 +375,34 @@ export function activate(context: vscode.ExtensionContext) {
             await DialogUtils.showInfo(`Remote ${remote.name} is already running`);
             return;
           }
-          
+
           provider.log(`Remote ${remote.name} is not running, creating separate terminals for build and start`);
 
           // Create the build terminal first
           const buildTerminal = vscode.window.createTerminal(`Build: ${remote.name} - Remote`);
-          
+
           // Create the start terminal as a split of the build terminal
           const startTerminal = vscode.window.createTerminal({
             name: `Preview: ${remote.name} - Remote`,
             location: { parentTerminal: buildTerminal }
           });
-          
+
           // Show the build terminal first
           buildTerminal.show();
           // Run build command in build terminal
           buildTerminal.sendText(`cd "${folder}" && ${remote.buildCommand}`);
-          
+
           // Show the start terminal (this will show both terminals side by side)
           startTerminal.show();
           // Run start command in start terminal
           startTerminal.sendText(`cd "${folder}" && ${remote.startCommand}`);
-          
+
           // Store running remote info with both terminals
           provider.setRunningRemote(remoteKey, startTerminal, buildTerminal);
           provider.refresh();
-          
+
           await DialogUtils.showSuccess(`Started remote ${remote.name}`);
+          await trackSuccessAndPrompt(context, 'remote-started');
         } catch (error) {
           await DialogUtils.showError(`Failed to start remote ${remote.name}`, {
             detail: error instanceof Error ? error.message : String(error)
@@ -438,7 +457,7 @@ export function activate(context: vscode.ExtensionContext) {
         provider.logError('Error handling file change', error);
       }
     };
-    
+
     // Watch for webpack, vite, ModernJS, and RSBuild config changes
     const fileWatcher = vscode.workspace.createFileSystemWatcher(
       '**/{webpack,vite,rsbuild}.config.{js,ts},**/module-federation.config.{js,ts}',
@@ -446,11 +465,11 @@ export function activate(context: vscode.ExtensionContext) {
       false, // ignoreChangeEvents
       false  // ignoreDeleteEvents
     );
-    
+
     fileWatcher.onDidChange(updateOnFileChange);
     fileWatcher.onDidCreate(updateOnFileChange);
     fileWatcher.onDidDelete(updateOnFileChange);
-    
+
     // Also watch for changes in .vscode/mf-explorer.roots.json
     const rootsWatcher = vscode.workspace.createFileSystemWatcher(
       '**/.vscode/mf-explorer.roots.json',
@@ -458,11 +477,11 @@ export function activate(context: vscode.ExtensionContext) {
       false, // ignoreChangeEvents
       false  // ignoreDeleteEvents
     );
-    
+
     rootsWatcher.onDidChange(updateOnFileChange);
     rootsWatcher.onDidCreate(updateOnFileChange);
     rootsWatcher.onDidDelete(updateOnFileChange);
-    
+
     context.subscriptions.push(...disposables, fileWatcher, rootsWatcher);
 
   } catch (error) {
@@ -490,7 +509,7 @@ function showWelcomePage(context: vscode.ExtensionContext) {
 
   // Set HTML content
   panel.webview.html = getWelcomePageHtml(context, panel.webview);
-  
+
   // Handle webview messages
   panel.webview.onDidReceiveMessage(
     message => {

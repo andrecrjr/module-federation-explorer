@@ -32,6 +32,7 @@ export interface ModuleFederationConfig {
   remotes: Remote[];
   exposes: ExposedModule[];
   shared: SharedDependency[]; // Add shared dependencies
+  detected?: boolean; // True when an extractor positively identifies Module Federation config
   configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild';
   configPath: string;
 }

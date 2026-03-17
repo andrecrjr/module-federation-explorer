@@ -16,13 +16,22 @@
     ],
     "author": {
         "name": "André Carlos Jr.",
-        "email": "andre-carlos@live.com"
+        "email": "andre-carlos@ac-jr.com"
     },
     "publisher": "acjr",
     "activationEvents": [
         "workspaceContains:**/webpack.config.js",
+        "workspaceContains:**/webpack.config.ts",
         "workspaceContains:**/vite.config.js",
+        "workspaceContains:**/vite.config.ts",
+        "workspaceContains:**/rsbuild.config.js",
+        "workspaceContains:**/rsbuild.config.ts",
+        "workspaceContains:**/rspack.config.js",
+        "workspaceContains:**/rspack.config.ts",
+        "workspaceContains:**/modern.config.js",
+        "workspaceContains:**/modern.config.ts",
         "workspaceContains:**/module-federation.config.js",
+        "workspaceContains:**/module-federation.config.ts",
         "workspaceContains:**/.vscode/mf-explorer.roots.json"
     ],
     "main": "./dist/extension.js",
@@ -122,6 +131,11 @@
                 "command": "moduleFederation.showFeedback",
                 "title": "Module Federation Explorer: Share Feedback",
                 "icon": "$(feedback)"
+            },
+            {
+                "command": "moduleFederation.rateExtension",
+                "title": "Module Federation Explorer: Rate Extension",
+                "icon": "$(star-full)"
             },
             {
                 "command": "moduleFederation.addExternalRemote",
@@ -233,11 +247,6 @@
         "test": "node ./out/test/runTest.js",
         "lint": "eslint src --ext ts"
     },
-    "dependencies": {
-        "@typescript-eslint/parser": "^8.27.0",
-        "d3": "^7.8.5",
-        "estraverse": "^5.3.0"
-    },
     "devDependencies": {
         "@rspack/cli": "^1.2.8",
         "@rspack/core": "^1.2.8",
@@ -251,7 +260,10 @@
         "@types/estraverse": "^5.1.3",
         "@types/node": "^16.11.7",
         "@types/vscode": "^1.80.0",
+        "@typescript-eslint/parser": "^8.27.0",
         "conventional-changelog-conventionalcommits": "^9.2.0",
+        "d3": "^7.8.5",
+        "estraverse": "^5.3.0",
         "semantic-release": "^25.0.3",
         "semantic-release-vsce": "^6.0.24",
         "ts-loader": "^9.5.2",
