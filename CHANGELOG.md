@@ -1,3 +1,15 @@
+## [2.3.0](https://github.com/andrecrjr/module-federation-explorer/compare/2.2.0...2.3.0) (2026-03-17)
+
+### Features
+
+* Add rating prompt functionality and onboarding completion tracking ([0843867](https://github.com/andrecrjr/module-federation-explorer/commit/084386732cf86751cde422d7fdc8438b4eae5b34))
+* Enhance Module Federation config detection with a 'detected' flag and update workspace scanning logic ([3764a58](https://github.com/andrecrjr/module-federation-explorer/commit/3764a580f44196d9851441d4ec104fb21e5e21a5))
+* Enhance Vite and RSBuild config extraction with federation callee detection ([9efe13e](https://github.com/andrecrjr/module-federation-explorer/commit/9efe13ed820668f647450f0fa4a16e79f5333123))
+* Implement an onboarding experience with workspace scanning to guide initial Module Federation project setup. ([f3b2af7](https://github.com/andrecrjr/module-federation-explorer/commit/f3b2af7c0912cbf883a56feeb31df7ef0b992b4c))
+* Implement dependency graph visualization using D3.js. ([b91ba59](https://github.com/andrecrjr/module-federation-explorer/commit/b91ba59219f1d3378d96c6f91a93734f9e9071e6))
+* Implement enhanced dependency graph generation logic and integrate D3.js for visualization. ([8ba85c8](https://github.com/andrecrjr/module-federation-explorer/commit/8ba85c8d478edb73cbc593f47944cbfaff7b0092))
+* switch to `builtin:swc-loader` for faster builds, and expand activation events for TypeScript config files while moving dev dependencies ([7ccd4b8](https://github.com/andrecrjr/module-federation-explorer/commit/7ccd4b8c4f89aa61f6f5060640fb730a46b8e9fd))
+
 ## [2.2.0](https://github.com/andrecrjr/module-federation-explorer/compare/2.1.0...2.2.0) (2026-03-10)
 
 ### Features
