@@ -4,4 +4,4 @@ deploy:
 # arg command in makefile
 
 install:
-	antigravity --install-extension *.vsix
+	code --install-extension *.vsix

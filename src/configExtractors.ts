@@ -256,6 +256,7 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
     remotes: [],
     exposes: [],
     shared: [],
+    detected: false,
     configType: 'webpack',
     configPath: ''
   };
@@ -264,6 +265,7 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
     enter(node: any) {
       // Check for ModuleFederationPlugin instantiation
       if (isModuleFederationPluginNode(node)) {
+        config.detected = true;
         extractConfigFromOptions(node.arguments[0], config);
         logConfig('Webpack', config);
       }
@@ -284,6 +286,7 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
     remotes: [],
     exposes: [],
     shared: [],
+    detected: false,
     configType: 'vite',
     configPath: ''
   };
@@ -298,6 +301,7 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
   // Process each plugin
   for (const plugin of pluginsProp.value.elements) {
     if (isFederationPlugin(plugin)) {
+      config.detected = true;
       extractConfigFromOptions(plugin.arguments[0], config);
       logConfig('Vite', config);
       break; // Assume only one federation plugin per config
@@ -317,6 +321,7 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
     remotes: [],
     exposes: [],
     shared: [],
+    detected: false,
     configType: 'modernjs',
     configPath: ''
   };
@@ -331,6 +336,7 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
         node.declaration.arguments.length > 0 &&
         node.declaration.arguments[0].type === 'ObjectExpression') {
 
+        config.detected = true;
         extractConfigFromOptions(node.declaration.arguments[0], config);
         logConfig('ModernJS', config);
       }
@@ -351,6 +357,7 @@ export async function extractConfigFromRSBuild(ast: any, workspaceRoot: string):
     remotes: [],
     exposes: [],
     shared: [],
+    detected: false,
     configType: 'rsbuild',
     configPath: ''
   };
@@ -364,13 +371,55 @@ export async function extractConfigFromRSBuild(ast: any, workspaceRoot: string):
     // Look for options property within moduleFederation
     const optionsProp = findProperty(moduleFederationProp.value, 'options');
     if (optionsProp?.value.type === 'ObjectExpression') {
+      config.detected = true;
       extractConfigFromOptions(optionsProp.value, config);
       logConfig('RSBuild', config);
     }
   }
 
+  // Handle common RSBuild plugin style:
+  // plugins: [pluginModuleFederation({ ... })]
+  if (!config.detected) {
+    const pluginsProp = findProperty(configObj, 'plugins');
+    if (pluginsProp?.value.type === 'ArrayExpression') {
+      for (const plugin of pluginsProp.value.elements) {
+        if (isRSBuildFederationPlugin(plugin)) {
+          config.detected = true;
+          extractConfigFromOptions(plugin.arguments[0], config);
+          logConfig('RSBuild', config);
+          break;
+        }
+      }
+    }
+  }
+
   await updateRemotePackageManagers(config);
   return config;
+}
+
+function isRSBuildFederationPlugin(plugin: any): boolean {
+  if (!plugin || plugin.type !== 'CallExpression' || plugin.arguments.length === 0) {
+    return false;
+  }
+
+  const firstArg = plugin.arguments[0];
+  if (!firstArg || firstArg.type !== 'ObjectExpression') {
+    return false;
+  }
+
+  // Matches pluginModuleFederation({ ... }) and aliases like mf({ ... })
+  // while still requiring a clear federation-like callee name.
+  if (plugin.callee.type === 'Identifier') {
+    const calleeName = plugin.callee.name.toLowerCase();
+    return calleeName.includes('modulefederation') || calleeName === 'mf';
+  }
+
+  if (plugin.callee.type === 'MemberExpression' && plugin.callee.property.type === 'Identifier') {
+    const calleeName = plugin.callee.property.name.toLowerCase();
+    return calleeName.includes('modulefederation') || calleeName === 'mf';
+  }
+
+  return false;
 }
 
 function isModuleFederationPluginNode(node: any): boolean {

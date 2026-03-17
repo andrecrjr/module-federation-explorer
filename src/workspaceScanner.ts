@@ -33,6 +33,10 @@ export async function detectModuleFederationProjects(): Promise<DetectedProject[
             try {
                 const config = await parseConfigFile(file.fsPath, extractor);
 
+                if (!config.detected) {
+                    continue;
+                }
+
                 detectedProjects.push({
                     path: dir,
                     name: config.name || path.basename(dir),
