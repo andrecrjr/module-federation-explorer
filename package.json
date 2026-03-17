@@ -133,6 +133,11 @@
                 "icon": "$(feedback)"
             },
             {
+                "command": "moduleFederation.rateExtension",
+                "title": "Module Federation Explorer: Rate Extension",
+                "icon": "$(star-full)"
+            },
+            {
                 "command": "moduleFederation.addExternalRemote",
                 "title": "Add External Remote",
                 "icon": "$(add)"

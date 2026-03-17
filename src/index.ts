@@ -6,6 +6,7 @@ import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
 import { DialogUtils } from './dialogUtils';
 import { detectModuleFederationProjects } from './workspaceScanner';
 import { showOnboardingPage } from './onboarding';
+import { initializeRatingState, openMarketplaceReview, trackSuccessAndPrompt } from './ratingPrompt';
 
 /**
  * Activate the extension
@@ -16,6 +17,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Create the unified provider instead of the old one
     const provider = new UnifiedModuleFederationProvider(workspaceRoot, context);
+
+    await initializeRatingState(context);
 
     // Smart Onboarding Logic: Run if the workspace has no roots configured
     setTimeout(async () => {
@@ -118,6 +121,11 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.env.openExternal(vscode.Uri.parse('https://acjr.notion.site/202b5e58148c8017ba2ad355fc377e4b?pvs=105'));
     });
     context.subscriptions.push(feedbackCommand);
+
+    const rateCommand = vscode.commands.registerCommand('moduleFederation.rateExtension', async () => {
+      await openMarketplaceReview(context);
+    });
+    context.subscriptions.push(rateCommand);
 
     // Register commands and watchers
     const disposables = [
@@ -394,6 +402,7 @@ export async function activate(context: vscode.ExtensionContext) {
           provider.refresh();
 
           await DialogUtils.showSuccess(`Started remote ${remote.name}`);
+          await trackSuccessAndPrompt(context, 'remote-started');
         } catch (error) {
           await DialogUtils.showError(`Failed to start remote ${remote.name}`, {
             detail: error instanceof Error ? error.message : String(error)

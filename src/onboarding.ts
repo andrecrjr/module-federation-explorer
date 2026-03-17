@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
 import { DetectedProject } from './workspaceScanner';
+import { trackSuccessAndPrompt } from './ratingPrompt';
 
 export async function showOnboardingPage(
   context: vscode.ExtensionContext,
@@ -129,6 +130,7 @@ export async function showOnboardingPage(
               vscode.commands.executeCommand('moduleFederation.reveal');
 
               vscode.window.showInformationMessage(`Successfully configured ${items.length} Module Federation project(s)!`);
+              await trackSuccessAndPrompt(context, 'onboarding-complete');
 
               // Close the onboarding panel
               panel.dispose();
