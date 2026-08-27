@@ -10,5 +10,6 @@ yarn.lock
 out/
 dist/
 .vscode-test/
+graphify-out/
 *.vsix
 *.log
