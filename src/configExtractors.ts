@@ -3,6 +3,7 @@ import * as estraverse from 'estraverse';
 import * as fs from 'fs/promises';
 import { ModuleFederationConfig, SharedDependency } from './types';
 import { log } from './outputChannel';
+import { detectPackageManagerAndStartCommand } from './packageManager';
 
 const { parse } = require('@typescript-eslint/parser');
 
@@ -60,56 +61,6 @@ const fallback = (node: any) => {
   // For non-TS nodes, use estraverse's built-in visitor keys
   return (estraverse.VisitorKeys as any)[node.type] || [];
 };
-
-// Cache for package manager detection to avoid repeated file system operations
-const packageManagerCache = new Map<string, { packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }>();
-
-/**
- * Detect package manager and get appropriate start command based on project type
- */
-async function detectPackageManagerAndStartCommand(folder: string, configType: 'webpack' | 'vite' | 'rsbuild'): Promise<{ packageManager: 'npm' | 'pnpm' | 'yarn', startCommand: string }> {
-  const cacheKey = `${folder}-${configType}`;
-  if (packageManagerCache.has(cacheKey)) {
-    return packageManagerCache.get(cacheKey)!;
-  }
-
-  try {
-    // Determine the default start script based on config type
-    const startScript = configType === 'vite' ? 'dev' : configType === 'rsbuild' ? 'dev' : 'start';
-
-    // Check for lock files to determine package manager
-    const lockFiles = [
-      { file: 'package-lock.json', manager: 'npm' as const },
-      { file: 'pnpm-lock.yaml', manager: 'pnpm' as const },
-      { file: 'yarn.lock', manager: 'yarn' as const }
-    ];
-
-    for (const { file, manager } of lockFiles) {
-      try {
-        await fs.access(path.join(folder, file));
-        const result = {
-          packageManager: manager,
-          startCommand: `${manager}${manager === 'yarn' ? '' : ' run'} ${startScript}`
-        };
-        packageManagerCache.set(cacheKey, result);
-        return result;
-      } catch {
-        // Continue to next lock file
-      }
-    }
-
-    // Default to npm if no lock file is found
-    const result = { packageManager: 'npm' as const, startCommand: `npm run ${startScript}` };
-    packageManagerCache.set(cacheKey, result);
-    return result;
-  } catch (error) {
-    log(`[Config] Error detecting package manager: ${String(error)}`);
-    // Default to npm if there's an error
-    const result = { packageManager: 'npm' as const, startCommand: `npm run ${configType === 'vite' || configType === 'rsbuild' ? 'dev' : 'start'}` };
-    packageManagerCache.set(cacheKey, result);
-    return result;
-  }
-}
 
 // Helper functions for AST traversal
 function findProperty(obj: any, name: string): any {

@@ -82,4 +82,18 @@ suite('GraphGenerator', () => {
     assert.strictEqual(result.graph.metadata?.totalSharedDeps, 1);
     assert.strictEqual(result.graph.metadata?.totalHosts, 2);
   });
+
+  test('keeps same-named configs from the same root as distinct graph nodes', () => {
+    const generator = new GraphGenerator();
+    const first = config('shell');
+    const second = config('shell');
+    second.configPath = '/workspace/shell/vite.config.ts';
+
+    const result = generator.generate(new Map([
+      ['/workspace/shell', [first, second]]
+    ]));
+
+    assert.strictEqual(result.graph.nodes.filter(node => node.label === 'shell').length, 2);
+    assert.strictEqual(new Set(result.graph.nodes.filter(node => node.label === 'shell').map(node => node.id)).size, 2);
+  });
 });

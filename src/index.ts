@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Remote } from './types';
+import { Remote, RemotesFolder } from './types';
 import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
 import { DialogUtils } from './dialogUtils';
-import { detectModuleFederationProjects } from './workspaceScanner';
-import { showOnboardingPage } from './onboarding';
 import { initializeRatingState, openMarketplaceReview, trackSuccessAndPrompt } from './ratingPrompt';
+import { registerTerminalLifecycle, scheduleOnboarding } from './activationLifecycle';
+import { detectPackageManagerAndStartCommand } from './packageManager';
 
 /**
  * Activate the extension
@@ -19,48 +19,8 @@ export async function activate(context: vscode.ExtensionContext) {
     const provider = new UnifiedModuleFederationProvider(workspaceRoot, context);
 
     await initializeRatingState(context);
-
-    // Smart Onboarding Logic: Run if the workspace has no roots configured
-    setTimeout(async () => {
-      try {
-        // Check if user already configured roots
-        const hasRoots = await (provider as any).rootConfigManager.hasConfiguredRoots();
-
-        if (!hasRoots) {
-          provider.log('Running auto-detection for Module Federation projects');
-          const detectedProjects = await detectModuleFederationProjects();
-
-          if (detectedProjects.length > 0) {
-            provider.log(`Detected ${detectedProjects.length} MF projects. Showing onboarding UI.`);
-            showOnboardingPage(context, provider, detectedProjects);
-          } else {
-            provider.log('No MF projects detected automatically.');
-          }
-        }
-      } catch (e) {
-        provider.logError('Background onboarding scan failed', e);
-      }
-    }, 1500);
-
-    // Clear any previously running remotes (in case of extension restart)
-    provider.clearAllRunningApps();
-
-    // Listen for terminal disposal events to clean up running apps
-    const terminalDisposalListener = vscode.window.onDidCloseTerminal((terminal) => {
-      provider.log(`[Event] Terminal disposal event fired for: ${terminal.name}`);
-      provider.handleTerminalClosed(terminal);
-    });
-    context.subscriptions.push(terminalDisposalListener);
-
-    // Set up periodic cleanup of disposed terminals (every 10 seconds)
-    const periodicCleanup = setInterval(() => {
-      provider.cleanupDisposedTerminals();
-    }, 10000);
-
-    // Clean up the interval when extension is deactivated
-    context.subscriptions.push({
-      dispose: () => clearInterval(periodicCleanup)
-    });
+    scheduleOnboarding(context, provider);
+    registerTerminalLifecycle(context, provider);
 
     // Show initial welcome message
     vscode.window.showInformationMessage('Module Federation Explorer is now active!');
@@ -68,7 +28,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Register the tree data provider and create tree view
     const viewId = 'moduleFederation';
-    vscode.window.registerTreeDataProvider(viewId, provider);
+    const treeDataProvider = vscode.window.registerTreeDataProvider(viewId, provider);
+    context.subscriptions.push(treeDataProvider);
 
     // Create a tree view that will be shown in the explorer
     const treeView = vscode.window.createTreeView(viewId, {
@@ -238,13 +199,13 @@ export async function activate(context: vscode.ExtensionContext) {
             provider.log(`User selected root project folder for remote ${remote.name}: ${folder}`);
 
             // Save the folder configuration using the unified provider
-            await (provider as any).saveRemoteConfiguration(remote);
+            await provider.saveRemoteConfiguration(remote);
 
             // Refresh the tree view to reflect folder changes
             provider.reloadConfigurations();
           } else {
             // Remote is already configured - use the configured folder automatically
-            const resolvedFolderPath = (provider as any).resolveRemoteFolderPath(remote);
+            const resolvedFolderPath = provider.resolveRemoteFolderPath(remote);
 
             if (!resolvedFolderPath || !fs.existsSync(resolvedFolderPath)) {
 
@@ -293,7 +254,7 @@ export async function activate(context: vscode.ExtensionContext) {
               provider.log(`User selected new project folder for remote ${remote.name}: ${folder}`);
 
               // Save the folder configuration using the unified provider
-              await (provider as any).saveRemoteConfiguration(remote);
+              await provider.saveRemoteConfiguration(remote);
 
               // Refresh the tree view to reflect folder changes
               provider.reloadConfigurations();
@@ -310,16 +271,10 @@ export async function activate(context: vscode.ExtensionContext) {
             // Get current package manager or detect it
             let packageManager = remote.packageManager;
             if (!packageManager) {
-              // Detect package manager
-              if (fs.existsSync(path.join(folder, 'package-lock.json'))) {
-                packageManager = 'npm';
-              } else if (fs.existsSync(path.join(folder, 'yarn.lock'))) {
-                packageManager = 'yarn';
-              } else if (fs.existsSync(path.join(folder, 'pnpm-lock.yaml'))) {
-                packageManager = 'pnpm';
-              } else {
-                packageManager = 'npm'; // Default to npm
-              }
+              const configType = remote.configType === 'vite' || remote.configType === 'rsbuild'
+                ? remote.configType
+                : 'webpack';
+              ({ packageManager } = await detectPackageManagerAndStartCommand(folder, configType));
               remote.packageManager = packageManager;
               provider.log(`Detected package manager for remote ${remote.name}: ${packageManager}`);
             }
@@ -357,7 +312,7 @@ export async function activate(context: vscode.ExtensionContext) {
             remote.startCommand = startCommand;
 
             // Save the updated configuration using the unified provider
-            await (provider as any).saveRemoteConfiguration(remote);
+            await provider.saveRemoteConfiguration(remote);
 
             // Refresh view to reflect new command configuration
             provider.reloadConfigurations();
@@ -414,7 +369,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('moduleFederation.editCommand', async (remote: Remote) => {
         try {
           provider.log(`Edit command triggered for remote ${remote.name}`);
-          await (provider as any).editRemoteCommands(remote);
+          await provider.editRemoteCommands(remote);
         } catch (error) {
           await DialogUtils.showError(`Failed to edit commands for ${remote.name}`, {
             detail: error instanceof Error ? error.message : String(error)
@@ -423,10 +378,10 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
 
       // Add command to add external remote
-      vscode.commands.registerCommand('moduleFederation.addExternalRemote', async (remotesFolder: any) => {
+      vscode.commands.registerCommand('moduleFederation.addExternalRemote', async (remotesFolder: RemotesFolder) => {
         try {
           provider.log(`Add external remote triggered for ${remotesFolder.parentName}`);
-          await (provider as any).addExternalRemote(remotesFolder);
+          await provider.addExternalRemote(remotesFolder);
         } catch (error) {
           await DialogUtils.showError('Failed to add external remote', {
             detail: error instanceof Error ? error.message : String(error)
@@ -438,7 +393,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('moduleFederation.removeExternalRemote', async (remote: Remote) => {
         try {
           provider.log(`Remove external remote triggered for ${remote.name}`);
-          await (provider as any).removeExternalRemote(remote);
+          await provider.removeExternalRemote(remote);
         } catch (error) {
           await DialogUtils.showError('Failed to remove external remote', {
             detail: error instanceof Error ? error.message : String(error)
@@ -465,7 +420,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Watch for webpack, vite, ModernJS, and RSBuild config changes
     const fileWatcher = vscode.workspace.createFileSystemWatcher(
-      '**/{webpack,vite,rsbuild}.config.{js,ts},**/module-federation.config.{js,ts}',
+      '**/{webpack,vite,rsbuild,rspack}.config.{js,ts},**/module-federation.config.{js,ts}',
       false, // ignoreCreateEvents
       false, // ignoreChangeEvents
       false  // ignoreDeleteEvents

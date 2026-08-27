@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as fsSync from 'fs'; // Import for synchronous fs operations
 import {
@@ -9,41 +8,48 @@ import {
   RemotesFolder,
   ExposesFolder,
   RootFolder,
+  UnifiedRootConfig,
 } from './types';
-import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS, extractConfigFromRSBuild, parseConfigFile } from './configExtractors';
+import { ConfigurationService } from './configurationService';
 import { RootConfigManager } from './rootConfigManager';
 import { outputChannel } from './outputChannel';
 import { DependencyGraphManager } from './dependencyGraph';
 import { DialogUtils } from './dialogUtils';
+import { TerminalManager } from './terminalManager';
+import { detectPackageManagerAndStartCommand } from './packageManager';
 
 // Type guard functions to narrow down types
 
-function isRootFolder(element: any): element is RootFolder {
-  return element && element.type === 'rootFolder';
+function isRecord(element: unknown): element is Record<string, unknown> {
+  return typeof element === 'object' && element !== null;
 }
 
-function isRemotesFolder(element: any): element is RemotesFolder {
-  return element && element.type === 'remotesFolder';
+function isRootFolder(element: unknown): element is RootFolder {
+  return isRecord(element) && element.type === 'rootFolder';
 }
 
-function isExposesFolder(element: any): element is ExposesFolder {
-  return element && element.type === 'exposesFolder';
+function isRemotesFolder(element: unknown): element is RemotesFolder {
+  return isRecord(element) && element.type === 'remotesFolder';
 }
 
-function isExposedModule(element: any): element is ExposedModule {
-  return element && 'remoteName' in element;
+function isExposesFolder(element: unknown): element is ExposesFolder {
+  return isRecord(element) && element.type === 'exposesFolder';
 }
 
-function isRemote(element: any): element is Remote {
-  return element && 'name' in element && !('type' in element) && !('remoteName' in element);
+function isExposedModule(element: unknown): element is ExposedModule {
+  return isRecord(element) && 'remoteName' in element;
 }
 
-function isLoadingPlaceholder(element: any): element is LoadingPlaceholder {
-  return element && element.type === 'loadingPlaceholder';
+function isRemote(element: unknown): element is Remote {
+  return isRecord(element) && 'name' in element && !('type' in element) && !('remoteName' in element);
 }
 
-function isEmptyState(element: any): element is EmptyState {
-  return element && element.type === 'emptyState';
+function isLoadingPlaceholder(element: unknown): element is LoadingPlaceholder {
+  return isRecord(element) && element.type === 'loadingPlaceholder';
+}
+
+function isEmptyState(element: unknown): element is EmptyState {
+  return isRecord(element) && element.type === 'emptyState';
 }
 
 // Define new interfaces for the loading and empty states
@@ -72,16 +78,18 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
 
   private rootConfigs: Map<string, ModuleFederationConfig[]> = new Map();
   private rootConfigManager: RootConfigManager;
+  private readonly configurationService: ConfigurationService;
   private isLoading = false;
-  public runningRemotes: Map<string, { buildTerminal?: vscode.Terminal; startTerminal: vscode.Terminal }> = new Map();
-  // Store running Host app information
-  private runningRootApps: Map<string, { terminal: vscode.Terminal }> = new Map();
+  private reloadQueued = false;
+  private readonly terminalManager: TerminalManager;
 
   private dependencyGraphManager: DependencyGraphManager;
 
   constructor(private readonly workspaceRoot: string | undefined, private readonly context: vscode.ExtensionContext) {
     this.rootConfigManager = new RootConfigManager(context);
+    this.configurationService = new ConfigurationService();
     this.dependencyGraphManager = new DependencyGraphManager(context);
+    this.terminalManager = new TerminalManager(() => this._onDidChangeTreeData.fire(undefined));
     this.log('Initializing Unified Module Federation Explorer...');
 
     // Check if root configuration exists with hosts first
@@ -104,6 +112,26 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     return this.workspaceRoot;
   }
 
+  async hasConfiguredRoots(): Promise<boolean> {
+    return this.rootConfigManager.hasConfiguredRoots();
+  }
+
+  async loadRootConfig(): Promise<UnifiedRootConfig | null> {
+    return this.rootConfigManager.loadRootConfig();
+  }
+
+  getConfigPath(): string | undefined {
+    return this.rootConfigManager.getConfigPath();
+  }
+
+  async setConfigPath(configPath: string): Promise<void> {
+    await this.rootConfigManager.setConfigPath(configPath);
+  }
+
+  async saveRootConfig(config: UnifiedRootConfig): Promise<void> {
+    await this.rootConfigManager.saveRootConfig(config);
+  }
+
   /**
    * Refreshes the tree view without reloading configurations
    */
@@ -115,6 +143,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    * Reloads configurations from disk and then refreshes the tree view
    */
   async reloadConfigurations(): Promise<void> {
+    if (this.isLoading) {
+      this.reloadQueued = true;
+      return;
+    }
     await this.loadConfigurations();
   }
 
@@ -206,11 +238,13 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    * Loads Module Federation configurations from all configured roots
    */
   private async loadConfigurations(): Promise<void> {
-    if (this.isLoading) return;
+    if (this.isLoading) {
+      this.reloadQueued = true;
+      return;
+    }
 
     try {
       this.isLoading = true;
-      this.rootConfigs.clear();
 
       // Show a progress notification
       await vscode.window.withProgress(
@@ -225,10 +259,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           // Load Host configuration from settings
           const rootConfig = await this.rootConfigManager.loadRootConfig();
           if (!rootConfig) {
+            this.rootConfigs.clear();
             this.log('Failed to load root configuration');
             return;
           }
           if (rootConfig.roots.length === 0) {
+            this.rootConfigs.clear();
             this.log('No Host directories configured. Configure at least one Host directory.');
             // Set context to show welcome view when no roots are configured
             vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', false);
@@ -256,13 +292,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
 
           this.log(`Found ${rootConfig.roots.length} configured roots`);
 
-          // Process each Host
-          for (const [index, rootPath] of rootConfig.roots.entries()) {
-            progress.report({
-              message: `Processing host ${index + 1}/${rootConfig.roots.length}: ${path.basename(rootPath)}`,
-              increment: (100 / rootConfig.roots.length)
-            });
-            await this.processRoot(rootPath);
+          progress.report({ message: 'Scanning federation configuration files...' });
+          const snapshot = await this.configurationService.load(rootConfig.roots);
+          this.rootConfigs = snapshot.configs;
+          for (const loadError of snapshot.errors) {
+            this.log(`Failed to parse configuration file ${loadError.filePath}: ${String(loadError.error)}`);
           }
 
           progress.report({ message: 'Loading host configurations...' });
@@ -277,175 +311,22 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', this.rootConfigs.size > 0);
 
           this.log('Finished loading configurations from all roots');
-          this.dependencyGraphManager.refreshDependencyGraph(this.rootConfigs);
         }
       );
 
       this._onDidChangeTreeData.fire(undefined);
+      this.dependencyGraphManager.refreshDependencyGraph(this.rootConfigs);
 
     } catch (error) {
       this.logError('Failed to load Module Federation configurations', error);
       vscode.window.showErrorMessage('Failed to load Module Federation configurations. See output panel for details.');
     } finally {
       this.isLoading = false;
-    }
-  }
-
-  /**
-   * Process a specific Host directory to find and load MFE configurations
-   */
-  private async processRoot(rootPath: string): Promise<void> {
-    try {
-      this.log(`Processing Root Host: ${rootPath}`);
-
-      // Check if the directory exists
-      try {
-        const stats = await fs.stat(rootPath);
-        if (!stats.isDirectory()) {
-          this.logError(`Path is not a directory`, rootPath);
-          return;
-        }
-      } catch {
-        this.logError(`Cannot access Root Host directory`, rootPath);
-        return;
-      }
-
-      // Find all webpack, vite, ModernJS, and RSBuild config files in this Host, excluding node_modules
-      const [webpackFiles, viteFiles, modernJSFiles, rsbuildFiles] = await Promise.all([
-        this.findFiles(rootPath, '**/{webpack.config.js,webpack.config.ts}', '**/node_modules/**'),
-        this.findFiles(rootPath, '**/{vite.config.js,vite.config.ts}', '**/node_modules/**'),
-        this.findFiles(rootPath, '**/module-federation.config.{js,ts}', '**/node_modules/**'),
-        this.findFiles(rootPath, '**/{rsbuild.config.js,rsbuild.config.ts}', '**/node_modules/**')
-      ]);
-
-      this.log(`Found ${webpackFiles.length} webpack configs, ${viteFiles.length} vite configs, ${modernJSFiles.length} ModernJS configs, and ${rsbuildFiles.length} RSBuild configs in ${rootPath}`);
-
-      // Process webpack configs
-      const webpackConfigs = await this.processConfigFiles(
-        webpackFiles,
-        extractConfigFromWebpack,
-        'webpack',
-        rootPath
-      );
-
-      // Process vite configs
-      const viteConfigs = await this.processConfigFiles(
-        viteFiles,
-        extractConfigFromVite,
-        'vite',
-        rootPath
-      );
-
-      // Process ModernJS configs
-      const modernJSConfigs = await this.processConfigFiles(
-        modernJSFiles,
-        extractConfigFromModernJS,
-        'modernjs',
-        rootPath
-      );
-
-      // Process RSBuild configs
-      const rsbuildConfigs = await this.processConfigFiles(
-        rsbuildFiles,
-        extractConfigFromRSBuild,
-        'rsbuild',
-        rootPath
-      );
-
-      // Store configs for this Host
-      const configs = [...webpackConfigs, ...viteConfigs, ...modernJSConfigs, ...rsbuildConfigs];
-      if (configs.length > 0) {
-        this.rootConfigs.set(rootPath, configs);
-
-        // Count total remotes and exposes
-        const totalRemotes = configs.reduce((acc, config) => acc + config.remotes.length, 0);
-        const totalExposes = configs.reduce((acc, config) => acc + config.exposes.length, 0);
-
-        this.log(`SUMMARY FOR ROOT ${path.basename(rootPath)}: Found ${configs.length} configurations with a total of ${totalRemotes} remotes and ${totalExposes} exposes`);
-
-        if (totalRemotes > 0) {
-          const remoteNames = configs.flatMap(config => config.remotes.map(r => r.name));
-          this.log(`All remotes in ${path.basename(rootPath)}: ${remoteNames.join(', ')}`);
-        }
-
-        if (totalExposes > 0) {
-          const exposeNames = configs.flatMap(config => config.exposes.map(e => e.name));
-          this.log(`All exposes in ${path.basename(rootPath)}: ${exposeNames.join(', ')}`);
-        }
-      } else {
-        this.log(`No Module Federation configurations found in ${rootPath}`);
-      }
-    } catch (error) {
-      this.logError(`Failed to process Root Host ${rootPath}`, error);
-    }
-  }
-
-  /**
-   * Find files matching pattern in a directory
-   */
-  private async findFiles(rootPath: string, pattern: string, excludePattern: string): Promise<string[]> {
-    try {
-      // Create a glob pattern relative to the Host path
-      const relativePattern = new vscode.RelativePattern(rootPath, pattern);
-      const files = await vscode.workspace.findFiles(relativePattern, excludePattern);
-      return files.map(file => file.fsPath);
-    } catch (error) {
-      this.logError(`Failed to find files in ${rootPath} with pattern ${pattern}`, error);
-      return [];
-    }
-  }
-
-  /**
-   * Process a list of config files with the provided extractor function
-   */
-  private async processConfigFiles(
-    files: string[],
-    extractor: (ast: any, workspaceRoot: string) => Promise<ModuleFederationConfig>,
-    configType: string,
-    rootPath: string
-  ): Promise<ModuleFederationConfig[]> {
-    const results: ModuleFederationConfig[] = [];
-
-    for (const file of files) {
-      try {
-        this.log(`Processing ${configType} config: ${file}`);
-        const config = await parseConfigFile(file, extractor);
-
-        // Add the config source path
-        const relativeConfigPath = path.relative(rootPath, file);
-        results.push({
-          ...config,
-          configPath: file
-        });
-
-        // Add config source to remotes and exposes for tracking
-        for (const remote of config.remotes) {
-          remote.configSource = file;
-        }
-
-        for (const expose of config.exposes) {
-          expose.configSource = file;
-        }
-
-        // Log what we found in this config file
-        this.log(`Found in ${relativeConfigPath}: name=${config.name}, remotes=${config.remotes.length}, exposes=${config.exposes.length}`);
-        if (config.remotes.length > 0) {
-          this.log(`Remotes found in ${relativeConfigPath}: ${config.remotes.map(r => r.name).join(', ')}`);
-        }
-        if (config.exposes.length > 0) {
-          this.log(`Exposes found in ${relativeConfigPath}: ${config.exposes.map(e => e.name).join(', ')}`);
-        }
-      } catch (error) {
-        this.logError(`Error processing ${file}`, error);
+      if (this.reloadQueued) {
+        this.reloadQueued = false;
+        void this.loadConfigurations();
       }
     }
-
-    // Log summary for this config type
-    const totalRemotes = results.reduce((acc, cfg) => acc + cfg.remotes.length, 0);
-    const totalExposes = results.reduce((acc, cfg) => acc + cfg.exposes.length, 0);
-    this.log(`Summary for ${configType} configs: found ${results.length} configs with ${totalRemotes} remotes and ${totalExposes} exposes`);
-
-    return results;
   }
 
   getTreeItem(element: RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState): vscode.TreeItem {
@@ -538,7 +419,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       return treeItem;
     } else if (isRemote(element)) {
       // If it's a remote
-      const isRunning = this.runningRemotes.has(`remote-${element.name}`);
+    const isRunning = this.terminalManager.getRunningRemoteTerminal(`remote-${element.name}`) !== undefined;
       const hasFolder = !!element.folder;
       const hasStartCommand = !!element.startCommand;
       const isExternal = element.isExternal || element.configType === 'external';
@@ -752,48 +633,21 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    * Get terminal for a running remote
    */
   getRunningRemoteTerminal(remoteKey: string): vscode.Terminal | undefined {
-    const runningRemote = this.runningRemotes.get(remoteKey);
-
-    // Check if the terminal is still valid (not disposed)
-    if (runningRemote) {
-      try {
-        // Try to reference the start terminal - if it's disposed, this will throw an error
-        void runningRemote.startTerminal.processId;
-        return runningRemote.startTerminal;
-      } catch {
-        // Terminal was disposed externally, clean up our reference
-        this.log(`Detected disposed terminal for remote ${remoteKey}, cleaning up`);
-        this.runningRemotes.delete(remoteKey);
-        this._onDidChangeTreeData.fire(undefined);
-        return undefined;
-      }
-    }
-
-    return undefined;
+    return this.terminalManager.getRunningRemoteTerminal(remoteKey) as vscode.Terminal | undefined;
   }
 
   /**
    * Set a remote as running
    */
   setRunningRemote(remoteKey: string, startTerminal: vscode.Terminal, buildTerminal?: vscode.Terminal): void {
-    this.runningRemotes.set(remoteKey, { startTerminal, buildTerminal });
-    this._onDidChangeTreeData.fire(undefined);
+    this.terminalManager.setRunningRemote(remoteKey, startTerminal, buildTerminal);
   }
 
   /**
    * Stop a running remote
    */
   stopRemote(remoteKey: string): void {
-    const runningRemote = this.runningRemotes.get(remoteKey);
-    if (runningRemote) {
-      // Dispose both terminals if they exist
-      if (runningRemote.buildTerminal) {
-        runningRemote.buildTerminal.dispose();
-      }
-      runningRemote.startTerminal.dispose();
-      this.runningRemotes.delete(remoteKey);
-      this._onDidChangeTreeData.fire(undefined);
-    }
+    this.terminalManager.stopRemote(remoteKey);
   }
 
   /**
@@ -917,9 +771,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   /**
    * Check if a Host app is running
    */
-  private isRootAppRunning(rootPath: string): boolean {
-    return this.runningRootApps.has(rootPath);
-  }
+ private isRootAppRunning(rootPath: string): boolean {
+    return this.terminalManager.isRootAppRunning(rootPath);
+ }
 
   /**
    * Start a Host app
@@ -949,7 +803,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       terminal.sendText(`cd "${rootPath}" && ${rootFolder.startCommand}`);
 
       // Store the running app
-      this.runningRootApps.set(rootPath, { terminal });
+      this.terminalManager.setRunningRootApp(rootPath, terminal);
 
       // Refresh the tree view
       this.refresh();
@@ -969,20 +823,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log(`Editing commands for Host app: ${rootPath}`);
 
       // Get current package manager or detect it
-      let packageManager = '';
-      try {
-        if (fsSync.existsSync(path.join(rootFolder.path, 'package-lock.json'))) {
-          packageManager = 'npm';
-        } else if (fsSync.existsSync(path.join(rootFolder.path, 'yarn.lock'))) {
-          packageManager = 'yarn';
-        } else if (fsSync.existsSync(path.join(rootFolder.path, 'pnpm-lock.yaml'))) {
-          packageManager = 'pnpm';
-        } else {
-          packageManager = 'npm'; // Default to npm
-        }
-      } catch {
-        packageManager = 'npm';
-      }
+      let { packageManager } = await detectPackageManagerAndStartCommand(rootFolder.path, 'webpack');
 
       // Show quick pick for options to edit
       const options = [
@@ -1054,15 +895,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         }
 
         // Re-detect package manager for the new folder
-        if (fsSync.existsSync(path.join(newFolder, 'package-lock.json'))) {
-          packageManager = 'npm';
-        } else if (fsSync.existsSync(path.join(newFolder, 'yarn.lock'))) {
-          packageManager = 'yarn';
-        } else if (fsSync.existsSync(path.join(newFolder, 'pnpm-lock.yaml'))) {
-          packageManager = 'pnpm';
-        } else {
-          packageManager = 'npm'; // Default to npm
-        }
+        ({ packageManager } = await detectPackageManagerAndStartCommand(newFolder, 'webpack'));
 
         // Save the updated configuration
         await this.saveRootFolderConfig(rootFolder);
@@ -1128,15 +961,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       this.log(`Stopping Host app: ${rootPath}`);
 
       // Check if it's running
-      const runningApp = this.runningRootApps.get(rootPath);
-      if (!runningApp) {
-        await DialogUtils.showInfo(`Host app is not running: ${rootFolder.name}`);
-        return;
-      }
+      if (!this.terminalManager.isRootAppRunning(rootPath)) {
+       await DialogUtils.showInfo(`Host app is not running: ${rootFolder.name}`);
+       return;
+     }
 
-      // Dispose the terminal
-      runningApp.terminal.dispose();
-      this.runningRootApps.delete(rootPath);
+      this.terminalManager.stopRootApp(rootPath);
 
       // Refresh the tree view
       this.refresh();
@@ -1156,20 +986,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       const currentCommand = rootFolder.startCommand || '';
 
       // Detect common package managers in the directory
-      let defaultCommand = '';
-      try {
-        if (fsSync.existsSync(path.join(rootFolder.path, 'package-lock.json'))) {
-          defaultCommand = 'npm run start';
-        } else if (fsSync.existsSync(path.join(rootFolder.path, 'yarn.lock'))) {
-          defaultCommand = 'yarn start';
-        } else if (fsSync.existsSync(path.join(rootFolder.path, 'pnpm-lock.yaml'))) {
-          defaultCommand = 'pnpm run start';
-        } else {
-          defaultCommand = 'npm run start';
-        }
-      } catch {
-        defaultCommand = 'npm run start';
-      }
+      const { startCommand: defaultCommand } = await detectPackageManagerAndStartCommand(rootFolder.path, 'webpack');
 
       // Ask user for the start command
       const startCommand = await DialogUtils.showInput({
@@ -1274,66 +1091,19 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
   /**
    * Clear all running remotes and Host apps - used when the extension is reactivated
    */
-  clearAllRunningApps(): void {
-    this.runningRemotes.clear();
-    this.runningRootApps.clear();
-  }
+ clearAllRunningApps(): void {
+    this.terminalManager.clearAllRunningApps();
+ }
 
   /**
    * Check for disposed terminals and clean them up
    */
   cleanupDisposedTerminals(): void {
     this.log('Checking for disposed terminals...');
-
-    // Check remotes
-    const remotesToRemove: string[] = [];
-    for (const [remoteKey, remoteInfo] of this.runningRemotes.entries()) {
-      try {
-        // Try to access processId to check if terminal is still alive
-        const startTerminalAlive = remoteInfo.startTerminal.processId !== undefined;
-        const buildTerminalAlive = !remoteInfo.buildTerminal || remoteInfo.buildTerminal.processId !== undefined;
-
-        if (!startTerminalAlive || !buildTerminalAlive) {
-          this.log(`Found disposed terminal for remote ${remoteKey}`);
-          remotesToRemove.push(remoteKey);
-        }
-      } catch {
-        this.log(`Found disposed terminal for remote ${remoteKey} (exception)`);
-        remotesToRemove.push(remoteKey);
-      }
-    }
-
-    // Check root apps
-    const rootAppsToRemove: string[] = [];
-    for (const [rootPath, appInfo] of this.runningRootApps.entries()) {
-      try {
-        const terminalAlive = appInfo.terminal.processId !== undefined;
-        if (!terminalAlive) {
-          this.log(`Found disposed terminal for root app ${rootPath}`);
-          rootAppsToRemove.push(rootPath);
-        }
-      } catch {
-        this.log(`Found disposed terminal for root app ${rootPath} (exception)`);
-        rootAppsToRemove.push(rootPath);
-      }
-    }
-
-    // Remove disposed terminals
-    let removedAny = false;
-    for (const remoteKey of remotesToRemove) {
-      this.runningRemotes.delete(remoteKey);
-      removedAny = true;
-    }
-
-    for (const rootPath of rootAppsToRemove) {
-      this.runningRootApps.delete(rootPath);
-      removedAny = true;
-    }
-
-    if (removedAny) {
-      this.log(`Cleaned up ${remotesToRemove.length} remotes and ${rootAppsToRemove.length} root apps`);
-      this._onDidChangeTreeData.fire(undefined);
-    } else {
+   const cleanup = this.terminalManager.cleanupDisposedTerminals();
+   if (cleanup.remotes > 0 || cleanup.rootApps > 0) {
+     this.log(`Cleaned up ${cleanup.remotes} remotes and ${cleanup.rootApps} root apps`);
+   } else {
       this.log('No disposed terminals found');
     }
   }
@@ -1343,76 +1113,18 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    */
   handleTerminalClosed(closedTerminal: vscode.Terminal): void {
     this.log(`Terminal closed: ${closedTerminal.name}`);
-    this.log(`Currently tracking ${this.runningRemotes.size} running remotes and ${this.runningRootApps.size} running root apps`);
-
-    let foundMatch = false;
-
-    // Helper function to compare terminals by name and process ID
-    const terminalsMatch = (terminal1: vscode.Terminal, terminal2: vscode.Terminal): boolean => {
-      try {
-        // First try direct reference comparison
-        if (terminal1 === terminal2) {
-          return true;
-        }
-
-        // Then try comparing by name and process ID
-        return terminal1.name === terminal2.name &&
-          terminal1.processId === terminal2.processId;
-      } catch {
-        // If there's an error accessing processId (terminal disposed), try name only
-        return terminal1.name === terminal2.name;
-      }
-    };
-
-    // Check if this terminal belongs to a running remote
-    for (const [remoteKey, remoteInfo] of this.runningRemotes.entries()) {
-      this.log(`Checking remote ${remoteKey}: start terminal name="${remoteInfo.startTerminal.name}", build terminal name="${remoteInfo.buildTerminal?.name || 'none'}"`);
-
-      let shouldRemove = false;
-
-      // Check if the closed terminal is either the build or start terminal
-      if (terminalsMatch(remoteInfo.startTerminal, closedTerminal)) {
-        this.log(`Start terminal closed for remote: ${remoteKey}`);
-        shouldRemove = true;
-        foundMatch = true;
-      } else if (remoteInfo.buildTerminal && terminalsMatch(remoteInfo.buildTerminal, closedTerminal)) {
-        this.log(`Build terminal closed for remote: ${remoteKey}`);
-        shouldRemove = true;
-        foundMatch = true;
-      }
-
-      if (shouldRemove) {
-        this.log(`Removing remote ${remoteKey} from running list due to terminal closure`);
-        this.runningRemotes.delete(remoteKey);
-        this._onDidChangeTreeData.fire(undefined);
-        break; // Exit loop since we found the terminal
-      }
-    }
-
-    // Check if this terminal belongs to a running root app
-    if (!foundMatch) {
-      for (const [rootPath, appInfo] of this.runningRootApps.entries()) {
-        this.log(`Checking root app ${rootPath}: terminal name="${appInfo.terminal.name}"`);
-
-        if (terminalsMatch(appInfo.terminal, closedTerminal)) {
-          this.log(`Root app terminal closed for: ${rootPath}`);
-          this.runningRootApps.delete(rootPath);
-          this._onDidChangeTreeData.fire(undefined);
-          foundMatch = true;
-          break; // Exit loop since we found the terminal
-        }
-      }
-    }
-
-    if (!foundMatch) {
-      this.log(`No matching tracked terminal found for closed terminal: ${closedTerminal.name}`);
-    }
+    const foundMatch = this.terminalManager.handleTerminalClosed(closedTerminal);
+   if (foundMatch) {
+     this.log(`Removed tracked app for closed terminal: ${closedTerminal.name}`);
+   } else {
+     this.log(`No matching tracked terminal found for closed terminal: ${closedTerminal.name}`);
+   }
   }
 
   /**
    * Resolve the proper folder path for a remote using configured roots
    */
-  private resolveRemoteFolderPath(remote: Remote): string {
+  resolveRemoteFolderPath(remote: Remote): string {
     // First check if we have a fully qualified path already
     if (path.isAbsolute(remote.folder)) {
       return remote.folder;
@@ -1965,16 +1677,10 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       // Get current package manager or detect it
       let packageManager = remote.packageManager;
       if (resolvedFolderPath && !packageManager) {
-        // Detect package manager
-        if (fsSync.existsSync(path.join(resolvedFolderPath, 'package-lock.json'))) {
-          packageManager = 'npm';
-        } else if (fsSync.existsSync(path.join(resolvedFolderPath, 'yarn.lock'))) {
-          packageManager = 'yarn';
-        } else if (fsSync.existsSync(path.join(resolvedFolderPath, 'pnpm-lock.yaml'))) {
-          packageManager = 'pnpm';
-        } else {
-          packageManager = 'npm'; // Default to npm
-        }
+        const configType = remote.configType === 'vite' || remote.configType === 'rsbuild'
+          ? remote.configType
+          : 'webpack';
+        ({ packageManager } = await detectPackageManagerAndStartCommand(resolvedFolderPath, configType));
         remote.packageManager = packageManager;
       }
 
@@ -2041,15 +1747,11 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         this.log(`Updated project folder for remote ${remote.name}: ${newFolder}`);
 
         // Re-detect package manager for the new folder
-        if (fsSync.existsSync(path.join(newFolder, 'package-lock.json'))) {
-          remote.packageManager = 'npm';
-        } else if (fsSync.existsSync(path.join(newFolder, 'yarn.lock'))) {
-          remote.packageManager = 'yarn';
-        } else if (fsSync.existsSync(path.join(newFolder, 'pnpm-lock.yaml'))) {
-          remote.packageManager = 'pnpm';
-        } else {
-          remote.packageManager = 'npm'; // Default to npm
-        }
+        const configType = remote.configType === 'vite' || remote.configType === 'rsbuild'
+          ? remote.configType
+          : 'webpack';
+        const packageManagerInfo = await detectPackageManagerAndStartCommand(newFolder, configType);
+        remote.packageManager = packageManagerInfo.packageManager;
 
         // Save the updated configuration
         await this.saveRemoteConfiguration(remote);

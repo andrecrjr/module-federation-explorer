@@ -3,6 +3,16 @@ import * as path from 'path';
 import { DependencyGraph } from '../../types';
 import { D3GraphData } from '../types';
 
+/** Serialize JSON safely inside an HTML script element. */
+export function serializeForScript(value: unknown): string {
+  return (JSON.stringify(value) ?? 'null')
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 /**
  * Generate the full HTML/CSS/JS for the D3.js dependency graph webview.
  * Extracted from the monolithic DependencyGraphManager.getWebviewContent().
@@ -186,7 +196,7 @@ export function generateWebviewContent(
 
     <div class="loading" id="loading">Loading Enhanced Module Federation Graph...</div>
     <script>
-        const graphRawData = ${JSON.stringify(d3GraphData)};
+        const graphRawData = ${serializeForScript(d3GraphData)};
         let simulation;
         let svg, g, zoom;
         let physicsEnabled = true;
@@ -244,7 +254,7 @@ export function generateWebviewContent(
         }
 
         function exportGraph() {
-            const graphData = { nodes: graphRawData.nodes, links: graphRawData.links, metadata: ${JSON.stringify(graph.metadata || {})} };
+            const graphData = { nodes: graphRawData.nodes, links: graphRawData.links, metadata: ${serializeForScript(graph.metadata || {})} };
             const blob = new Blob([JSON.stringify(graphData, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');

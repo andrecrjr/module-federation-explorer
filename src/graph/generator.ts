@@ -385,7 +385,8 @@ export class GraphGenerator {
   /** Create a unique app ID from root path and config */
   private _makeAppId(rootPath: string, config: ModuleFederationConfig): string {
     const rootPathHash = hashPath(rootPath);
-    return `${rootPathHash}-${config.name}-${config.configType}`;
+    const configPathHash = hashPath(config.configPath);
+    return `${rootPathHash}-${configPathHash}-${config.name}-${config.configType}`;
   }
 
   /**

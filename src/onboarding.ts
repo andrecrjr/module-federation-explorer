@@ -22,7 +22,7 @@ export async function showOnboardingPage(
 
   let existingRoots: string[] = [];
   try {
-    const config = await provider['rootConfigManager'].loadRootConfig();
+    const config = await provider.loadRootConfig();
     if (config && config.roots) {
       existingRoots = config.roots;
     }
@@ -53,17 +53,17 @@ export async function showOnboardingPage(
           if (items && Array.isArray(items) && items.length > 0) {
             try {
               // Ensure configuration file exists
-              let configPath = provider['rootConfigManager'].getConfigPath();
+              let configPath = provider.getConfigPath();
               if (!configPath) {
                 const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
                 if (workspaceFolder) {
                   configPath = path.join(workspaceFolder.uri.fsPath, '.vscode', 'mf-explorer.roots.json');
-                  await provider['rootConfigManager'].setConfigPath(configPath);
+                  await provider.setConfigPath(configPath);
                 }
               }
 
               // Load existing config
-              let config = await provider['rootConfigManager'].loadRootConfig();
+              let config = await provider.loadRootConfig();
               if (!config) {
                 config = { roots: [] };
               }
@@ -122,7 +122,7 @@ export async function showOnboardingPage(
                 }
               }
 
-              await provider['rootConfigManager'].saveRootConfig(config);
+              await provider.saveRootConfig(config);
 
               // Reload tree configuration to reflect new roots
               await provider.reloadConfigurations();

@@ -74,9 +74,7 @@ export class DependencyGraphManager {
     if (!this._panel) return;
 
     const graph = this.generateDependencyGraph(configs);
-    if (graph.nodes.length > 0) {
-      this.updateWebviewContent(this._panel.webview, graph);
-    }
+    this.updateWebviewContent(this._panel.webview, graph);
   }
 
   /**

@@ -5,6 +5,96 @@ import { UnifiedRootConfig } from './types';
 import { outputChannel } from './outputChannel';
 import { DialogUtils } from './dialogUtils';
 
+type JsonRecord = Record<string, unknown>;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const ROOT_CONFIG_TYPES = new Set(['webpack', 'vite', 'modernjs', 'rsbuild', 'external']);
+
+function hasOptionalString(record: JsonRecord, key: string): boolean {
+  return record[key] === undefined || typeof record[key] === 'string';
+}
+
+function isRemoteConfig(value: unknown): boolean {
+  if (!isJsonRecord(value)) return false;
+
+  return typeof value.name === 'string' &&
+    typeof value.folder === 'string' &&
+    typeof value.packageManager === 'string' &&
+    typeof value.configType === 'string' &&
+    ROOT_CONFIG_TYPES.has(value.configType) &&
+    hasOptionalString(value, 'url') &&
+    hasOptionalString(value, 'remoteEntry') &&
+    hasOptionalString(value, 'startCommand') &&
+    hasOptionalString(value, 'buildCommand') &&
+    (value.configSource === undefined || typeof value.configSource === 'string') &&
+    (value.isExternal === undefined || typeof value.isExternal === 'boolean');
+}
+
+function isExternalRemoteConfig(value: unknown): boolean {
+  return isJsonRecord(value) &&
+    typeof value.name === 'string' &&
+    typeof value.url === 'string' &&
+    value.configType === 'external' &&
+    value.isExternal === true;
+}
+
+function isRootConfigEntry(value: unknown): boolean {
+  if (!isJsonRecord(value) || !hasOptionalString(value, 'startCommand')) return false;
+
+  if (value.remotes !== undefined) {
+    if (!isJsonRecord(value.remotes) ||
+      !Object.values(value.remotes).every(remote => isRemoteConfig(remote))) {
+      return false;
+    }
+  }
+
+  if (value.externalRemotes !== undefined) {
+    if (!isJsonRecord(value.externalRemotes) ||
+      !Object.values(value.externalRemotes).every(remote => isExternalRemoteConfig(remote))) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isRootConfigs(value: unknown): value is NonNullable<UnifiedRootConfig['rootConfigs']> {
+  return isJsonRecord(value) && Object.values(value).every(entry => isRootConfigEntry(entry));
+}
+
+/** Parse only the current, explicitly supported root configuration schema. */
+export function parseRootConfig(value: unknown): UnifiedRootConfig | undefined {
+  if (!isJsonRecord(value) || !Array.isArray(value.roots) || !value.roots.every(root => typeof root === 'string')) {
+    return undefined;
+  }
+
+  if (value.rootConfigs !== undefined && !isRootConfigs(value.rootConfigs)) {
+    return undefined;
+  }
+
+  return {
+    roots: value.roots,
+    rootConfigs: value.rootConfigs
+  };
+}
+
+/** Migrate only documented legacy array fields; never infer roots from arbitrary keys. */
+export function migrateLegacyRootConfig(value: unknown): UnifiedRootConfig | undefined {
+  if (!isJsonRecord(value)) return undefined;
+
+  for (const field of ['paths', 'directories']) {
+    const roots = value[field];
+    if (Array.isArray(roots) && roots.every(root => typeof root === 'string')) {
+      return { roots };
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * Manages the unified root configuration
  */
@@ -289,64 +379,23 @@ export class RootConfigManager {
       try {
         await fsPromises.access(configPath);
         const configContent = await fsPromises.readFile(configPath, 'utf-8');
-        let config: UnifiedRootConfig;
-        
         try {
-          config = JSON.parse(configContent) as UnifiedRootConfig;
-          
-          // Validate the config structure
-          if (!config.roots || !Array.isArray(config.roots)) {
-            // Try to convert the file to the expected format
-            this.log('Configuration file has incorrect format, attempting to convert');
-            
-            // Create a proper config with the loaded content as a root if possible
-            try {
-              const parsedContent = JSON.parse(configContent);
-              
-              // If it's an object with paths or roots, try to extract values
-              if (typeof parsedContent === 'object') {
-                const possibleRoots: string[] = [];
-                
-                // Check for common properties that might contain paths
-                if (Array.isArray(parsedContent.roots)) {
-                  possibleRoots.push(...parsedContent.roots);
-                } else if (Array.isArray(parsedContent.paths)) {
-                  possibleRoots.push(...parsedContent.paths);
-                } else if (Array.isArray(parsedContent.directories)) {
-                  possibleRoots.push(...parsedContent.directories);
-                } else {
-                  // Try to use the keys or values as paths
-                  for (const key in parsedContent) {
-                    if (typeof parsedContent[key] === 'string' && 
-                        (parsedContent[key].includes('/') || parsedContent[key].includes('\\'))) {
-                      possibleRoots.push(parsedContent[key]);
-                    } else if (typeof key === 'string' && 
-                               (key.includes('/') || key.includes('\\'))) {
-                      possibleRoots.push(key);
-                    }
-                  }
-                }
-                
-                if (possibleRoots.length > 0) {
-                  config = { roots: possibleRoots };
-                  this.log(`Converted configuration with ${possibleRoots.length} potential roots`);
-                } else {
-                  // Create an empty config
-                  config = { roots: [] };
-                }
-              } else {
-                config = { roots: [] };
-              }
-            } catch {
-              config = { roots: [] };
-            }
-            
-            // Save the converted configuration
-            await this.saveRootConfig(config);
+          const parsedContent: unknown = JSON.parse(configContent);
+          const config = parseRootConfig(parsedContent);
+          if (config) {
+            this.log(`Loaded root config with ${config.roots.length} roots from ${configPath}`);
+            return config;
           }
-          
-          this.log(`Loaded root config with ${config.roots.length} roots from ${configPath}`);
-          return config;
+
+          const migratedConfig = migrateLegacyRootConfig(parsedContent);
+          if (migratedConfig) {
+            this.log(`Migrated legacy root config with ${migratedConfig.roots.length} roots`);
+            await this.saveRootConfig(migratedConfig);
+            return migratedConfig;
+          }
+
+          this.log(`Configuration file has an unsupported format at ${configPath}`);
+          return { roots: [] };
         } catch (parseError) {
           this.logError('Failed to parse configuration file, please remove the settings file and try again', parseError);
           // Return empty config instead of null
