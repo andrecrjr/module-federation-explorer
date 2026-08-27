@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as estraverse from 'estraverse';
 import * as fs from 'fs/promises';
 import { ModuleFederationConfig, SharedDependency } from './types';
+import { log } from './outputChannel';
 
 const { parse } = require('@typescript-eslint/parser');
 
@@ -102,7 +103,7 @@ async function detectPackageManagerAndStartCommand(folder: string, configType: '
     packageManagerCache.set(cacheKey, result);
     return result;
   } catch (error) {
-    console.error('Error detecting package manager:', error);
+    log(`[Config] Error detecting package manager: ${String(error)}`);
     // Default to npm if there's an error
     const result = { packageManager: 'npm' as const, startCommand: `npm run ${configType === 'vite' || configType === 'rsbuild' ? 'dev' : 'start'}` };
     packageManagerCache.set(cacheKey, result);
@@ -209,15 +210,15 @@ function extractConfigFromOptions(options: any, config: ModuleFederationConfig):
 
 // Common function to log configuration
 function logConfig(configType: string, config: ModuleFederationConfig): void {
-  console.log(`[${configType} MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
+  log(`[${configType} MFE Config] Found name: ${config.name}, remotes: ${config.remotes.length}, exposes: ${config.exposes.length}, shared: ${config.shared.length}`);
   if (config.remotes.length > 0) {
-    console.log(`[${configType} MFE Config] Remotes:`, config.remotes.map(r => r.name).join(', '));
+    log(`[${configType} MFE Config] Remotes: ${config.remotes.map(r => r.name).join(', ')}`);
   }
   if (config.exposes.length > 0) {
-    console.log(`[${configType} MFE Config] Exposes:`, config.exposes.map(e => e.name).join(', '));
+    log(`[${configType} MFE Config] Exposes: ${config.exposes.map(e => e.name).join(', ')}`);
   }
   if (config.shared.length > 0) {
-    console.log(`[${configType} MFE Config] Shared:`, config.shared.map(s => s.name).join(', '));
+    log(`[${configType} MFE Config] Shared: ${config.shared.map(s => s.name).join(', ')}`);
   }
 }
 
@@ -250,7 +251,7 @@ export async function parseConfigFile(
 /**
  * Extract Module Federation configuration from webpack config AST
  */
-export async function extractConfigFromWebpack(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
+export async function extractConfigFromWebpack(ast: any, _workspaceRoot: string): Promise<ModuleFederationConfig> {
   const config: ModuleFederationConfig = {
     name: '',
     remotes: [],
@@ -280,7 +281,7 @@ export async function extractConfigFromWebpack(ast: any, workspaceRoot: string):
 /**
  * Extract Module Federation configuration from vite config AST
  */
-export async function extractConfigFromVite(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
+export async function extractConfigFromVite(ast: any, _workspaceRoot: string): Promise<ModuleFederationConfig> {
   const config: ModuleFederationConfig = {
     name: '',
     remotes: [],
@@ -317,7 +318,7 @@ export async function extractConfigFromVite(ast: any, workspaceRoot: string): Pr
 /**
  * Extract Module Federation configuration from ModernJS config AST
  */
-export async function extractConfigFromModernJS(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
+export async function extractConfigFromModernJS(ast: any, _workspaceRoot: string): Promise<ModuleFederationConfig> {
   const config: ModuleFederationConfig = {
     name: '',
     remotes: [],
@@ -353,7 +354,7 @@ export async function extractConfigFromModernJS(ast: any, workspaceRoot: string)
 /**
  * Extract Module Federation configuration from RSBuild config AST
  */
-export async function extractConfigFromRSBuild(ast: any, workspaceRoot: string): Promise<ModuleFederationConfig> {
+export async function extractConfigFromRSBuild(ast: any, _workspaceRoot: string): Promise<ModuleFederationConfig> {
   const config: ModuleFederationConfig = {
     name: '',
     remotes: [],

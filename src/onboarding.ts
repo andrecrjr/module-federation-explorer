@@ -3,6 +3,7 @@ import * as path from 'path';
 import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
 import { DetectedProject } from './workspaceScanner';
 import { trackSuccessAndPrompt } from './ratingPrompt';
+import { log } from './outputChannel';
 
 export async function showOnboardingPage(
   context: vscode.ExtensionContext,
@@ -26,7 +27,7 @@ export async function showOnboardingPage(
       existingRoots = config.roots;
     }
   } catch (e) {
-    console.error('Failed to load existing roots for onboarding', e);
+    log(`Failed to load existing roots for onboarding: ${String(e)}`);
   }
 
   panel.webview.html = getOnboardingHtml(context, panel.webview, detectedProjects, existingRoots);
@@ -156,7 +157,7 @@ export async function showOnboardingPage(
 function getOnboardingHtml(context: vscode.ExtensionContext, webview: vscode.Webview, projects: DetectedProject[], existingRoots: string[]): string {
   const logoUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'mfe-explorer-logo-big.png'));
 
-  const allHostOptions = new Set<string>([...existingRoots]);
+  const allHostOptions = new Set<string>(existingRoots);
   projects.forEach(p => allHostOptions.add(p.path));
 
   const hostOptionsHtml = Array.from(allHostOptions).map(hostPath => {

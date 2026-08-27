@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { log } from './outputChannel';
 
 const RATING_STATE_KEY = 'ratingPrompt.state';
 const EXTENSION_ID = 'acjr.mf-explorer';
@@ -59,7 +60,7 @@ export async function trackSuccessAndPrompt(
     await saveRatingState(context, updatedState);
     await maybePromptForRating(context, updatedState);
   } catch (error) {
-    console.error('[Module Federation] Failed to track rating prompt state', error);
+    log(`[Module Federation] Failed to track rating prompt state: ${String(error)}`);
   }
 }
 

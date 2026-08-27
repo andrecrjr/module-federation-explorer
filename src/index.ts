@@ -449,13 +449,18 @@ export async function activate(context: vscode.ExtensionContext) {
     ];
 
     // Add file watcher for config changes in all roots
-    const updateOnFileChange = async (uri: vscode.Uri) => {
-      try {
-        provider.log(`Configuration file changed: ${uri.fsPath}`);
-        await provider.reloadConfigurations();
-      } catch (error) {
-        provider.logError('Error handling file change', error);
-      }
+    let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+    const updateOnFileChange = (uri: vscode.Uri) => {
+      provider.log(`Configuration file changed: ${uri.fsPath}`);
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(async () => {
+        reloadTimer = undefined;
+        try {
+          await provider.reloadConfigurations();
+        } catch (error) {
+          provider.logError('Error handling file change', error);
+        }
+      }, 500);
     };
 
     // Watch for webpack, vite, ModernJS, and RSBuild config changes
@@ -482,10 +487,14 @@ export async function activate(context: vscode.ExtensionContext) {
     rootsWatcher.onDidCreate(updateOnFileChange);
     rootsWatcher.onDidDelete(updateOnFileChange);
 
-    context.subscriptions.push(...disposables, fileWatcher, rootsWatcher);
+    context.subscriptions.push(...disposables, fileWatcher, rootsWatcher, {
+      dispose: () => {
+        if (reloadTimer) clearTimeout(reloadTimer);
+      }
+    });
 
   } catch (error) {
-    console.error('[Module Federation] Failed to activate extension:', error);
+    vscode.window.showErrorMessage(`Module Federation Explorer failed to activate: ${error instanceof Error ? error.message : String(error)}`);
     throw error; // Re-throw to ensure VS Code knows activation failed
   }
 }
@@ -763,7 +772,7 @@ function getWelcomePageHtml(context: vscode.ExtensionContext, webview: vscode.We
 /**
  * Show a setup guide for first-time users
  */
-function showSetupGuide(provider: UnifiedModuleFederationProvider) {
+function _showSetupGuide(_provider: UnifiedModuleFederationProvider) {
   // Show guide message to help first-time users get started
   DialogUtils.showSetupGuide({
     title: 'Getting Started with Module Federation Explorer',

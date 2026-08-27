@@ -9,12 +9,10 @@ import {
   RemotesFolder,
   ExposesFolder,
   RootFolder,
-  UnifiedRootConfig
 } from './types';
 import { extractConfigFromWebpack, extractConfigFromVite, extractConfigFromModernJS, extractConfigFromRSBuild, parseConfigFile } from './configExtractors';
 import { RootConfigManager } from './rootConfigManager';
-import { parse } from '@typescript-eslint/parser';
-import { outputChannel, log } from './outputChannel';
+import { outputChannel } from './outputChannel';
 import { DependencyGraphManager } from './dependencyGraph';
 import { DialogUtils } from './dialogUtils';
 
@@ -131,7 +129,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
     const timestamp = new Date().toISOString();
     outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
-    console.error(`[Module Federation] ${message}:\n`, errorDetails);
 
     // Provide more helpful error messages with user guidance
     let userMessage = `${message}: ${error instanceof Error ? error.message : String(error)}`;
@@ -280,6 +277,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', this.rootConfigs.size > 0);
 
           this.log('Finished loading configurations from all roots');
+          this.dependencyGraphManager.refreshDependencyGraph(this.rootConfigs);
         }
       );
 
@@ -307,7 +305,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           this.logError(`Path is not a directory`, rootPath);
           return;
         }
-      } catch (error) {
+      } catch {
         this.logError(`Cannot access Root Host directory`, rootPath);
         return;
       }
@@ -698,7 +696,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         // Find the config that contains this remote
         let exposedModules: ExposedModule[] = [];
 
-        for (const [rootPath, configs] of this.rootConfigs.entries()) {
+        for (const [_rootPath, configs] of this.rootConfigs.entries()) {
           for (const config of configs) {
             if (config.remotes.some(r => r.name === element.name)) {
               // Find exposed modules for this remote
@@ -760,9 +758,9 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     if (runningRemote) {
       try {
         // Try to reference the start terminal - if it's disposed, this will throw an error
-        const disposedCheck = runningRemote.startTerminal.processId;
+        void runningRemote.startTerminal.processId;
         return runningRemote.startTerminal;
-      } catch (error) {
+      } catch {
         // Terminal was disposed externally, clean up our reference
         this.log(`Detected disposed terminal for remote ${remoteKey}, cleaning up`);
         this.runningRemotes.delete(remoteKey);
@@ -1262,15 +1260,6 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         const rootFolderConfig = config?.rootConfigs[rootPath];
         if (rootFolderConfig) {
           // Update the Host folder in the tree view
-          const rootFolder: RootFolder = {
-            type: 'rootFolder',
-            path: rootPath,
-            name: path.basename(rootPath),
-            configs: configs,
-            startCommand: rootFolderConfig.startCommand,
-            isRunning: this.isRootAppRunning(rootPath)
-          };
-
           // Store the updated configuration in the map
           this.rootConfigs.set(rootPath, configs);
         }
@@ -1308,7 +1297,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           this.log(`Found disposed terminal for remote ${remoteKey}`);
           remotesToRemove.push(remoteKey);
         }
-      } catch (error) {
+      } catch {
         this.log(`Found disposed terminal for remote ${remoteKey} (exception)`);
         remotesToRemove.push(remoteKey);
       }
@@ -1323,7 +1312,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           this.log(`Found disposed terminal for root app ${rootPath}`);
           rootAppsToRemove.push(rootPath);
         }
-      } catch (error) {
+      } catch {
         this.log(`Found disposed terminal for root app ${rootPath} (exception)`);
         rootAppsToRemove.push(rootPath);
       }
@@ -1369,7 +1358,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
         // Then try comparing by name and process ID
         return terminal1.name === terminal2.name &&
           terminal1.processId === terminal2.processId;
-      } catch (error) {
+      } catch {
         // If there's an error accessing processId (terminal disposed), try name only
         return terminal1.name === terminal2.name;
       }
@@ -1430,14 +1419,14 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     }
 
     // Try to find the remote in one of our configured roots
-    for (const [rootPath, configs] of this.rootConfigs.entries()) {
+    for (const [rootPath, _configs] of this.rootConfigs.entries()) {
       const remoteFolderPath = path.join(rootPath, remote.folder);
       try {
         if (fsSync.existsSync(remoteFolderPath) && fsSync.statSync(remoteFolderPath).isDirectory()) {
           this.log(`Resolved remote ${remote.name} folder path to: ${remoteFolderPath}`);
           return remoteFolderPath;
         }
-      } catch (error) {
+      } catch {
         // Ignore errors, just continue checking other roots
       }
     }
@@ -1555,7 +1544,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
           // Process each remote in this Host
           for (const [remoteName, savedRemote] of Object.entries(rootConfig.remotes)) {
             // Find the remote in our configs
-            for (const [configRootPath, configs] of this.rootConfigs.entries()) {
+            for (const [_configRootPath, configs] of this.rootConfigs.entries()) {
               for (const mfeConfig of configs) {
                 for (const remote of mfeConfig.remotes) {
                   if (remote.name === remoteName) {
@@ -1632,7 +1621,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       let totalRemotes = 0;
       let totalExposes = 0;
 
-      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+      for (const [_rootPath, configs] of this.rootConfigs.entries()) {
         for (const config of configs) {
           totalRemotes += config.remotes.length;
           totalExposes += config.exposes.length;
@@ -1878,7 +1867,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    * Handles the drag event when an item is dragged in the tree view
    */
   handleDrag(source: readonly (RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState)[],
-    dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void | Thenable<void> {
+    dataTransfer: vscode.DataTransfer, _token: vscode.CancellationToken): void | Thenable<void> {
     // Only allow dragging root folders
     if (source.length === 1 && isRootFolder(source[0])) {
       // Set the drag data
@@ -1891,7 +1880,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
    * Handles the drop event when an item is dropped in the tree view
    */
   async handleDrop(target: RootFolder | RemotesFolder | ExposesFolder | Remote | ExposedModule | LoadingPlaceholder | EmptyState | undefined,
-    dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
+    dataTransfer: vscode.DataTransfer, _token: vscode.CancellationToken): Promise<void> {
     const draggedItem = dataTransfer.get('application/vnd.code.tree.moduleFederation')?.value;
 
     // Only allow reordering of root folders
@@ -2183,7 +2172,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
 
       // Find the root path for this remotes folder
       let targetRootPath = '';
-      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+    for (const [rootPath, configs] of this.rootConfigs.entries()) {
         for (const config of configs) {
           if (config.name === remotesFolder.parentName) {
             targetRootPath = rootPath;
@@ -2327,7 +2316,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
       await this.removeExternalRemoteFromConfiguration(targetRootPath, remote.name);
 
       // Remove from memory configurations
-      for (const [rootPath, configs] of this.rootConfigs.entries()) {
+      for (const [_rootPath, configs] of this.rootConfigs.entries()) {
         for (const config of configs) {
           const remoteIndex = config.remotes.findIndex(r => r.name === remote.name && r.isExternal);
           if (remoteIndex !== -1) {

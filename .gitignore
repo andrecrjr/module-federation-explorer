@@ -9,5 +9,6 @@ package-lock.json
 yarn.lock
 out/
 dist/
+.vscode-test/
 *.vsix
 *.log

@@ -7,7 +7,7 @@ import {
     extractConfigFromRSBuild,
     parseConfigFile
 } from './configExtractors';
-import { ModuleFederationConfig } from './types';
+import { log } from './outputChannel';
 
 export interface DetectedProject {
     path: string;
@@ -47,7 +47,7 @@ export async function detectModuleFederationProjects(): Promise<DetectedProject[
                 processedFolders.add(dir);
             } catch (e) {
                 // If parsing fails, we still add it but with minimal info if it matched our heuristic
-                console.warn(`[MFE Explorer] Failed to fully parse ${file.fsPath}:`, e);
+                log(`[MFE Explorer] Failed to fully parse ${file.fsPath}: ${String(e)}`);
             }
         }
     };
@@ -78,4 +78,3 @@ export async function detectModuleFederationProjects(): Promise<DetectedProject[
 
     return detectedProjects;
 }
-

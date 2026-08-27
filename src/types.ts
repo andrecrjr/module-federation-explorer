@@ -98,6 +98,8 @@ export interface DependencyGraphNode {
   version?: string;
   url?: string;
   status?: 'running' | 'stopped' | 'unknown';
+  /** Authoritative workspace configuration file for navigation actions. */
+  configPath?: string;
   exposedModules?: string[];
   sharedDependencies?: string[];
   size?: number; // For visual sizing based on connections
@@ -135,7 +137,7 @@ export interface DependencyGraph {
   nodes: DependencyGraphNode[];
   edges: DependencyGraphEdge[];
   sharedDependencies?: SharedDependency[];
-  metadata?: {
+  metadata: {
     totalHosts: number;
     totalRemotes: number;
     totalSharedDeps: number;

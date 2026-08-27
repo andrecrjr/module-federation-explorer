@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { UnifiedRootConfig } from './types';
@@ -32,7 +31,6 @@ export class RootConfigManager {
     const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
     const timestamp = new Date().toISOString();
     outputChannel.appendLine(`[${timestamp}] ERROR: ${message}:\n${errorDetails}`);
-    console.error(`[Module Federation Roots] ${message}:\n`, errorDetails);
     DialogUtils.showError(message, {
       detail: error instanceof Error ? error.message : String(error)
     });
@@ -99,7 +97,7 @@ export class RootConfigManager {
               }
             }
           }
-        } catch (error) {
+        } catch {
           // Directory doesn't exist or can't be accessed, skip
           continue;
         }
@@ -354,7 +352,7 @@ export class RootConfigManager {
           // Return empty config instead of null
           return { roots: [] };
         }
-      } catch (error) {
+      } catch {
         // File doesn't exist or is invalid
         this.log(`Configuration file not found or invalid at ${configPath}`);
         // Return empty config instead of null

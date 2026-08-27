@@ -2,6 +2,11 @@ import * as vscode from 'vscode';
 import { DependencyGraphNode } from '../../types';
 import { log } from '../../outputChannel';
 
+type WebviewMessage =
+  | { command: 'error'; text: string }
+  | { command: 'loaded'; metadata?: Record<string, unknown> }
+  | { command: 'nodeClick'; node: DependencyGraphNode };
+
 /**
  * Handle webview messages from the graph visualization.
  */
@@ -11,7 +16,9 @@ export class WebviewMessageHandler {
   /**
    * Process a message received from the graph webview.
    */
-  handleMessage(message: any): void {
+  handleMessage(message: unknown): void {
+    if (!isWebviewMessage(message)) return;
+
     switch (message.command) {
       case 'error':
         vscode.window.showErrorMessage(`Graph Error: ${message.text}`);
@@ -35,7 +42,7 @@ export class WebviewMessageHandler {
    * Improved: instead of just showing an info message, offer actionable options.
    */
   private handleNodeClick(node: DependencyGraphNode): void {
-    log(`Node clicked in graph: ${JSON.stringify(node)}`);
+    log(`Node clicked in graph: ${node.label} (${node.type})`);
 
     const actions: string[] = ['View Details'];
 
@@ -87,26 +94,27 @@ export class WebviewMessageHandler {
    * Attempt to find and open the config file for a workspace node.
    */
   private openConfigForNode(node: DependencyGraphNode): void {
-    // The appId format is: <hash>-<name>-<configType>
-    const parts = node.id.split('-');
-    const configType = parts[parts.length - 1] as 'webpack' | 'vite' | 'modernjs' | 'rsbuild';
-    const configName = parts.slice(1, -1).join('-');
+    if (!node.configPath) {
+      vscode.window.showWarningMessage(`No workspace configuration is associated with "${node.label}"`);
+      return;
+    }
 
-    const patterns = [
-      `**/${configName}/**/*${configType}.config.*`,
-      `**/*${configType}.config.*`,
-    ];
-
-    // Try to find matching config files
-    vscode.workspace.findFiles(`**/*${configType}.config.{js,ts,mjs,mts}`, null, 20).then(files => {
-      const matching = files.find(f => f.fsPath.includes(configName));
-      if (matching) {
-        vscode.workspace.openTextDocument(matching).then(doc => {
-          vscode.window.showTextDocument(doc);
-        });
-      } else {
-        vscode.window.showWarningMessage(`Could not find config file for "${configName}"`);
-      }
-    });
+    vscode.workspace.openTextDocument(vscode.Uri.file(node.configPath))
+      .then(document => vscode.window.showTextDocument(document))
+      .then(undefined, error => vscode.window.showWarningMessage(`Could not open configuration for "${node.label}": ${String(error)}`));
   }
+}
+
+function isWebviewMessage(message: unknown): message is WebviewMessage {
+  if (!message || typeof message !== 'object' || !('command' in message)) return false;
+
+  const command = (message as { command?: unknown }).command;
+  if (command === 'error') return typeof (message as { text?: unknown }).text === 'string';
+  if (command === 'loaded') return true;
+  if (command !== 'nodeClick') return false;
+
+  const node = (message as { node?: unknown }).node;
+  return !!node && typeof node === 'object' &&
+    typeof (node as { id?: unknown }).id === 'string' &&
+    typeof (node as { label?: unknown }).label === 'string';
 }

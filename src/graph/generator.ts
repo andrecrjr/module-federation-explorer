@@ -200,6 +200,7 @@ export class GraphGenerator {
         configType: config.configType,
         exposedModules: hasExposes ? config.exposes.map(e => e.name) : undefined,
         sharedDependencies: config.shared.map(s => s.name),
+        configPath: config.configPath,
         size: Math.max(1, config.remotes.length + config.exposes.length + config.shared.length),
         group: nodeGroup
       };
@@ -407,6 +408,16 @@ export class GraphGenerator {
 
       if (configName.toLowerCase() === lowerAppName) {
         matchedId = matchedId ?? appId;
+      }
+    }
+
+    if (matchedId) {
+      const matchingIds = [...appCapabilities.entries()]
+        .filter(([, capabilities]) => capabilities.config.name.toLowerCase() === lowerAppName)
+        .map(([id]) => id);
+      if (matchingIds.length > 1) {
+        log(`[Graph] ⚠️  Ambiguous app name '${appName}' matched ${matchingIds.length} configurations`);
+        return undefined;
       }
     }
 

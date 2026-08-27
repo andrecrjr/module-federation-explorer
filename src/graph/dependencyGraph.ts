@@ -69,6 +69,16 @@ export class DependencyGraphManager {
     }
   }
 
+  /** Refresh the open graph panel after configuration changes. */
+  refreshDependencyGraph(configs: Map<string, ModuleFederationConfig[]>): void {
+    if (!this._panel) return;
+
+    const graph = this.generateDependencyGraph(configs);
+    if (graph.nodes.length > 0) {
+      this.updateWebviewContent(this._panel.webview, graph);
+    }
+  }
+
   /**
    * Update the webview content with the graph data.
    * Delegates to the template generator.
