@@ -1,8 +1,5 @@
 import * as assert from 'assert';
-import * as vscode from 'vscode';
-import { ConfigurationLoader, DependencyGraphService, RootConfigService } from '../providerDependencies';
-import { PathResolver } from '../pathResolver';
-import { TerminalManager } from '../terminalManager';
+import { ExplorerStore } from '../features/explorer/explorerStore';
 import { UnifiedModuleFederationProvider } from '../unifiedTreeProvider';
 import { ModuleFederationConfig, RootFolder } from '../types';
 
@@ -23,41 +20,11 @@ function createConfig(): ModuleFederationConfig {
   };
 }
 
-function createProvider(): UnifiedModuleFederationProvider {
-  const rootConfigManager: RootConfigService = {
-    hasConfiguredRoots: async () => false,
-    loadRootConfig: async () => ({ roots: [] }),
-    getConfigPath: () => '/workspace/.vscode/mf-explorer.roots.json',
-    setConfigPath: async () => {},
-    saveRootConfig: async () => {},
-    addRoot: async () => {},
-    removeRoot: async () => {},
-    changeConfigFile: async () => false
-  };
-  const configurationService: ConfigurationLoader = {
-    load: async () => ({ configs: new Map(), errors: [] })
-  };
-  const dependencyGraphManager: DependencyGraphService = {
-    refreshDependencyGraph: () => {},
-    generateDependencyGraph: () => ({
-      nodes: [],
-      edges: [],
-      metadata: {
-        totalHosts: 0,
-        totalRemotes: 0,
-        totalSharedDeps: 0,
-        totalExposedModules: 0
-      }
-    }),
-    showDependencyGraph: () => {}
-  };
-
-  return new UnifiedModuleFederationProvider('/workspace', {} as vscode.ExtensionContext, {
-    rootConfigManager,
-    configurationService,
-    dependencyGraphManager,
-    terminalManager: new TerminalManager(),
-    pathResolver: new PathResolver()
+function createProvider(store = new ExplorerStore()): UnifiedModuleFederationProvider {
+  return new UnifiedModuleFederationProvider(store, {
+    isRemoteRunning: () => false,
+    log: () => {},
+    reorderRoots: async () => {}
   });
 }
 
@@ -77,5 +44,18 @@ suite('UnifiedModuleFederationProvider', () => {
       ['remotesFolder', 'exposesFolder']
     );
     assert.strictEqual(provider.getTreeItem(rootFolder).label, 'host');
+  });
+
+  test('refreshes when the explorer store snapshot changes', () => {
+    const store = new ExplorerStore();
+    const provider = createProvider(store);
+    let refreshes = 0;
+    const subscription = provider.onDidChangeTreeData(() => refreshes++);
+
+    store.replace(new Map());
+
+    assert.strictEqual(refreshes, 1);
+    subscription.dispose();
+    provider.dispose();
   });
 });

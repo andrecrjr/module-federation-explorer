@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { UnifiedModuleFederationProvider } from './unifiedTreeProvider';
+import type { ExplorerApplication } from './app/explorerApplication';
 import { DetectedProject } from './workspaceScanner';
 import { trackSuccessAndPrompt } from './ratingPrompt';
 import { log } from './outputChannel';
 
 export async function showOnboardingPage(
   context: vscode.ExtensionContext,
-  provider: UnifiedModuleFederationProvider,
+  application: ExplorerApplication,
   detectedProjects: DetectedProject[]
 ) {
   const panel = vscode.window.createWebviewPanel(
@@ -22,7 +22,7 @@ export async function showOnboardingPage(
 
   let existingRoots: string[] = [];
   try {
-    const config = await provider.loadRootConfig();
+    const config = await application.loadRootConfig();
     if (config && config.roots) {
       existingRoots = config.roots;
     }
@@ -53,17 +53,17 @@ export async function showOnboardingPage(
           if (items && Array.isArray(items) && items.length > 0) {
             try {
               // Ensure configuration file exists
-              let configPath = provider.getConfigPath();
+              let configPath = application.getConfigPath();
               if (!configPath) {
                 const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
                 if (workspaceFolder) {
                   configPath = path.join(workspaceFolder.uri.fsPath, '.vscode', 'mf-explorer.roots.json');
-                  await provider.setConfigPath(configPath);
+                  await application.setConfigPath(configPath);
                 }
               }
 
               // Load existing config
-              let config = await provider.loadRootConfig();
+              let config = await application.loadRootConfig();
               if (!config) {
                 config = { roots: [] };
               }
@@ -122,10 +122,10 @@ export async function showOnboardingPage(
                 }
               }
 
-              await provider.saveRootConfig(config);
+              await application.saveRootConfig(config);
 
               // Reload tree configuration to reflect new roots
-              await provider.reloadConfigurations();
+              await application.reloadConfigurations();
 
               // Reveal the Module Federation panel
               vscode.commands.executeCommand('moduleFederation.reveal');

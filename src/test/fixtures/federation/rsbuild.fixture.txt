@@ -1,0 +1,1 @@
+export default { moduleFederation: { options: { name: 'rsbuild-host' } } };

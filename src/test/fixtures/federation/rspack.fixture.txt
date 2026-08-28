@@ -1,0 +1,1 @@
+new ModuleFederationPlugin({ name: 'rspack-host' });

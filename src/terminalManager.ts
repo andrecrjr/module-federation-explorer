@@ -19,7 +19,7 @@ interface RunningRootApp {
 }
 
 /** Owns terminal state so tree rendering and command registration stay independent. */
-export class TerminalManager {
+export class TerminalManager implements TerminalPort {
   private readonly runningRemotes = new Map<string, RunningRemote>();
   private readonly runningRootApps = new Map<string, RunningRootApp>();
 
@@ -143,3 +143,4 @@ export class TerminalManager {
     return removed;
   }
 }
+import type { TerminalPort } from './app/ports';

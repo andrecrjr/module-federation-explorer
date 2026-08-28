@@ -1,0 +1,1 @@
+new ModuleFederationPlugin({ name: 'webpack-host', remotes: { auth: 'auth@http://localhost:3001/remoteEntry.js' } });

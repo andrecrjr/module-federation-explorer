@@ -6,53 +6,53 @@ Move the extension toward a feature-first architecture with a thin VS Code compo
 
 ## Phase 1: Establish boundaries
 
-- [ ] Add `src/app/compositionRoot.ts` to create and wire the extension services.
-- [ ] Keep `src/extension.ts` (or `src/index.ts`) limited to activation and composition.
-- [ ] Extract command registration into `src/app/registerCommands.ts` and feature-specific command modules.
-- [ ] Extract file watcher registration into `src/app/registerWatchers.ts`.
-- [ ] Keep lifecycle setup in `src/app/lifecycle.ts`.
-- [ ] Define small ports/interfaces for dialogs, logging, filesystem access, terminals, and workspace file discovery.
-- [ ] Replace the broad `providerDependencies.ts` dependency bag with feature-specific dependency interfaces.
+- [x] Add `src/app/compositionRoot.ts` to create and wire the extension services.
+- [x] Keep `src/extension.ts` (or `src/index.ts`) limited to activation and composition.
+- [x] Extract command registration into `src/app/registerCommands.ts` and feature-specific command modules.
+- [x] Extract file watcher registration into `src/app/registerWatchers.ts`.
+- [x] Keep lifecycle setup in `src/app/lifecycle.ts`.
+- [x] Define small ports/interfaces for dialogs, logging, filesystem access, terminals, and workspace file discovery.
+- [x] Replace the broad `providerDependencies.ts` dependency bag with feature-specific dependency interfaces.
 
 ## Phase 2: Refactor the Explorer tree
 
-- [ ] Move `unifiedTreeProvider.ts`, `treeModel.ts`, and `treeItemFactory.ts` into `src/features/explorer/`.
-- [ ] Create an `ExplorerStore` or `ExplorerState` that owns the loaded configuration snapshot.
-- [ ] Make `UnifiedModuleFederationProvider` only implement `TreeDataProvider` and drag/drop behavior.
-- [ ] Remove application workflows and persistence responsibilities from the tree provider.
-- [ ] Move root, remote, graph, and terminal command handlers out of the provider facade.
-- [ ] Preserve and extend the existing tree model and tree item tests.
+- [x] Move `unifiedTreeProvider.ts`, `treeModel.ts`, and `treeItemFactory.ts` into `src/features/explorer/`.
+- [x] Create an `ExplorerStore` or `ExplorerState` that owns the loaded configuration snapshot.
+- [x] Make `UnifiedModuleFederationProvider` only implement `TreeDataProvider` and drag/drop behavior.
+- [x] Remove application workflows and persistence responsibilities from the tree provider.
+- [x] Move root, remote, graph, and terminal command handlers out of the provider facade.
+- [x] Preserve and extend the existing tree model and tree item tests.
 
 ## Phase 3: Unify federation discovery and parsing
 
-- [ ] Merge the duplicated discovery logic in `workspaceScanner.ts` and `ConfigurationService`.
-- [ ] Create one shared config-file definition registry for Webpack, Vite, Modern.js, RSBuild, and Rspack.
-- [ ] Split `configExtractors.ts` into:
-  - [ ] `parser/parseConfigFile.ts`
-  - [ ] `parser/astUtils.ts`
-  - [ ] `parser/expressionResolver.ts`
-  - [ ] `extractors/webpack.ts`
-  - [ ] `extractors/vite.ts`
-  - [ ] `extractors/modernjs.ts`
-  - [ ] `extractors/rsbuild.ts`
-- [ ] Keep parser and extractor modules free of VS Code UI calls.
-- [ ] Replace parser `any` usage with typed AST nodes or `unknown` plus type guards.
-- [ ] Return structured parse diagnostics instead of logging from low-level parsing code.
-- [ ] Add fixtures and unit tests for each supported bundler configuration shape.
+- [x] Merge the duplicated discovery logic in `workspaceScanner.ts` and `ConfigurationService`.
+- [x] Create one shared config-file definition registry for Webpack, Vite, Modern.js, RSBuild, and Rspack.
+- [x] Split `configExtractors.ts` into:
+  - [x] `parser/parseConfigFile.ts`
+  - [x] `parser/astUtils.ts`
+  - [x] `parser/expressionResolver.ts`
+  - [x] `extractors/webpack.ts`
+  - [x] `extractors/vite.ts`
+  - [x] `extractors/modernjs.ts`
+  - [x] `extractors/rsbuild.ts`
+- [x] Keep parser and extractor modules free of VS Code UI calls.
+- [x] Replace parser `any` usage with typed AST nodes or `unknown` plus type guards.
+- [x] Return structured parse diagnostics instead of logging from low-level parsing code.
+- [x] Add fixtures and unit tests for each supported bundler configuration shape.
 
 ## Phase 4: Separate root and remote configuration
 
-- [ ] Split `rootConfigManager.ts` into:
-  - [ ] pure schema validation and legacy migration
-  - [ ] JSON file repository
-  - [ ] user-facing configuration workflow
-- [ ] Move root configuration code into `src/features/roots/`.
-- [ ] Move `rootAppController.ts` into a root-app workflow module.
-- [ ] Move `remoteConfigurationService.ts` and `remoteWorkflow.ts` into `src/features/remotes/`.
-- [ ] Keep persisted remote settings separate from discovered federation configuration.
-- [ ] Replace provider-owned mutable `Map` access with an explicit snapshot/hydration step.
-- [ ] Ensure path matching uses normalized paths and does not rely on unsafe string-prefix matching.
-- [ ] Add tests for multiple roots, duplicate remote names, missing folders, and external remotes.
+- [x] Split `rootConfigManager.ts` into:
+  - [x] pure schema validation and legacy migration
+  - [x] JSON file repository
+  - [x] user-facing configuration workflow
+- [x] Move root configuration code into `src/features/roots/`.
+- [x] Move `rootAppController.ts` into a root-app workflow module.
+- [x] Move `remoteConfigurationService.ts` and `remoteWorkflow.ts` into `src/features/remotes/`.
+- [x] Keep persisted remote settings separate from discovered federation configuration.
+- [x] Replace provider-owned mutable `Map` access with an explicit snapshot/hydration step.
+- [x] Ensure path matching uses normalized paths and does not rely on unsafe string-prefix matching.
+- [x] Add tests for multiple roots, duplicate remote names, missing folders, and external remotes.
 
 ## Phase 5: Isolate runtime and VS Code infrastructure
 
@@ -118,9 +118,9 @@ src/
 
 ## Definition of done
 
-- [ ] Activation file is small and only composes the extension.
-- [ ] No feature workflow is implemented inside the tree provider.
-- [ ] Configuration discovery has one pipeline and one source of supported file patterns.
-- [ ] Core graph/parsing logic can be tested without launching VS Code.
-- [ ] Persisted configuration and runtime/discovered state are separate models.
-- [ ] `npm run typecheck`, `npm run lint`, `npm run compile`, and `npm test` pass.
+- [x] Activation file is small and only composes the extension.
+- [x] No feature workflow is implemented inside the tree provider.
+- [x] Configuration discovery has one pipeline and one source of supported file patterns.
+- [x] Core graph/parsing logic can be tested without launching VS Code.
+- [x] Persisted configuration and runtime/discovered state are separate models.
+- [x] `npm run typecheck`, `npm run lint`, `npm run compile`, and `npm test` pass.

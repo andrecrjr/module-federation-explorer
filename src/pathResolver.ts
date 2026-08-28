@@ -1,12 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { FileSystemPort } from './app/ports';
 
-export interface FileSystemAdapter {
-  existsSync(filePath: string): boolean;
-  statSync(filePath: string): { isFile(): boolean; isDirectory(): boolean };
-  readdirSync(directoryPath: string): string[];
-  readFileSync(filePath: string): string;
-}
+export interface FileSystemAdapter extends FileSystemPort {}
 
 export interface PathResolverDependencies {
   fileSystem?: FileSystemAdapter;

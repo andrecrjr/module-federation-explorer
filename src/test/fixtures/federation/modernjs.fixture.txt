@@ -1,0 +1,1 @@
+export default createModuleFederationConfig({ name: 'modern-host' });
