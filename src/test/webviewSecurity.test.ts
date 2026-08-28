@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { serializeForScript } from '../graph/webview/template';
+import { serializeForScript } from '../features/graph/webview/template';
 
 suite('Graph webview serialization', () => {
   test('escapes script-breaking characters in serialized graph data', () => {

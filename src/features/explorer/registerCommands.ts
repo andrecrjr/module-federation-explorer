@@ -9,14 +9,24 @@ export function registerExplorerCommands(
   application: ExplorerApplication,
   register: CommandRegistrar
 ): vscode.Disposable[] {
+  let focusTimer: ReturnType<typeof setTimeout> | undefined;
+  const focusTimerOwner = new vscode.Disposable(() => {
+    if (focusTimer) clearTimeout(focusTimer);
+  });
+
   return [
+    focusTimerOwner,
     register('moduleFederation.reveal', () => {
       void vscode.commands.executeCommand('workbench.view.explorer');
       void vscode.commands.executeCommand('moduleFederation.focus');
     }),
     register('moduleFederation.openView', () => {
       void vscode.commands.executeCommand('workbench.view.explorer');
-      setTimeout(() => void vscode.commands.executeCommand('moduleFederation.focus'), 300);
+      if (focusTimer) clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => {
+        focusTimer = undefined;
+        void vscode.commands.executeCommand('moduleFederation.focus');
+      }, 300);
     }),
     register('moduleFederation.focus', () => vscode.commands.executeCommand('workbench.view.explorer')),
     register('moduleFederation.showWelcome', () => showWelcomePage(context)),

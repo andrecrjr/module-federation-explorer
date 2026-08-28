@@ -1,12 +1,18 @@
-import * as fsSync from 'fs';
-import * as path from 'path';
-import * as vscode from 'vscode';
 import { ModuleFederationConfig, RemotesFolder, RootFolder } from '../../types';
-import type { DialogService, PackageManagerDetector, RootConfigService, TerminalPort } from '../../app/ports';
+import type {
+  DialogService,
+  FileSystemPort,
+  PackageManagerDetector,
+  PathPort,
+  RootConfigService,
+  TerminalPort
+} from '../../app/ports';
 import { normalizePath } from './pathUtils';
 
 export interface RootAppControllerDependencies {
   workspaceRoot?: string;
+  fileSystem: Pick<FileSystemPort, 'existsSync'>;
+  path: Pick<PathPort, 'dirname' | 'join'>;
   rootConfigManager: RootConfigService;
   terminalManager: TerminalPort;
   dialogs: DialogService;
@@ -33,8 +39,14 @@ export class RootAppController {
         await this.changeConfigFile();
         if (!this.dependencies.rootConfigManager.getConfigPath()) return;
       }
-      const defaultUri = this.dependencies.workspaceRoot ? vscode.Uri.file(path.dirname(this.dependencies.workspaceRoot)) : undefined;
-      const rootPath = await this.dependencies.dialogs.showFolderPicker({ title: 'Select a folder to add to the Module Federation Explorer', openLabel: 'Select Host Folder', defaultUri });
+      const defaultPath = this.dependencies.workspaceRoot
+        ? this.dependencies.path.dirname(this.dependencies.workspaceRoot)
+        : undefined;
+      const rootPath = await this.dependencies.dialogs.showFolderPicker({
+        title: 'Select a folder to add to the Module Federation Explorer',
+        openLabel: 'Select Host Folder',
+        defaultPath
+      });
       if (!rootPath) return;
       await this.dependencies.rootConfigManager.addRoot(rootPath);
       void this.dependencies.reloadConfigurations();
@@ -75,10 +87,11 @@ export class RootAppController {
         rootFolder.startCommand = configuredRootPath ? config?.rootConfigs?.[configuredRootPath]?.startCommand : undefined;
       }
       if (!rootFolder.startCommand && !await this.configureRootAppStartCommand(rootFolder)) return;
-      const terminal = vscode.window.createTerminal(`MFE App: ${rootFolder.name}`);
-      terminal.show();
-      terminal.sendText(`cd "${rootFolder.path}" && ${rootFolder.startCommand}`);
-      this.dependencies.terminalManager.setRunningRootApp(rootFolder.path, terminal);
+      this.dependencies.terminalManager.startRootApp(
+        rootFolder.path,
+        rootFolder.name,
+        rootFolder.startCommand!
+      );
       this.dependencies.refresh();
       await this.dependencies.dialogs.showSuccess(`Started Host app: ${rootFolder.name}`);
     } catch (error) {
@@ -127,11 +140,13 @@ export class RootAppController {
       if (!selected || Array.isArray(selected)) return;
 
       if (selected.label.includes('Change Project Folder')) {
-        const defaultUri = this.dependencies.workspaceRoot ? vscode.Uri.file(path.dirname(this.dependencies.workspaceRoot)) : undefined;
+        const defaultPath = this.dependencies.workspaceRoot
+          ? this.dependencies.path.dirname(this.dependencies.workspaceRoot)
+          : undefined;
         const newFolder = await this.dependencies.dialogs.showFolderPicker({
-          title: `Select New Project Folder for Host App "${rootFolder.name}"`, openLabel: `Select "${rootFolder.name}" Project Folder`, defaultUri,
+          title: `Select New Project Folder for Host App "${rootFolder.name}"`, openLabel: `Select "${rootFolder.name}" Project Folder`, defaultPath,
           validateFolder: async folderPath => {
-            if (fsSync.existsSync(path.join(folderPath, 'package.json'))) return { valid: true };
+            if (this.dependencies.fileSystem.existsSync(this.dependencies.path.join(folderPath, 'package.json'))) return { valid: true };
             const continueAnyway = await this.dependencies.dialogs.showConfirmation('The selected folder doesn\'t contain a package.json file.', { detail: `Folder: ${folderPath}`, confirmText: 'Continue Anyway', cancelText: 'Select Different Folder' });
             return { valid: continueAnyway, message: 'Invalid Node.js project folder' };
           }

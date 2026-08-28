@@ -3,7 +3,7 @@ import * as path from 'path';
 import type { ExplorerApplication } from './app/explorerApplication';
 import { DetectedProject } from './workspaceScanner';
 import { trackSuccessAndPrompt } from './ratingPrompt';
-import { log } from './outputChannel';
+import { log } from './infrastructure/vscode/outputChannel';
 
 export async function showOnboardingPage(
   context: vscode.ExtensionContext,
@@ -19,6 +19,7 @@ export async function showOnboardingPage(
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]
     }
   );
+  context.subscriptions.push(panel);
 
   let existingRoots: string[] = [];
   try {

@@ -1,7 +1,6 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { ModuleFederationConfig, Remote, UnifiedRootConfig } from '../../types';
-import { findContainingRoot, normalizePath } from '../roots/pathUtils';
+import type { FileSystemPort, PathPort } from '../../app/ports';
+import { findContainingRoot, normalizePath } from '../../infrastructure/node/pathUtils';
 
 export interface RootConfigurationStore {
   loadRootConfig(): Promise<UnifiedRootConfig | null>;
@@ -12,6 +11,8 @@ export interface RemoteConfigurationServiceDependencies {
   rootConfigurationStore: RootConfigurationStore;
   getRootConfigs: () => ReadonlyMap<string, ModuleFederationConfig[]>;
   workspaceRoot?: string;
+  fileSystem: Pick<FileSystemPort, 'existsSync' | 'statSync'>;
+  path: Pick<PathPort, 'isAbsolute' | 'resolve' | 'dirname'>;
   log: (message: string) => void;
   logError: (message: string, error: unknown) => void;
 }
@@ -48,13 +49,13 @@ export class RemoteConfigurationService {
   constructor(private readonly dependencies: RemoteConfigurationServiceDependencies) {}
 
   resolveRemoteFolderPath(remote: Remote): string {
-    if (path.isAbsolute(remote.folder)) return normalizePath(remote.folder);
+    if (this.dependencies.path.isAbsolute(remote.folder)) return normalizePath(remote.folder);
 
     const roots = [...this.dependencies.getRootConfigs().keys()];
     for (const rootPath of roots) {
-      const candidate = path.resolve(rootPath, remote.folder);
+      const candidate = this.dependencies.path.resolve(rootPath, remote.folder);
       try {
-        if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+        if (this.dependencies.fileSystem.existsSync(candidate) && this.dependencies.fileSystem.statSync(candidate).isDirectory()) {
           this.dependencies.log(`Resolved remote ${remote.name} folder path to: ${candidate}`);
           return candidate;
         }
@@ -63,8 +64,8 @@ export class RemoteConfigurationService {
       }
     }
 
-    if (roots.length === 1) return path.resolve(roots[0], remote.folder);
-    if (this.dependencies.workspaceRoot) return path.resolve(this.dependencies.workspaceRoot, remote.folder);
+    if (roots.length === 1) return this.dependencies.path.resolve(roots[0], remote.folder);
+    if (this.dependencies.workspaceRoot) return this.dependencies.path.resolve(this.dependencies.workspaceRoot, remote.folder);
     return remote.folder;
   }
 
@@ -132,7 +133,7 @@ export class RemoteConfigurationService {
   private findRootForRemote(remote: Remote, config: UnifiedRootConfig): string | undefined {
     const roots = config.roots;
     if (remote.configSource) {
-      const sourceRoot = findContainingRoot(path.dirname(remote.configSource), roots);
+      const sourceRoot = findContainingRoot(this.dependencies.path.dirname(remote.configSource), roots);
       if (sourceRoot) return sourceRoot;
     }
     const resolved = this.resolveRemoteFolderPath(remote);

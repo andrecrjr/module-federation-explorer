@@ -8,7 +8,7 @@ import {
 import { parseConfigFile } from './parser/parseConfigFile';
 import type { ConfigExtractor, ParseDiagnostic } from './parser/parseConfigFile';
 import type { WorkspaceFileDiscovery } from './app/ports';
-import { detectPackageManagerAndStartCommand } from './packageManager';
+import { detectPackageManagerAndStartCommand } from './infrastructure/node/packageManager';
 
 export type { ConfigFileType } from './federation/configFileRegistry';
 

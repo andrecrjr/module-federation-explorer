@@ -88,38 +88,6 @@ export interface RootFolder {
 }
 
 /**
- * Represents a node in the Module Federation dependency graph
- */
-export interface DependencyGraphNode {
-  id: string;
-  label: string;
-  type: 'host' | 'remote' | 'shared-dependency' | 'exposed-module';
-  configType: 'webpack' | 'vite' | 'modernjs' | 'rsbuild' | 'rspack' | 'external';
-  // Enhanced metadata
-  version?: string;
-  url?: string;
-  status?: 'running' | 'stopped' | 'unknown';
-  /** Authoritative workspace configuration file for navigation actions. */
-  configPath?: string;
-  exposedModules?: string[];
-  sharedDependencies?: string[];
-  size?: number; // For visual sizing based on connections
-  group?: string; // For grouping related nodes
-}
-
-/**
- * Represents an edge in the Module Federation dependency graph
- */
-export interface DependencyGraphEdge {
-  from: string;
-  to: string;
-  label?: string;
-  type: 'consumes' | 'exposes' | 'shares' | 'depends-on';
-  strength?: number; // For visual weight of the relationship
-  bidirectional?: boolean;
-}
-
-/**
  * Represents shared dependency information
  */
 export interface SharedDependency {
@@ -130,18 +98,3 @@ export interface SharedDependency {
   requiredVersion?: string;
   strictVersion?: boolean;
 }
-
-/**
- * Represents the complete Module Federation dependency graph
- */
-export interface DependencyGraph {
-  nodes: DependencyGraphNode[];
-  edges: DependencyGraphEdge[];
-  sharedDependencies?: SharedDependency[];
-  metadata: {
-    totalHosts: number;
-    totalRemotes: number;
-    totalSharedDeps: number;
-    totalExposedModules: number;
-  };
-} 

@@ -1,12 +1,15 @@
 import {
-  DependencyGraph,
-  DependencyGraphNode,
-  DependencyGraphEdge,
   ModuleFederationConfig,
   SharedDependency
-} from '../types';
-import { AppCapability, GraphGenerationResult } from './types';
-import { log } from '../outputChannel';
+} from '../../types';
+import {
+  AppCapability,
+  DependencyGraph,
+  DependencyGraphEdge,
+  DependencyGraphNode,
+  GraphDiagnostic,
+  GraphGenerationResult
+} from './types';
 
 /**
  * Multi-pass graph generation algorithm.
@@ -41,18 +44,19 @@ export class GraphGenerator {
     const exposedModulesMap = new Map<string, string[]>();
     const remoteToHostMap = new Map<string, string[]>();
     const appCapabilities = new Map<string, AppCapability>();
+    const diagnostics: GraphDiagnostic[] = [];
 
     // ── Pass 1: Analyze capabilities ──────────────────────────────
-    this._pass1_analyzeCapabilities(configs, appCapabilities, exposedModulesMap);
+    this._pass1_analyzeCapabilities(configs, appCapabilities, exposedModulesMap, diagnostics);
 
     // ── Pass 2: Build remote consumption map ───────────────────────
-    this._pass2_buildRemoteConsumptionMap(appCapabilities, nodeMap, graph, remoteToHostMap);
+    this._pass2_buildRemoteConsumptionMap(appCapabilities, nodeMap, graph, remoteToHostMap, diagnostics);
 
     // ── Pass 3: Create unified nodes ───────────────────────────────
     this._pass3_createUnifiedNodes(appCapabilities, remoteToHostMap, nodeMap, graph);
 
     // ── Pass 4: Create consolidated consumption edges ──────────────
-    this._pass4_createConsumptionEdges(remoteToHostMap, nodeMap, graph, appCapabilities);
+    this._pass4_createConsumptionEdges(remoteToHostMap, nodeMap, graph, appCapabilities, diagnostics);
 
     // ── Pass 5: Create exposed module nodes and expose edges ───────
     this._pass5_createExposedModuleNodes(exposedModulesMap, nodeMap, graph, remoteToHostMap);
@@ -63,19 +67,32 @@ export class GraphGenerator {
     // ── Finalize metadata ──────────────────────────────────────────
     this._finalizeMetadata(graph);
 
-    return { graph, nodeMap, edgeMap: new Map(graph.edges.map(e => [`${e.from}->${e.to}`, e])), remoteToHostMap, appCapabilities };
+    return {
+      graph,
+      nodeMap,
+      edgeMap: new Map(graph.edges.map(e => [`${e.from}->${e.to}`, e])),
+      remoteToHostMap,
+      appCapabilities,
+      diagnostics
+    };
   }
 
   // ─── Pass 1 ────────────────────────────────────────────────────────
   private _pass1_analyzeCapabilities(
     configs: Map<string, ModuleFederationConfig[]>,
     appCapabilities: Map<string, AppCapability>,
-    exposedModulesMap: Map<string, string[]>
+    exposedModulesMap: Map<string, string[]>,
+    diagnostics: GraphDiagnostic[]
   ): void {
     configs.forEach((rootConfigs, rootPath) => {
       rootConfigs.forEach(config => {
         if (!config.name || config.name.trim() === '') {
-          log(`[Graph] ⚠️  Skipping config without name in ${rootPath}`);
+          diagnostics.push({
+            code: 'missing-config-name',
+            severity: 'warning',
+            message: `Skipping config without name in ${rootPath}`,
+            rootPath
+          });
           return;
         }
 
@@ -101,17 +118,23 @@ export class GraphGenerator {
     appCapabilities: Map<string, AppCapability>,
     nodeMap: Map<string, DependencyGraphNode>,
     graph: DependencyGraph,
-    remoteToHostMap: Map<string, string[]>
+    remoteToHostMap: Map<string, string[]>,
+    diagnostics: GraphDiagnostic[]
   ): void {
     appCapabilities.forEach((capabilities, appId) => {
       const { config } = capabilities;
 
       config.remotes.forEach(remote => {
-        const remoteAppId = this.findAppIdByName(remote.name, appCapabilities);
+        const remoteAppId = this.findAppIdByName(remote.name, appCapabilities, diagnostics);
 
         // Skip self-references
         if (remoteAppId === appId) {
-          log(`[Graph] ⚠️  Skipping self-reference: app '${config.name}' references itself as remote '${remote.name}'`);
+          diagnostics.push({
+            code: 'self-reference',
+            severity: 'warning',
+            message: `Skipping self-reference: app '${config.name}' references itself as remote '${remote.name}'`,
+            rootPath: appId
+          });
           return;
         }
 
@@ -221,7 +244,8 @@ export class GraphGenerator {
     remoteToHostMap: Map<string, string[]>,
     nodeMap: Map<string, DependencyGraphNode>,
     graph: DependencyGraph,
-    appCapabilities: Map<string, AppCapability>
+    appCapabilities: Map<string, AppCapability>,
+    diagnostics: GraphDiagnostic[]
   ): void {
     const processedPairs = new Set<string>();
 
@@ -242,7 +266,7 @@ export class GraphGenerator {
 
         const hostConfig = appCapabilities.get(hostId)?.config;
         const remoteConfig = hostConfig?.remotes.find(r =>
-          this.findAppIdByName(r.name, appCapabilities) === remoteId ||
+          this.findAppIdByName(r.name, appCapabilities, diagnostics) === remoteId ||
           `external-${r.name}` === remoteId
         );
 
@@ -395,7 +419,8 @@ export class GraphGenerator {
    */
   findAppIdByName(
     appName: string,
-    appCapabilities: Map<string, AppCapability>
+    appCapabilities: Map<string, AppCapability>,
+    diagnostics?: GraphDiagnostic[]
   ): string | undefined {
     const lowerAppName = appName.toLowerCase();
     let matchedId: string | undefined;
@@ -417,7 +442,11 @@ export class GraphGenerator {
         .filter(([, capabilities]) => capabilities.config.name.toLowerCase() === lowerAppName)
         .map(([id]) => id);
       if (matchingIds.length > 1) {
-        log(`[Graph] ⚠️  Ambiguous app name '${appName}' matched ${matchingIds.length} configurations`);
+        diagnostics?.push({
+          code: 'ambiguous-app-name',
+          severity: 'warning',
+          message: `Ambiguous app name '${appName}' matched ${matchingIds.length} configurations`
+        });
         return undefined;
       }
     }

@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
-import { DependencyGraphNode } from '../../types';
-import { log } from '../../outputChannel';
+import type { DependencyGraphNode } from '../types';
 
-type WebviewMessage =
+export type WebviewMessage =
   | { command: 'error'; text: string }
   | { command: 'loaded'; metadata?: Record<string, unknown> }
   | { command: 'nodeClick'; node: DependencyGraphNode };
@@ -11,7 +10,10 @@ type WebviewMessage =
  * Handle webview messages from the graph visualization.
  */
 export class WebviewMessageHandler {
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly log: (message: string) => void = () => {}
+  ) {}
 
   /**
    * Process a message received from the graph webview.
@@ -25,9 +27,9 @@ export class WebviewMessageHandler {
         break;
 
       case 'loaded':
-        log("Enhanced dependency graph loaded successfully");
+        this.log("Enhanced dependency graph loaded successfully");
         if (message.metadata) {
-          log(`Graph metadata: ${JSON.stringify(message.metadata)}`);
+          this.log(`Graph metadata: ${JSON.stringify(message.metadata)}`);
         }
         break;
 
@@ -42,7 +44,7 @@ export class WebviewMessageHandler {
    * Improved: instead of just showing an info message, offer actionable options.
    */
   private handleNodeClick(node: DependencyGraphNode): void {
-    log(`Node clicked in graph: ${node.label} (${node.type})`);
+    this.log(`Node clicked in graph: ${node.label} (${node.type})`);
 
     const actions: string[] = ['View Details'];
 
@@ -105,16 +107,61 @@ export class WebviewMessageHandler {
   }
 }
 
-function isWebviewMessage(message: unknown): message is WebviewMessage {
+export function isWebviewMessage(message: unknown): message is WebviewMessage {
   if (!message || typeof message !== 'object' || !('command' in message)) return false;
 
   const command = (message as { command?: unknown }).command;
   if (command === 'error') return typeof (message as { text?: unknown }).text === 'string';
-  if (command === 'loaded') return true;
+  if (command === 'loaded') {
+    const metadata = (message as { metadata?: unknown }).metadata;
+    return metadata === undefined || isRecord(metadata);
+  }
   if (command !== 'nodeClick') return false;
 
   const node = (message as { node?: unknown }).node;
-  return !!node && typeof node === 'object' &&
-    typeof (node as { id?: unknown }).id === 'string' &&
-    typeof (node as { label?: unknown }).label === 'string';
+  return isDependencyGraphNode(node);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isDependencyGraphNode(value: unknown): value is DependencyGraphNode {
+  if (!isRecord(value)
+    || typeof value.id !== 'string'
+    || typeof value.label !== 'string'
+    || !isGraphNodeType(value.type)
+    || !isConfigType(value.configType)) {
+    return false;
+  }
+
+  if (value.url !== undefined && typeof value.url !== 'string') return false;
+  if (value.version !== undefined && typeof value.version !== 'string') return false;
+  if (value.configPath !== undefined && typeof value.configPath !== 'string') return false;
+  if (value.group !== undefined && typeof value.group !== 'string') return false;
+  if (value.size !== undefined && typeof value.size !== 'number') return false;
+  if (value.status !== undefined && !['running', 'stopped', 'unknown'].includes(value.status as string)) return false;
+  if (value.exposedModules !== undefined && !isStringArray(value.exposedModules)) return false;
+  if (value.sharedDependencies !== undefined && !isStringArray(value.sharedDependencies)) return false;
+  return true;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function isGraphNodeType(value: unknown): value is DependencyGraphNode['type'] {
+  return value === 'host'
+    || value === 'remote'
+    || value === 'shared-dependency'
+    || value === 'exposed-module';
+}
+
+function isConfigType(value: unknown): value is DependencyGraphNode['configType'] {
+  return value === 'webpack'
+    || value === 'vite'
+    || value === 'modernjs'
+    || value === 'rsbuild'
+    || value === 'rspack'
+    || value === 'external';
 }

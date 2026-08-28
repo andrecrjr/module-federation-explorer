@@ -8,6 +8,18 @@ import {
   RemoteConfigurationService,
   RootConfigurationStore
 } from '../remoteConfigurationService';
+import type { FileSystemPort, PathPort } from '../app/ports';
+
+const testFileSystem: Pick<FileSystemPort, 'existsSync' | 'statSync'> = {
+  existsSync: () => false,
+  statSync: () => ({ isFile: () => false, isDirectory: () => false })
+};
+
+const testPath: Pick<PathPort, 'isAbsolute' | 'resolve' | 'dirname'> = {
+  isAbsolute: filePath => filePath.startsWith('/'),
+  resolve: (...parts) => parts.join('/').replace(/\/+/g, '/'),
+  dirname: filePath => filePath.slice(0, filePath.lastIndexOf('/')) || '/'
+};
 
 class FakeRootConfigurationStore implements RootConfigurationStore {
   constructor(public config: UnifiedRootConfig | null) {}
@@ -40,6 +52,8 @@ function service(
   return new RemoteConfigurationService({
     rootConfigurationStore: store,
     getRootConfigs: () => rootConfigs,
+    fileSystem: testFileSystem,
+    path: testPath,
     log: () => {},
     logError: () => {}
   });

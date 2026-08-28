@@ -56,21 +56,21 @@ Move the extension toward a feature-first architecture with a thin VS Code compo
 
 ## Phase 5: Isolate runtime and VS Code infrastructure
 
-- [ ] Move `dialogUtils.ts`, `outputChannel.ts`, and the VS Code-specific parts of `terminalManager.ts` under `src/infrastructure/vscode/`.
-- [ ] Move filesystem and Node-specific helpers such as `pathResolver.ts` and `packageManager.ts` under `src/infrastructure/node/`.
-- [ ] Make application workflows depend on ports instead of importing `vscode`, `fs`, or global output channels directly.
-- [ ] Keep terminal lifecycle cleanup and root/remote running state in one runtime service.
-- [ ] Add disposable ownership rules so every watcher, panel, terminal listener, and command is registered with `ExtensionContext.subscriptions`.
+- [x] Move `dialogUtils.ts`, `outputChannel.ts`, and the VS Code-specific parts of `terminalManager.ts` under `src/infrastructure/vscode/`.
+- [x] Move filesystem and Node-specific helpers such as `pathResolver.ts` and `packageManager.ts` under `src/infrastructure/node/`.
+- [x] Make application workflows depend on ports instead of importing `vscode`, `fs`, or global output channels directly.
+- [x] Keep terminal lifecycle cleanup and root/remote running state in one runtime service.
+- [x] Add disposable ownership rules so every watcher, panel, terminal listener, and command is registered with `ExtensionContext.subscriptions`.
 
 ## Phase 6: Isolate graph and webview features
 
-- [ ] Move the graph implementation into `src/features/graph/`.
-- [ ] Keep `GraphGenerator` pure: input configuration snapshot in, graph plus diagnostics out.
-- [ ] Move graph-specific types out of the shared `types.ts` file.
-- [ ] Keep the webview panel coordinator separate from the graph generation algorithm.
-- [ ] Move webview templates and message handlers into `features/graph/webview/`.
-- [ ] Validate and type all webview messages at the boundary.
-- [ ] Preserve tests for directionality, exact remote matching, duplicate names, and shared dependencies.
+- [x] Move the graph implementation into `src/features/graph/`.
+- [x] Keep `GraphGenerator` pure: input configuration snapshot in, graph plus diagnostics out.
+- [x] Move graph-specific types out of the shared `types.ts` file.
+- [x] Keep the webview panel coordinator separate from the graph generation algorithm.
+- [x] Move webview templates and message handlers into `features/graph/webview/`.
+- [x] Validate and type all webview messages at the boundary.
+- [x] Preserve tests for directionality, exact remote matching, duplicate names, and shared dependencies.
 
 ## Phase 7: Onboarding and feedback
 

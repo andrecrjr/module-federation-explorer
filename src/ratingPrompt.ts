@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { log } from './outputChannel';
+import { log } from './infrastructure/vscode/outputChannel';
 
 const RATING_STATE_KEY = 'ratingPrompt.state';
 const EXTENSION_ID = 'acjr.mf-explorer';

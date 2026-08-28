@@ -1,13 +1,17 @@
-import * as fsSync from 'fs';
-import * as path from 'path';
-import * as vscode from 'vscode';
 import { ModuleFederationConfig, Remote, RemotesFolder } from '../../types';
-import { DialogService, PackageManagerDetector } from '../../app/ports';
+import type {
+  DialogService,
+  FileSystemPort,
+  PackageManagerDetector,
+  PathPort
+} from '../../app/ports';
 import { RemoteConfigurationService } from './remoteConfigurationService';
 import { normalizePath } from '../roots/pathUtils';
 
 export interface RemoteWorkflowDependencies {
   workspaceRoot?: string;
+  fileSystem: Pick<FileSystemPort, 'existsSync'>;
+  path: Pick<PathPort, 'dirname' | 'join'>;
   dialogs: DialogService;
   detectPackageManager: PackageManagerDetector;
   getRootConfigs: () => ReadonlyMap<string, ModuleFederationConfig[]>;
@@ -43,14 +47,16 @@ export class RemoteWorkflow {
       if (!selectedOption || Array.isArray(selectedOption)) return;
 
       if (selectedOption.label.includes('Change Project Folder')) {
-        const defaultUri = this.dependencies.workspaceRoot ? vscode.Uri.file(path.dirname(this.dependencies.workspaceRoot)) : undefined;
+        const defaultPath = this.dependencies.workspaceRoot
+          ? this.dependencies.path.dirname(this.dependencies.workspaceRoot)
+          : undefined;
         const newFolder = await this.dependencies.dialogs.showFolderPicker({
           title: `Select New Project Folder for Remote "${remote.name}"`,
           openLabel: `Select "${remote.name}" Project Folder`,
-          defaultUri,
+          defaultPath,
           validateFolder: async (folderPath: string) => {
-            const packageJsonPath = path.join(folderPath, 'package.json');
-            if (!fsSync.existsSync(packageJsonPath)) {
+            const packageJsonPath = this.dependencies.path.join(folderPath, 'package.json');
+            if (!this.dependencies.fileSystem.existsSync(packageJsonPath)) {
               const continueAnyway = await this.dependencies.dialogs.showConfirmation('The selected folder doesn\'t contain a package.json file.', {
                 detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
                 confirmText: 'Continue Anyway', cancelText: 'Select Different Folder'

@@ -1,6 +1,6 @@
 import * as assert from 'assert';
-import { GraphGenerator } from '../../graph/generator';
-import { AppCapability } from '../../graph/types';
+import { GraphGenerator } from '../../features/graph/generator';
+import { AppCapability } from '../../features/graph/types';
 import { ModuleFederationConfig, Remote } from '../../types';
 
 function remote(name: string): Remote {
@@ -95,5 +95,20 @@ suite('GraphGenerator', () => {
 
     assert.strictEqual(result.graph.nodes.filter(node => node.label === 'shell').length, 2);
     assert.strictEqual(new Set(result.graph.nodes.filter(node => node.label === 'shell').map(node => node.id)).size, 2);
+  });
+
+  test('returns diagnostics for invalid configuration snapshots', () => {
+    const generator = new GraphGenerator();
+    const result = generator.generate(new Map([
+      ['/workspace/invalid', [config('')]]
+    ]));
+
+    assert.strictEqual(result.graph.nodes.length, 0);
+    assert.deepStrictEqual(result.diagnostics, [{
+      code: 'missing-config-name',
+      severity: 'warning',
+      message: 'Skipping config without name in /workspace/invalid',
+      rootPath: '/workspace/invalid'
+    }]);
   });
 });

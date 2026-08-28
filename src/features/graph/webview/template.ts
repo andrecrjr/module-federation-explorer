@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { DependencyGraph } from '../../types';
-import { D3GraphData } from '../types';
+import type { DependencyGraph, D3GraphData } from '../types';
 
 /** Serialize JSON safely inside an HTML script element. */
 export function serializeForScript(value: unknown): string {

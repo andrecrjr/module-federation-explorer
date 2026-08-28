@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { DependencyGraph, ModuleFederationConfig } from '../types';
+import type { ModuleFederationConfig } from '../../types';
+import type { DependencyGraph, GraphDiagnostic } from './types';
 import { GraphGenerator } from './generator';
 import { generateWebviewContent } from './webview/template';
 import { WebviewMessageHandler } from './webview/handlers';
@@ -13,10 +14,14 @@ export class DependencyGraphManager {
   private _panel: vscode.WebviewPanel | undefined;
   private readonly generator: GraphGenerator;
   private readonly messageHandler: WebviewMessageHandler;
+  private diagnostics: readonly GraphDiagnostic[] = [];
 
-  constructor(private readonly context: vscode.ExtensionContext) {
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    log: (message: string) => void = () => {}
+  ) {
     this.generator = new GraphGenerator();
-    this.messageHandler = new WebviewMessageHandler(context);
+    this.messageHandler = new WebviewMessageHandler(context, log);
   }
 
   /**
@@ -24,7 +29,13 @@ export class DependencyGraphManager {
    * Delegates to GraphGenerator (six-pass algorithm).
    */
   generateDependencyGraph(configs: Map<string, ModuleFederationConfig[]>): DependencyGraph {
-    return this.generator.generate(configs).graph;
+    const result = this.generator.generate(configs);
+    this.diagnostics = result.diagnostics;
+    return result.graph;
+  }
+
+  getDiagnostics(): readonly GraphDiagnostic[] {
+    return this.diagnostics;
   }
 
   /**
@@ -56,6 +67,7 @@ export class DependencyGraphManager {
           ]
         }
       );
+      this.context.subscriptions.push(this._panel);
 
       this.updateWebviewContent(this._panel.webview, graph);
 

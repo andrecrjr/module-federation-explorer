@@ -2,6 +2,18 @@ import * as assert from 'assert';
 import { ModuleFederationConfig, Remote, UnifiedRootConfig } from '../types';
 import { RemoteConfigurationService } from '../features/remotes/remoteConfigurationService';
 import { findContainingRoot, normalizePath } from '../features/roots/pathUtils';
+import type { FileSystemPort, PathPort } from '../app/ports';
+
+const testFileSystem: Pick<FileSystemPort, 'existsSync' | 'statSync'> = {
+  existsSync: () => false,
+  statSync: () => ({ isFile: () => false, isDirectory: () => false })
+};
+
+const testPath: Pick<PathPort, 'isAbsolute' | 'resolve' | 'dirname'> = {
+  isAbsolute: filePath => filePath.startsWith('/'),
+  resolve: (...parts) => parts.join('/').replace(/\/+/g, '/'),
+  dirname: filePath => filePath.slice(0, filePath.lastIndexOf('/')) || '/'
+};
 
 class MemoryRootConfigStore {
   constructor(public config: UnifiedRootConfig) {}
@@ -68,6 +80,8 @@ suite('Root and remote state boundaries', () => {
     const service = new RemoteConfigurationService({
       rootConfigurationStore: store,
       getRootConfigs: () => discovered,
+      fileSystem: testFileSystem,
+      path: testPath,
       log: () => {},
       logError: () => {}
     });
@@ -97,6 +111,8 @@ suite('Root and remote state boundaries', () => {
     const service = new RemoteConfigurationService({
       rootConfigurationStore: store,
       getRootConfigs: () => discovered,
+      fileSystem: testFileSystem,
+      path: testPath,
       log: () => {},
       logError: () => {}
     });
@@ -111,6 +127,8 @@ suite('Root and remote state boundaries', () => {
     const service = new RemoteConfigurationService({
       rootConfigurationStore: store,
       getRootConfigs: () => new Map(),
+      fileSystem: testFileSystem,
+      path: testPath,
       log: () => {},
       logError: () => {}
     });

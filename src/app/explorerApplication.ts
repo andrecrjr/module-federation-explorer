@@ -1,32 +1,38 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as vscode from 'vscode';
-import { DialogService, ConfigurationLoader, DependencyGraphService, Logger, PackageManagerDetector, RootConfigService, TerminalPort } from './ports';
+import type {
+  ApplicationHostPort,
+  ConfigurationLoader,
+  DependencyGraphService,
+  DialogService,
+  FileSystemPort,
+  Logger,
+  PackageManagerDetector,
+  PathPort,
+  PathResolverPort,
+  RootConfigService,
+  SuccessEvent,
+  TerminalLike,
+  TerminalPort
+} from './ports';
 import { ExplorerStore } from '../features/explorer/explorerStore';
 import { Remote, RemotesFolder, RootFolder, UnifiedRootConfig } from '../types';
-import { DependencyGraphManager } from '../dependencyGraph';
-import { ConfigurationService } from '../configurationService';
-import { DialogUtils } from '../dialogUtils';
-import { detectPackageManagerAndStartCommand } from '../packageManager';
-import { PathResolver } from '../pathResolver';
 import { RemoteConfigurationService } from '../features/remotes/remoteConfigurationService';
 import { RemoteWorkflow } from '../features/remotes/remoteWorkflow';
 import { RootAppController } from '../features/roots/rootAppWorkflow';
-import { RootConfigManager } from '../features/roots/rootConfigManager';
 import { normalizePath } from '../features/roots/pathUtils';
-import { TerminalManager } from '../terminalManager';
-import { outputChannel } from '../outputChannel';
-import { trackSuccessAndPrompt } from '../ratingPrompt';
 
 export interface ExplorerApplicationServices {
   rootConfigManager: RootConfigService;
   configurationService: ConfigurationLoader;
   dependencyGraphManager: DependencyGraphService;
   terminalManager: TerminalPort;
-  pathResolver: PathResolver;
+  pathResolver: PathResolverPort;
   dialogs: DialogService;
   detectPackageManager: PackageManagerDetector;
   logger: Logger;
+  fileSystem: Pick<FileSystemPort, 'existsSync' | 'statSync'>;
+  path: PathPort;
+  host: ApplicationHostPort;
+  trackSuccess: (event: SuccessEvent) => Promise<void>;
 }
 
 /** Coordinates explorer workflows while keeping the tree provider focused on rendering. */
@@ -37,7 +43,6 @@ export class ExplorerApplication {
   private reloadQueued = false;
 
   constructor(
-    private readonly context: vscode.ExtensionContext,
     private readonly workspaceRoot: string | undefined,
     private readonly store: ExplorerStore,
     private readonly services: ExplorerApplicationServices
@@ -46,12 +51,16 @@ export class ExplorerApplication {
       rootConfigurationStore: this.services.rootConfigManager,
       getRootConfigs: () => this.store.getConfigs(),
       workspaceRoot,
+      fileSystem: this.services.fileSystem,
+      path: this.services.path,
       log: message => this.log(message),
       logError: (message, error) => this.logError(message, error)
     });
 
     this.remoteWorkflow = new RemoteWorkflow({
       workspaceRoot,
+      fileSystem: this.services.fileSystem,
+      path: this.services.path,
       dialogs: this.services.dialogs,
       detectPackageManager: this.services.detectPackageManager,
       getRootConfigs: () => this.store.getConfigs(),
@@ -65,6 +74,8 @@ export class ExplorerApplication {
       workspaceRoot,
       rootConfigManager: this.services.rootConfigManager,
       terminalManager: this.services.terminalManager,
+      fileSystem: this.services.fileSystem,
+      path: this.services.path,
       dialogs: this.services.dialogs,
       detectPackageManager: this.services.detectPackageManager,
       getRootConfigs: () => this.store.getConfigs(),
@@ -79,7 +90,7 @@ export class ExplorerApplication {
       },
       removeRootFromMemory: rootPath => {
         this.store.getConfigs().delete(rootPath);
-        void vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', this.store.getConfigs().size > 0);
+        void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
         this.refresh();
       },
       addExternalRemoteToHost: (remotesFolder, targetRootPath) =>
@@ -104,7 +115,7 @@ export class ExplorerApplication {
       return;
     }
 
-    void vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', false);
+    void this.services.host.setContext('moduleFederation.hasRoots', false);
     this.log('No host directories configured yet. Waiting for user to set up configuration.');
   }
 
@@ -160,13 +171,7 @@ export class ExplorerApplication {
 
     this.store.setLoading(true);
     try {
-      await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: 'Module Federation Explorer',
-          cancellable: false
-        },
-        async progress => {
+      await this.services.host.withProgress('Module Federation Explorer', async progress => {
           progress.report({ message: 'Loading configurations...' });
           const rootConfig = await this.services.rootConfigManager.loadRootConfig();
           if (!rootConfig) {
@@ -178,8 +183,8 @@ export class ExplorerApplication {
           if (rootConfig.roots.length === 0) {
             this.store.clear();
             this.log('No Host directories configured. Configure at least one Host directory.');
-            void vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', false);
-            setTimeout(() => {
+            void this.services.host.setContext('moduleFederation.hasRoots', false);
+            this.services.host.schedule(() => {
               void this.services.dialogs.showInfo('No Host directories are configured.', {
                 detail: 'Use the Add Host button in the toolbar to configure your first Host, then add more Hosts.',
                 actions: [
@@ -187,7 +192,7 @@ export class ExplorerApplication {
                   { title: 'Later', isCloseAffordance: true }
                 ]
               }).then(selection => {
-                if (selection === 'Add Host') void vscode.commands.executeCommand('moduleFederation.addRoot');
+                if (selection === 'Add Host') void this.services.host.executeCommand('moduleFederation.addRoot');
               });
             }, 1000);
             return;
@@ -207,15 +212,14 @@ export class ExplorerApplication {
           const hydratedConfigs = await this.remoteConfigurationService.hydrateRemoteConfigurations(this.store.getConfigs());
           this.store.replace(hydratedConfigs);
           await this.updateRootFolders();
-          void vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', this.store.getConfigs().size > 0);
+          void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
           this.log('Finished loading configurations from all roots');
-        }
-      );
+        });
 
       this.services.dependencyGraphManager.refreshDependencyGraph(this.store.getConfigs());
     } catch (error) {
       this.logError('Failed to load Module Federation configurations', error);
-      void vscode.window.showErrorMessage('Failed to load Module Federation configurations. See output panel for details.');
+      void this.services.host.showErrorMessage('Failed to load Module Federation configurations. See output panel for details.');
     } finally {
       this.store.setLoading(false);
       if (this.reloadQueued) {
@@ -242,7 +246,7 @@ export class ExplorerApplication {
       return {
       type: 'rootFolder',
       path: rootPath,
-      name: path.basename(rootPath),
+      name: this.services.path.basename(rootPath),
       configs,
       startCommand: configuredRoot?.startCommand,
       isRunning: this.services.terminalManager.isRootAppRunning(rootPath)
@@ -250,7 +254,7 @@ export class ExplorerApplication {
     });
 
     this.store.setRootFolders(rootFolders);
-    void vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', rootFolders.length > 0);
+    void this.services.host.setContext('moduleFederation.hasRoots', rootFolders.length > 0);
   }
 
   async startRemote(remote: Remote): Promise<void> {
@@ -273,15 +277,15 @@ export class ExplorerApplication {
         );
         if (proceed !== 'Browse for Folder') return;
 
-        const defaultUri = this.workspaceRoot
-          ? vscode.Uri.file(path.dirname(this.workspaceRoot))
+        const defaultPath = this.workspaceRoot
+          ? this.services.path.dirname(this.workspaceRoot)
           : undefined;
         const selectedFolder = await this.services.dialogs.showFolderPicker({
           title: `Select Project Folder for Remote "${remote.name}"`,
           openLabel: `Select "${remote.name}" Project Folder`,
-          defaultUri,
+          defaultPath,
           validateFolder: async folderPath => {
-            if (!fs.existsSync(path.join(folderPath, 'package.json'))) {
+            if (!this.services.fileSystem.existsSync(this.services.path.join(folderPath, 'package.json'))) {
               const continueAnyway = await this.services.dialogs.showConfirmation(
                 'The selected folder doesn\'t contain a package.json file.',
                 {
@@ -307,15 +311,15 @@ export class ExplorerApplication {
         this.refresh();
       } else {
         const resolvedFolderPath = this.resolveRemoteFolderPath(remote);
-        if (!resolvedFolderPath || !fs.existsSync(resolvedFolderPath)) {
+        if (!resolvedFolderPath || !this.services.fileSystem.existsSync(resolvedFolderPath)) {
           const newFolder = await this.services.dialogs.showFolderPicker({
             title: `Select New Project Folder for Remote "${remote.name}"`,
             openLabel: `Select "${remote.name}" Project Folder`,
-            defaultUri: this.workspaceRoot
-              ? vscode.Uri.file(path.dirname(this.workspaceRoot))
+            defaultPath: this.workspaceRoot
+              ? this.services.path.dirname(this.workspaceRoot)
               : undefined,
             validateFolder: async folderPath => {
-              if (!fs.existsSync(path.join(folderPath, 'package.json'))) {
+              if (!this.services.fileSystem.existsSync(this.services.path.join(folderPath, 'package.json'))) {
                 const continueAnyway = await this.services.dialogs.showConfirmation(
                   'The selected folder doesn\'t contain a package.json file.',
                   {
@@ -381,24 +385,21 @@ export class ExplorerApplication {
       const remoteKey = `remote-${remote.name}`;
       const existingTerminal = this.getRunningRemoteTerminal(remoteKey);
       if (existingTerminal) {
-        existingTerminal.show();
+        existingTerminal.show?.();
         await this.services.dialogs.showInfo(`Remote ${remote.name} is already running`);
         return;
       }
 
-      const buildTerminal = vscode.window.createTerminal(`Build: ${remote.name} - Remote`);
-      const startTerminal = vscode.window.createTerminal({
-        name: `Preview: ${remote.name} - Remote`,
-        location: { parentTerminal: buildTerminal }
-      });
-      buildTerminal.show();
-      buildTerminal.sendText(`cd "${folder}" && ${remote.buildCommand}`);
-      startTerminal.show();
-      startTerminal.sendText(`cd "${folder}" && ${remote.startCommand}`);
-      this.services.terminalManager.setRunningRemote(remoteKey, startTerminal, buildTerminal);
+      this.services.terminalManager.startRemote(
+        remoteKey,
+        remote.name,
+        folder,
+        remote.buildCommand!,
+        remote.startCommand!
+      );
       this.refresh();
       await this.services.dialogs.showSuccess(`Started remote ${remote.name}`);
-      await trackSuccessAndPrompt(this.context, 'remote-started');
+      await this.services.trackSuccess('remote-started');
     } catch (error) {
       await this.services.dialogs.showError(`Failed to start remote ${remote.name}`, {
         detail: error instanceof Error ? error.message : String(error)
@@ -435,8 +436,8 @@ export class ExplorerApplication {
     return this.remoteWorkflow.addExternalRemoteToHost(remotesFolder, targetRootPath);
   }
 
-  getRunningRemoteTerminal(remoteKey: string): vscode.Terminal | undefined {
-    return this.services.terminalManager.getRunningRemoteTerminal(remoteKey) as vscode.Terminal | undefined;
+  getRunningRemoteTerminal(remoteKey: string): TerminalLike | undefined {
+    return this.services.terminalManager.getRunningRemoteTerminal(remoteKey);
   }
 
   resolveRemoteFolderPath(remote: Remote): string {
@@ -457,7 +458,7 @@ export class ExplorerApplication {
     }
   }
 
-  handleTerminalClosed(closedTerminal: vscode.Terminal): void {
+  handleTerminalClosed(closedTerminal: TerminalLike): void {
     if (this.services.terminalManager.handleTerminalClosed(closedTerminal)) {
       this.refresh();
     }
@@ -510,22 +511,4 @@ export class ExplorerApplication {
       this.logError('Failed to reorder root folders', error);
     }
   }
-}
-
-export function createDefaultExplorerApplicationServices(
-  context: vscode.ExtensionContext
-): ExplorerApplicationServices {
-  return {
-    rootConfigManager: new RootConfigManager(context),
-    configurationService: new ConfigurationService(),
-    dependencyGraphManager: new DependencyGraphManager(context),
-    terminalManager: new TerminalManager(),
-    pathResolver: new PathResolver(),
-    dialogs: DialogUtils,
-    detectPackageManager: detectPackageManagerAndStartCommand,
-    logger: {
-      log: message => outputChannel.appendLine(message),
-      logError: (message, error) => outputChannel.appendLine(`${message}: ${String(error)}`)
-    }
-  };
 }
