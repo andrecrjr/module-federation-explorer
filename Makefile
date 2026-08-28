@@ -1,4 +1,4 @@
-deploy:
+package:
 	vsce package
 
 # arg command in makefile
