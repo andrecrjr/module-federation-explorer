@@ -7,7 +7,7 @@ import {
 import {
   RemoteConfigurationService,
   RootConfigurationStore
-} from '../remoteConfigurationService';
+} from '../features/remotes/remoteConfigurationService';
 import type { FileSystemPort, PathPort } from '../app/ports';
 
 const testFileSystem: Pick<FileSystemPort, 'existsSync' | 'statSync'> = {

@@ -8,13 +8,15 @@ This file provides context, rules, and architecture guidelines for AI coding age
 
 ## 📂 Project Structure (`src/`)
 Focus code changes or debugging based on these core responsibilities:
-- `index.ts`: Main activation entry point and command registry.
-- `unifiedTreeProvider.ts`: Builds the data and UI for the VS Code tree view explorer.
-- `dependencyGraph.ts`: Renders the D3.js module dependency graph within a VS Code webview.
-- `rootConfigManager.ts`: Handles reading/writing the user's workspace configurations.
-- `configExtractors.ts`: Logic to parse out Module Federation remotes/exposes from configuration files (Webpack, Vite, ModernJS).
-- `dialogUtils.ts`: Handles UI prompts and VS Code input dialogs.
-- `types.ts`: Centralizes TypeScript types and interfaces.
+- `index.ts`: Thin activation entry point.
+- `app/compositionRoot.ts`: Wires application ports, feature workflows, and infrastructure adapters.
+- `features/explorer/`: Builds the data and UI for the VS Code tree view explorer.
+- `features/graph/`: Generates and renders the D3.js module dependency graph in a VS Code webview.
+- `features/roots/`: Handles root configuration workflows and persistence.
+- `parser/` and `extractors/`: Parse Module Federation configuration for supported bundlers.
+- `infrastructure/vscode/`: Handles dialogs, output, terminals, and other VS Code APIs.
+- `infrastructure/node/`: Handles filesystem, path, and package-manager adapters.
+- `types.ts`: Federation and root domain models; feature-specific models live beside their owners.
 
 ## 🛠️ Development Workflow
 - **Compile:** `npm run compile` (Powered by Rspack)
@@ -26,8 +28,8 @@ Focus code changes or debugging based on these core responsibilities:
 ## ✍️ Coding Standards
 1. **TypeScript Conventions:** Write strict TypeScript. Enforce types across the VS Code API boundaries and avoid using `any`.
 2. **VS Code Native UI:** Use native VS Code API (`TreeDataProvider`, `WebviewPanel`, `window.showQuickPick`) wherever possible. Keep the extension visually consistent with VS Code.
-3. **AST & Parsing Safety:** When editing `configExtractors.ts` and using `estraverse`, be mindful of performance and safely handle unparseable or edge-case configuration files.
-4. **Graph Efficiency:** Updates in `dependencyGraph.ts` should ensure that the D3 graph performs well even with highly interconnected enterprise architectures.
+3. **AST & Parsing Safety:** When editing `parser/` or `extractors/` and using `estraverse`, be mindful of performance and safely handle unparseable or edge-case configuration files.
+4. **Graph Efficiency:** Updates in `features/graph/` should ensure that the D3 graph performs well even with highly interconnected enterprise architectures.
 5. **Concise Logic:** Keep code concise. Don't add unnecessary third-party NPM packages, to maintain a fast extension activation time.
 
 ## 🚀 Commits & Releases

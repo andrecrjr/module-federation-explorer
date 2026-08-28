@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { ExplorerStore } from '../features/explorer/explorerStore';
-import { UnifiedModuleFederationProvider } from '../unifiedTreeProvider';
+import { UnifiedModuleFederationProvider } from '../features/explorer/unifiedTreeProvider';
 import { ModuleFederationConfig, RootFolder } from '../types';
 
 function createConfig(): ModuleFederationConfig {

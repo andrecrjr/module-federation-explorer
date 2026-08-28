@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { getRemoteExposedModules, getRootFolderChildren } from '../treeModel';
+import { getRemoteExposedModules, getRootFolderChildren } from '../features/explorer/treeModel';
 import { ModuleFederationConfig, RootFolder } from '../types';
 
 function config(name: string, remotes: string[], exposes: string[]): ModuleFederationConfig {

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { TerminalManager, TerminalLike } from '../terminalManager';
+import { TerminalManager, TerminalLike } from '../infrastructure/vscode/terminalManager';
 
 class FakeTerminal implements TerminalLike {
   constructor(public readonly name: string, public processId: number | undefined) {}

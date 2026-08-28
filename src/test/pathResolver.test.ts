@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { FileSystemAdapter, PathResolver } from '../pathResolver';
+import { FileSystemAdapter, PathResolver } from '../infrastructure/node/pathResolver';
 
 class FakeFileSystem implements FileSystemAdapter {
   constructor(

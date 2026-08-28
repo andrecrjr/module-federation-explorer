@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { detectPackageManagerAndStartCommand } from '../packageManager';
+import { detectPackageManagerAndStartCommand } from '../infrastructure/node/packageManager';
 
 suite('Package manager detection', () => {
   test('uses the project lock file and config type to build the start command', async () => {

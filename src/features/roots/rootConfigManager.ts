@@ -8,8 +8,8 @@ import type {
 } from '../../app/ports';
 import type { UnifiedRootConfig } from '../../types';
 import { migrateLegacyRootConfig, parseRootConfig } from './rootConfigSchema';
-import type { RootConfigRepository } from './rootConfigRepository';
-import { normalizePath } from './pathUtils';
+import type { RootConfigRepository } from '../../infrastructure/node/rootConfigRepository';
+import { normalizePath } from '../../infrastructure/node/pathUtils';
 
 export interface RootConfigManagerDependencies {
   storage: StoragePort;

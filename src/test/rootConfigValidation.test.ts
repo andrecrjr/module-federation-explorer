@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { migrateLegacyRootConfig, parseRootConfig } from '../rootConfigManager';
+import { migrateLegacyRootConfig, parseRootConfig } from '../features/roots/rootConfigSchema';
 
 suite('Root configuration validation', () => {
   test('accepts the supported root configuration shape', () => {

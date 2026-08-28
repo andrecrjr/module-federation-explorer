@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { createTreeItem } from '../treeItemFactory';
+import { createTreeItem } from '../features/explorer/treeItemFactory';
 
 suite('TreeItemFactory', () => {
   test('renders an external remote with external context', () => {

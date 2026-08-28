@@ -18,7 +18,7 @@ import { Remote, RemotesFolder, RootFolder, UnifiedRootConfig } from '../types';
 import { RemoteConfigurationService } from '../features/remotes/remoteConfigurationService';
 import { RemoteWorkflow } from '../features/remotes/remoteWorkflow';
 import { RootAppController } from '../features/roots/rootAppWorkflow';
-import { normalizePath } from '../features/roots/pathUtils';
+import { normalizePath } from '../infrastructure/node/pathUtils';
 
 export interface ExplorerApplicationServices {
   rootConfigManager: RootConfigService;

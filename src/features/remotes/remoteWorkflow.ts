@@ -6,7 +6,7 @@ import type {
   PathPort
 } from '../../app/ports';
 import { RemoteConfigurationService } from './remoteConfigurationService';
-import { normalizePath } from '../roots/pathUtils';
+import { normalizePath } from '../../infrastructure/node/pathUtils';
 
 export interface RemoteWorkflowDependencies {
   workspaceRoot?: string;

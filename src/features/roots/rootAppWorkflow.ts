@@ -7,7 +7,7 @@ import type {
   RootConfigService,
   TerminalPort
 } from '../../app/ports';
-import { normalizePath } from './pathUtils';
+import { normalizePath } from '../../infrastructure/node/pathUtils';
 
 export interface RootAppControllerDependencies {
   workspaceRoot?: string;

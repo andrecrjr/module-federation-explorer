@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { ModuleFederationConfig, Remote, UnifiedRootConfig } from '../types';
 import { RemoteConfigurationService } from '../features/remotes/remoteConfigurationService';
-import { findContainingRoot, normalizePath } from '../features/roots/pathUtils';
+import { findContainingRoot, normalizePath } from '../infrastructure/node/pathUtils';
 import type { FileSystemPort, PathPort } from '../app/ports';
 
 const testFileSystem: Pick<FileSystemPort, 'existsSync' | 'statSync'> = {
