@@ -1,0 +1,5 @@
+{
+  "window.restoreWindows": "none",
+  "workbench.startupEditor": "none",
+  "terminal.integrated.enablePersistentSessions": false
+}

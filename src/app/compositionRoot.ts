@@ -32,7 +32,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Extensi
 }
 
 /** VS Code activation entry point. Business workflows are registered by app modules. */
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(context: vscode.ExtensionContext): Promise<ExtensionComposition> {
   try {
     const { application, provider } = createCompositionRoot(context);
     context.subscriptions.push(provider);
@@ -54,6 +54,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.window.showInformationMessage('Module Federation Explorer is now active!');
     application.log('Extension activated successfully');
+    return { application, provider };
   } catch (error) {
     vscode.window.showErrorMessage(
       `Module Federation Explorer failed to activate: ${error instanceof Error ? error.message : String(error)}`

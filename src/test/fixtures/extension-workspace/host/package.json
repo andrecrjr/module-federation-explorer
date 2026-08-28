@@ -1,0 +1,7 @@
+{
+  "name": "fixture-host",
+  "private": true,
+  "scripts": {
+    "start": "node -e \"process.exit(0)\""
+  }
+}

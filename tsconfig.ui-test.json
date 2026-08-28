@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./out/ui-test",
+    "sourceMap": true,
+    "types": ["node", "mocha"]
+  },
+  "include": [
+    "src/ui-test/**/*.ts"
+  ]
+}

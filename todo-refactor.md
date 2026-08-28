@@ -85,7 +85,7 @@ Move the extension toward a feature-first architecture with a thin VS Code compo
 - [ ] Split `types.ts` into federation, roots, graph, and explorer presentation models.
 - [ ] Avoid a new catch-all `shared/types.ts`; place each type beside its owning feature.
 - [ ] Mirror production folders under `src/test/unit/` and `src/test/integration/`.
-- [ ] Add integration tests for activation, command registration, watchers, and webview message boundaries.
+- [x] Add integration tests for activation, command registration, watchers, and webview message boundaries.
 - [ ] Update `docs/architecture.md` to describe the new boundaries and data flow.
 - [ ] Add a dependency-direction check or documented import rule:
   - [ ] core logic does not import VS Code

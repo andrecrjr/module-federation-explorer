@@ -226,6 +226,13 @@ export function createTreeItem(
       `## Exposed Module: ${element.name}\n\n**Path:** ${element.path}\n\n**From remote:** ${element.remoteName}`
     );
     treeItem.description = element.path;
+    if (element.configSource) {
+      treeItem.command = {
+        command: 'vscode.open',
+        title: 'Open Exposed Module',
+        arguments: [vscode.Uri.file(path.resolve(path.dirname(element.configSource), element.path))]
+      };
+    }
     return treeItem;
   }
 

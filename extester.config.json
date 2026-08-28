@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/vscode-extension-tester/resources/extester.schema.json",
+  "setup": {
+    "vscodeVersion": "latest",
+    "type": "stable",
+    "storage": ".test-resources",
+    "extensionsDir": ".test-extensions"
+  },
+  "run": {
+    "testFiles": ["./out/ui-test/ui-test/configured.test.js"],
+    "resources": ["./src/test/fixtures/ui-configured"],
+    "extensionsDir": ".test-extensions",
+    "settings": "./src/test/fixtures/ui-settings.json"
+  }
+}

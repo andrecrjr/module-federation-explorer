@@ -204,9 +204,24 @@
                     "group": "rootApp@1"
                 },
                 {
+                    "command": "moduleFederation.startRootApp",
+                    "when": "view == moduleFederation && (viewItem == rootFolder || viewItem == configurableRootApp || viewItem == runningRootApp)",
+                    "group": "rootApp@2"
+                },
+                {
+                    "command": "moduleFederation.stopRootApp",
+                    "when": "view == moduleFederation && viewItem == runningRootApp",
+                    "group": "rootApp@3"
+                },
+                {
                     "command": "moduleFederation.addExternalRemote",
                     "when": "view == moduleFederation && viewItem == remotesFolder",
                     "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.addExternalRemote",
+                    "when": "view == moduleFederation && viewItem == remotesFolder",
+                    "group": "remote@1"
                 },
                 {
                     "command": "moduleFederation.startRemote",
@@ -220,9 +235,19 @@
                     "icon": "$(gear)"
                 },
                 {
+                    "command": "moduleFederation.startRemote",
+                    "when": "view == moduleFederation && (viewItem == remote || viewItem == unconfiguredRemote)",
+                    "group": "remote@2"
+                },
+                {
                     "command": "moduleFederation.stopRemote",
                     "when": "view == moduleFederation && viewItem == runningRemote",
                     "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.stopRemote",
+                    "when": "view == moduleFederation && viewItem == runningRemote",
+                    "group": "remote@3"
                 },
                 {
                     "command": "moduleFederation.editCommand",
@@ -234,6 +259,11 @@
                     "command": "moduleFederation.removeExternalRemote",
                     "when": "view == moduleFederation && viewItem == externalRemote",
                     "group": "inline"
+                },
+                {
+                    "command": "moduleFederation.removeExternalRemote",
+                    "when": "view == moduleFederation && viewItem == externalRemote",
+                    "group": "remote@4"
                 }
             ]
         }
@@ -245,8 +275,14 @@
         "package": "rspack --mode production",
         "pretest": "npm run compile:test",
         "compile:test": "tsc -p tsconfig.test.json",
+        "compile:ui": "tsc -p tsconfig.ui-test.json",
         "typecheck": "tsc --noEmit",
         "test": "vscode-test",
+        "test:manual": "npm run compile && npm run compile:test && vscode-test --label manual-flow-integration",
+        "prepare:ui:configured": "node out/ui-test/ui-test/prepareConfiguredFixture.js",
+        "test:ui:configured": "npm run compile && npm run compile:ui && npm run prepare:ui:configured && extest setup-and-run --config extester.config.json",
+        "test:ui:onboarding": "npm run compile && npm run compile:ui && extest setup-and-run --config extester.onboarding.config.json",
+        "test:ui": "npm run compile && npm run compile:ui && npm run prepare:ui:configured && extest setup-and-run --config extester.config.json && extest setup-and-run --config extester.onboarding.config.json",
         "lint": "oxlint src",
         "lint:fix": "oxlint src --fix"
     },
@@ -270,11 +306,14 @@
         "conventional-changelog-conventionalcommits": "^9.2.0",
         "d3": "^7.8.5",
         "estraverse": "^5.3.0",
+        "mocha": "^11.8.0",
         "oxlint": "^1.80.0",
         "semantic-release": "^25.0.3",
         "semantic-release-vsce": "^6.0.24",
+        "selenium-webdriver": "^4.46.0",
         "ts-loader": "^9.5.2",
-        "typescript": "^5.1.3"
+        "typescript": "^5.1.3",
+        "vscode-extension-tester": "^8.24.0"
     },
     "release": {
         "branches": [

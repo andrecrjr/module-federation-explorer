@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { ModuleFederationConfig, RemotesFolder, RootFolder } from '../../types';
 import type { DialogService, PackageManagerDetector, RootConfigService, TerminalPort } from '../../app/ports';
+import { normalizePath } from './pathUtils';
 
 export interface RootAppControllerDependencies {
   workspaceRoot?: string;
@@ -67,6 +68,11 @@ export class RootAppController {
       if (this.dependencies.terminalManager.isRootAppRunning(rootFolder.path)) {
         await this.dependencies.dialogs.showInfo(`Host app is already running: ${rootFolder.name}`);
         return;
+      }
+      if (!rootFolder.startCommand) {
+        const config = await this.dependencies.rootConfigManager.loadRootConfig();
+        const configuredRootPath = Object.keys(config?.rootConfigs || {}).find(candidate => normalizePath(candidate) === normalizePath(rootFolder.path));
+        rootFolder.startCommand = configuredRootPath ? config?.rootConfigs?.[configuredRootPath]?.startCommand : undefined;
       }
       if (!rootFolder.startCommand && !await this.configureRootAppStartCommand(rootFolder)) return;
       const terminal = vscode.window.createTerminal(`MFE App: ${rootFolder.name}`);
@@ -150,7 +156,7 @@ export class RootAppController {
         }
         return;
       }
-      await this.dependencies.addExternalRemoteToHost({ type: 'remotesFolder', parentName: rootFolder.name, remotes: [] }, rootFolder.path);
+      await this.dependencies.addExternalRemoteToHost({ type: 'remotesFolder', parentName: rootFolder.name, parentPath: rootFolder.path, remotes: [] }, rootFolder.path);
     } catch (error) {
       this.dependencies.logError(`Failed to edit commands for ${rootFolder.name}`, error);
     }

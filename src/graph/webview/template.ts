@@ -160,9 +160,9 @@ export function generateWebviewContent(
     <div id="no-data">No Module Federation configurations found to display.</div>
 
     <div class="controls">
-        <button class="control-button" onclick="resetZoom()">Reset View</button>
-        <button class="control-button" onclick="togglePhysics()">Toggle Physics</button>
-        <button class="control-button" onclick="exportGraph()">Export</button>
+        <button id="reset-view" class="control-button" onclick="resetZoom()">Reset View</button>
+        <button id="toggle-physics" class="control-button" onclick="togglePhysics()">Toggle Physics</button>
+        <button id="export-graph" class="control-button" onclick="exportGraph()">Export</button>
     </div>
 
     <div class="legend">
@@ -200,6 +200,7 @@ export function generateWebviewContent(
         let simulation;
         let svg, g, zoom;
         let physicsEnabled = true;
+        const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : undefined;
 
         if (graphRawData.nodes.length === 0) {
             document.getElementById('loading').style.display = 'none';
@@ -241,7 +242,7 @@ export function generateWebviewContent(
             document.getElementById('loading').style.display = 'none';
             const el = document.getElementById('error-message');
             el.textContent = message; el.style.display = 'block';
-            try { acquireVsCodeApi().postMessage({ command: 'error', text: message }); } catch (_) {}
+            try { vscodeApi?.postMessage({ command: 'error', text: message }); } catch (_) {}
         }
 
         function resetZoom() {
@@ -379,7 +380,21 @@ export function generateWebviewContent(
                 function hideTooltip() { d3.select('#tooltip').style('opacity', 0); }
 
                 function nodeClick(event, d) {
-                    try { acquireVsCodeApi().postMessage({ command: 'nodeClick', node: d }); } catch (_) {}
+                    const node = {
+                        id: d.id,
+                        label: d.label,
+                        type: d.type,
+                        configType: d.configType,
+                        url: d.url,
+                        version: d.version,
+                        exposedModules: d.exposedModules,
+                        sharedDependencies: d.sharedDependencies,
+                        configPath: d.configPath,
+                        size: d.size,
+                        group: d.group,
+                        status: d.status
+                    };
+                    try { vscodeApi?.postMessage({ command: 'nodeClick', node }); } catch (_) {}
                 }
 
                 simulation.on('tick', () => {
@@ -395,7 +410,7 @@ export function generateWebviewContent(
                     simulation.alpha(0.3).restart();
                 });
 
-                try { acquireVsCodeApi().postMessage({ command: 'loaded', metadata: ${JSON.stringify(graph.metadata || {})} }); } catch (_) {}
+                try { vscodeApi?.postMessage({ command: 'loaded', metadata: ${JSON.stringify(graph.metadata || {})} }); } catch (_) {}
             } catch (error) { showError("Error initializing graph: " + error.message); }
         }
     </script>

@@ -1,0 +1,7 @@
+{
+  "name": "ui-host",
+  "private": true,
+  "scripts": {
+    "start": "node fixture-process.js host-start"
+  }
+}

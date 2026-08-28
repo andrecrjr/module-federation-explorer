@@ -1,0 +1,8 @@
+{
+  "name": "ui-auth",
+  "private": true,
+  "scripts": {
+    "build": "node ../fixture-process.js remote-build",
+    "start": "node ../fixture-process.js remote-start"
+  }
+}

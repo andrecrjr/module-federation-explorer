@@ -35,6 +35,7 @@ export function getRootFolderChildren(
     children.push({
       type: 'remotesFolder',
       parentName: rootFolder.name,
+      parentPath: rootFolder.path,
       remotes: allRemotes
     });
   }

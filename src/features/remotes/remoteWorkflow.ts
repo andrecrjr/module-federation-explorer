@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { ModuleFederationConfig, Remote, RemotesFolder } from '../../types';
 import { DialogService, PackageManagerDetector } from '../../app/ports';
 import { RemoteConfigurationService } from './remoteConfigurationService';
+import { normalizePath } from '../roots/pathUtils';
 
 export interface RemoteWorkflowDependencies {
   workspaceRoot?: string;
@@ -101,9 +102,14 @@ export class RemoteWorkflow {
     try {
       const remote = await this.promptForExternalRemote();
       if (!remote) return;
-      let targetRootPath = '';
-      for (const [rootPath, configs] of this.dependencies.getRootConfigs()) {
-        if (configs.some(config => config.name === remotesFolder.parentName)) { targetRootPath = rootPath; break; }
+      const rootEntry = remotesFolder.parentPath
+        ? [...this.dependencies.getRootConfigs().entries()].find(([rootPath]) => normalizePath(rootPath) === normalizePath(remotesFolder.parentPath!))
+        : undefined;
+      let targetRootPath = rootEntry?.[0] || '';
+      if (!targetRootPath) {
+        for (const [rootPath, configs] of this.dependencies.getRootConfigs()) {
+          if (configs.some(config => config.name === remotesFolder.parentName)) { targetRootPath = rootPath; break; }
+        }
       }
       if (!targetRootPath) {
         await this.dependencies.dialogs.showError('Failed to find host configuration', { detail: `Could not find configuration for host "${remotesFolder.parentName}"` });
@@ -115,7 +121,7 @@ export class RemoteWorkflow {
       }
       await this.dependencies.remoteConfigurationService.saveExternalRemoteConfiguration(targetRootPath, remote);
       for (const config of this.dependencies.getRootConfigs().get(targetRootPath) || []) {
-        if (config.name === remotesFolder.parentName && !config.remotes.some(candidate => candidate.name === remote.name && candidate.isExternal)) {
+        if (!config.remotes.some(candidate => candidate.name === remote.name && candidate.isExternal)) {
           config.remotes.push({ ...remote });
         }
       }

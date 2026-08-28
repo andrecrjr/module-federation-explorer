@@ -40,6 +40,7 @@ export interface ModuleFederationConfig {
 export interface RemotesFolder {
   type: 'remotesFolder';
   parentName: string;
+  parentPath?: string;
   remotes: Remote[];
 }
 

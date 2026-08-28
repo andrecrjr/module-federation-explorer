@@ -13,6 +13,7 @@ import { RemoteConfigurationService } from '../features/remotes/remoteConfigurat
 import { RemoteWorkflow } from '../features/remotes/remoteWorkflow';
 import { RootAppController } from '../features/roots/rootAppWorkflow';
 import { RootConfigManager } from '../features/roots/rootConfigManager';
+import { normalizePath } from '../features/roots/pathUtils';
 import { TerminalManager } from '../terminalManager';
 import { outputChannel } from '../outputChannel';
 import { trackSuccessAndPrompt } from '../ratingPrompt';
@@ -231,14 +232,22 @@ export class ExplorerApplication {
       return;
     }
 
-    const rootFolders: RootFolder[] = Array.from(this.store.getConfigs().entries()).map(([rootPath, configs]) => ({
+    const rootFolders: RootFolder[] = Array.from(this.store.getConfigs().entries()).map(([rootPath, configs]) => {
+      const configuredRootPath = Object.keys(config.rootConfigs || {}).find(candidate => normalizePath(candidate) === normalizePath(rootPath));
+      const configuredRoot = configuredRootPath
+        ? config.rootConfigs?.[configuredRootPath]
+        : Object.keys(config.rootConfigs || {}).length === 1
+          ? Object.values(config.rootConfigs || {})[0]
+          : undefined;
+      return {
       type: 'rootFolder',
       path: rootPath,
       name: path.basename(rootPath),
       configs,
-      startCommand: config.rootConfigs?.[rootPath]?.startCommand,
+      startCommand: configuredRoot?.startCommand,
       isRunning: this.services.terminalManager.isRootAppRunning(rootPath)
-    }));
+      };
+    });
 
     this.store.setRootFolders(rootFolders);
     void vscode.commands.executeCommand('setContext', 'moduleFederation.hasRoots', rootFolders.length > 0);

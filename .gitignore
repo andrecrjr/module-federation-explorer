@@ -10,6 +10,11 @@ yarn.lock
 out/
 dist/
 .vscode-test/
+.test-resources/
+.test-extensions/
+reports/
+src/test/fixtures/ui-*/.vscode/mf-explorer.roots.json
+src/test/fixtures/ui-*/**/.ui-*.started
 graphify-out/
 *.vsix
 *.log

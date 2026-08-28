@@ -1,0 +1,43 @@
+name: Continuous Integration
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run unit and integration tests
+        run: xvfb-run -a npm test
+
+      - name: Run desktop UI tests
+        run: xvfb-run -a npm run test:ui
+
+      - name: Upload desktop test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-desktop-test-artifacts
+          path: |
+            .test-resources/screenshots
+            .test-resources/*.log
+          if-no-files-found: ignore
