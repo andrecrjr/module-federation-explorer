@@ -8,7 +8,7 @@
   },
   "run": {
     "testFiles": ["./out/ui-test/ui-test/onboarding.test.js"],
-    "resources": ["./src/test/fixtures/ui-onboarding"],
+    "resources": [],
     "vscodeVersion": "1.135.0",
     "storage": ".test-resources/onboarding",
     "extensionsDir": ".test-extensions/onboarding",

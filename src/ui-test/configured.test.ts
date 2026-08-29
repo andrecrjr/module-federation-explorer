@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { beforeEach, afterEach, suite, suiteSetup, suiteTeardown, test } from 'mocha';
 import { By, WebElement } from 'selenium-webdriver';
-import { InputBox, ModalDialog, WebView, Workbench } from 'vscode-extension-tester';
+import { InputBox, ModalDialog, VSBrowser, WebView, Workbench } from 'vscode-extension-tester';
 import {
   clickWhenReady,
   clickTreeItemAction,
@@ -47,6 +47,7 @@ suite('Desktop UI smoke tests', function (this: Mocha.Suite) {
     const rootPath = path.join(workspacePath, 'host');
     const rootConfigPath = path.join(workspacePath, '.vscode', 'mf-explorer.roots.json');
     state = { workspacePath, rootPath, rootConfigPath };
+    await VSBrowser.instance.openResources(workspacePath);
   });
 
   beforeEach(async function (this: Mocha.Context) {

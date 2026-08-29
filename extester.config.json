@@ -8,7 +8,7 @@
   },
   "run": {
     "testFiles": ["./out/ui-test/ui-test/configured.test.js"],
-    "resources": ["./src/test/fixtures/ui-configured"],
+    "resources": [],
     "vscodeVersion": "1.135.0",
     "storage": ".test-resources/configured",
     "extensionsDir": ".test-extensions/configured",

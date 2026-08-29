@@ -1,13 +1,18 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { afterEach, suite, test } from 'mocha';
+import { afterEach, suite, suiteSetup, test } from 'mocha';
 import { By } from 'selenium-webdriver';
-import { EditorView, WebView, Workbench } from 'vscode-extension-tester';
+import { EditorView, VSBrowser, WebView, Workbench } from 'vscode-extension-tester';
 import { clickWhenReady, closeEditorsAndTerminals, dismissNotifications, findNotification, getFixtureWorkspacePath, waitFor } from './testUtils';
 
 suite('Desktop onboarding UI smoke test', function (this: Mocha.Suite) {
   this.timeout(120000);
+
+  suiteSetup(async function (this: Mocha.Context) {
+    this.timeout(120000);
+    await VSBrowser.instance.openResources(getFixtureWorkspacePath('ui-onboarding'));
+  });
 
   afterEach(async function (this: Mocha.Context) {
     this.timeout(30000);
