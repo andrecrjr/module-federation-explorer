@@ -1,126 +1,120 @@
-# Module Federation Explorer Refactor TODO
+# Architecture refactor status
+
+This document records completed refactor work and remaining architectural follow-ups. [`docs/architecture.md`](docs/architecture.md) is the source of truth for the current layout; target designs below are not current source layout unless marked complete.
 
 ## Goal
 
-Move the extension toward a feature-first architecture with a thin VS Code composition layer, while preserving current behavior and keeping the core federation and graph logic testable without VS Code.
+Move the extension toward feature-first architecture with a thin VS Code composition layer, while preserving behavior and keeping federation and graph logic testable without VS Code.
 
-## Phase 1: Establish boundaries
+## Completed phases
 
-- [x] Add `src/app/compositionRoot.ts` to create and wire the extension services.
-- [x] Keep `src/extension.ts` (or `src/index.ts`) limited to activation and composition.
-- [x] Extract command registration into `src/app/registerCommands.ts` and feature-specific command modules.
+### Phase 1: Establish boundaries
+
+- [x] Add `src/app/compositionRoot.ts` for service creation and wiring.
+- [x] Keep `src/index.ts` limited to the extension entry-point re-export.
+- [x] Extract command registration into `src/app/registerCommands.ts` and feature command modules.
 - [x] Extract file watcher registration into `src/app/registerWatchers.ts`.
 - [x] Keep lifecycle setup in `src/app/lifecycle.ts`.
-- [x] Define small ports/interfaces for dialogs, logging, filesystem access, terminals, and workspace file discovery.
-- [x] Replace the broad `providerDependencies.ts` dependency bag with feature-specific dependency interfaces.
+- [x] Define ports for dialogs, logging, filesystem access, terminals, storage, and discovery.
+- [x] Replace the broad provider dependency bag with feature-specific dependency interfaces.
 
-## Phase 2: Refactor the Explorer tree
+### Phase 2: Refactor the explorer tree
 
-- [x] Move `unifiedTreeProvider.ts`, `treeModel.ts`, and `treeItemFactory.ts` into `src/features/explorer/`.
-- [x] Create an `ExplorerStore` or `ExplorerState` that owns the loaded configuration snapshot.
-- [x] Make `UnifiedModuleFederationProvider` only implement `TreeDataProvider` and drag/drop behavior.
-- [x] Remove application workflows and persistence responsibilities from the tree provider.
-- [x] Move root, remote, graph, and terminal command handlers out of the provider facade.
-- [x] Preserve and extend the existing tree model and tree item tests.
+- [x] Move tree code into `src/features/explorer/`.
+- [x] Add `ExplorerStore` for loaded configuration and presentation state.
+- [x] Keep `UnifiedModuleFederationProvider` focused on tree rendering and drag/drop.
+- [x] Remove workflow and persistence ownership from the provider.
+- [x] Move root, remote, graph, and terminal command handling behind the application façade.
+- [x] Preserve tree model, factory, and provider tests.
 
-## Phase 3: Unify federation discovery and parsing
+### Phase 3: Unify federation discovery and parsing
 
-- [x] Merge the duplicated discovery logic in `workspaceScanner.ts` and `ConfigurationService`.
-- [x] Create one shared config-file definition registry for Webpack, Vite, Modern.js, RSBuild, and Rspack.
-- [x] Split `configExtractors.ts` into:
-  - [x] `parser/parseConfigFile.ts`
-  - [x] `parser/astUtils.ts`
-  - [x] `parser/expressionResolver.ts`
-  - [x] `extractors/webpack.ts`
-  - [x] `extractors/vite.ts`
-  - [x] `extractors/modernjs.ts`
-  - [x] `extractors/rsbuild.ts`
+- [x] Use one registry/discovery pipeline for normal loading and onboarding.
+- [x] Support Webpack, Vite, Modern.js, Rsbuild, and Rspack through one registry.
+- [x] Split parser utilities and bundler extractors into focused modules.
 - [x] Keep parser and extractor modules free of VS Code UI calls.
-- [x] Replace parser `any` usage with typed AST nodes or `unknown` plus type guards.
-- [x] Return structured parse diagnostics instead of logging from low-level parsing code.
-- [x] Add fixtures and unit tests for each supported bundler configuration shape.
+- [x] Replace parser `any` usage with typed AST nodes, `unknown`, and type guards.
+- [x] Return structured parse diagnostics.
+- [x] Add fixtures and tests for supported bundler shapes and dynamic values.
 
-## Phase 4: Separate root and remote configuration
+### Phase 4: Separate root and remote configuration
 
-- [x] Split `rootConfigManager.ts` into:
-  - [x] pure schema validation and legacy migration
-  - [x] JSON file repository
-  - [x] user-facing configuration workflow
-- [x] Move root configuration code into `src/features/roots/`.
-- [x] Move `rootAppController.ts` into a root-app workflow module.
-- [x] Move `remoteConfigurationService.ts` and `remoteWorkflow.ts` into `src/features/remotes/`.
-- [x] Keep persisted remote settings separate from discovered federation configuration.
-- [x] Replace provider-owned mutable `Map` access with an explicit snapshot/hydration step.
-- [x] Ensure path matching uses normalized paths and does not rely on unsafe string-prefix matching.
-- [x] Add tests for multiple roots, duplicate remote names, missing folders, and external remotes.
+- [x] Split root schema validation/migration, JSON persistence, and user workflow.
+- [x] Move root code into `src/features/roots/`.
+- [x] Move host workflow into `rootAppWorkflow.ts`.
+- [x] Move remote persistence and UI workflow into `src/features/remotes/`.
+- [x] Keep persisted settings separate from freshly discovered federation data.
+- [x] Hydrate cloned snapshots instead of treating persisted settings as source config.
+- [x] Normalize path matching and avoid unsafe string-prefix matching.
+- [x] Cover multiple roots, duplicate names, missing folders, malformed config, and external remotes.
 
-## Phase 5: Isolate runtime and VS Code infrastructure
+### Phase 5: Isolate runtime and VS Code infrastructure
 
-- [x] Move `dialogUtils.ts`, `outputChannel.ts`, and the VS Code-specific parts of `terminalManager.ts` under `src/infrastructure/vscode/`.
-- [x] Move filesystem and Node-specific helpers such as `pathResolver.ts` and `packageManager.ts` under `src/infrastructure/node/`.
-- [x] Make application workflows depend on ports instead of importing `vscode`, `fs`, or global output channels directly.
-- [x] Keep terminal lifecycle cleanup and root/remote running state in one runtime service.
-- [x] Add disposable ownership rules so every watcher, panel, terminal listener, and command is registered with `ExtensionContext.subscriptions`.
+- [x] Move dialogs, output, and VS Code terminal implementation under `src/infrastructure/vscode/`.
+- [x] Move Node filesystem/path/package-manager helpers under `src/infrastructure/node/`.
+- [x] Make application workflows consume ports instead of direct Node/VS Code globals.
+- [x] Keep terminal lifecycle cleanup and running state in `TerminalManager`.
+- [x] Register watchers, panels, timers, commands, and listeners with extension disposal ownership.
 
-## Phase 6: Isolate graph and webview features
+### Phase 6: Isolate graph and webview features
 
-- [x] Move the graph implementation into `src/features/graph/`.
-- [x] Keep `GraphGenerator` pure: input configuration snapshot in, graph plus diagnostics out.
-- [x] Move graph-specific types out of the shared `types.ts` file.
-- [x] Keep the webview panel coordinator separate from the graph generation algorithm.
-- [x] Move webview templates and message handlers into `features/graph/webview/`.
-- [x] Validate and type all webview messages at the boundary.
-- [x] Preserve tests for directionality, exact remote matching, duplicate names, and shared dependencies.
+- [x] Move graph code into `src/features/graph/`.
+- [x] Keep `GraphGenerator` pure: config snapshot in, graph plus diagnostics out.
+- [x] Move graph-specific types beside the graph feature.
+- [x] Separate graph generation, webview coordination, templates, and message handling.
+- [x] Validate webview messages at the boundary.
+- [x] Preserve tests for directionality, exact remote matching, duplicate names, self-references, and shared dependencies.
 
-## Phase 7: Onboarding and feedback
+## Remaining work
+
+### Phase 7: Onboarding and feedback
 
 - [ ] Move onboarding into `src/features/onboarding/`.
-- [ ] Split the onboarding controller/message handling from the HTML template.
-- [ ] Reuse the unified federation discovery pipeline for onboarding.
+- [ ] Split onboarding controller/message handling from its HTML template.
+- [x] Reuse the unified federation discovery pipeline for onboarding detection.
 - [ ] Move rating and marketplace behavior into `src/features/feedback/`.
-- [ ] Avoid direct business-state mutation from webview message handlers; call application workflows instead.
+- [ ] Keep webview handlers declarative; route all business-state changes through application workflows.
 
-## Phase 8: Models, tests, and documentation
+### Phase 8: Models, tests, and documentation
 
-- [ ] Split `types.ts` into federation, roots, graph, and explorer presentation models.
-- [ ] Avoid a new catch-all `shared/types.ts`; place each type beside its owning feature.
-- [ ] Mirror production folders under `src/test/unit/` and `src/test/integration/`.
-- [x] Add integration tests for activation, command registration, watchers, and webview message boundaries.
-- [ ] Update `docs/architecture.md` to describe the new boundaries and data flow.
-- [ ] Add a dependency-direction check or documented import rule:
-  - [ ] core logic does not import VS Code
-  - [ ] features depend on core and ports
-  - [ ] infrastructure implements ports
-  - [ ] activation wires dependencies but contains no business logic
+- [ ] Split `src/types.ts` into federation, roots, and explorer presentation models without creating a catch-all shared types folder.
+- [ ] Mirror production areas under explicit `src/test/unit/` and `src/test/integration/` trees.
+- [x] Add integration coverage for activation, command registration, watchers, manual flows, and webview boundaries.
+- [x] Update architecture, README, agent, and backlog documentation for the current layout.
+- [x] Document dependency direction and import ownership rules.
+- [ ] Add automated dependency-direction enforcement beyond current boundary tests.
 
-## Suggested target layout
+## Current source layout
 
 ```text
 src/
-├── extension.ts
-├── app/
-├── core/
-│   ├── federation/
-│   ├── graph/
-│   └── roots/
+├── index.ts
+├── app/                 composition, application façade, ports, commands, lifecycle
+├── federation/         supported file registry and discovery
+├── parser/              AST parsing and expression handling
+├── extractors/          Webpack, Vite, Modern.js, Rsbuild extraction
 ├── features/
-│   ├── explorer/
-│   ├── roots/
-│   ├── remotes/
-│   ├── graph/
-│   ├── onboarding/
-│   └── feedback/
+│   ├── explorer/        store and tree UI
+│   ├── roots/           root settings and host workflow
+│   ├── remotes/         remote settings and workflow
+│   └── graph/           graph generation and webview
 ├── infrastructure/
-│   ├── vscode/
-│   └── node/
-└── test/
+│   ├── node/            filesystem, paths, package manager, JSON repository
+│   └── vscode/          dialogs, output, terminals
+├── types.ts             federation and root models
+├── configurationService.ts
+├── workspaceScanner.ts  onboarding adapter over shared discovery
+├── onboarding.ts        transitional onboarding webview
+└── ratingPrompt.ts      transitional feedback state
 ```
 
 ## Definition of done
 
-- [x] Activation file is small and only composes the extension.
-- [x] No feature workflow is implemented inside the tree provider.
-- [x] Configuration discovery has one pipeline and one source of supported file patterns.
-- [x] Core graph/parsing logic can be tested without launching VS Code.
-- [x] Persisted configuration and runtime/discovered state are separate models.
-- [x] `npm run typecheck`, `npm run lint`, `npm run compile`, and `npm test` pass.
+- Activation remains a composition boundary, not a workflow implementation.
+- Tree provider remains a rendering/drag-drop adapter.
+- Supported config patterns have one registry and one discovery pipeline.
+- Parser, extractors, graph generation, schema validation, and path rules stay testable without VS Code.
+- Persisted settings, discovered state, UI snapshot state, and terminal state remain separate.
+- New commands and webview messages are typed and validated at their boundaries.
+- `npm run typecheck`, `npm run lint`, `npm run compile`, and `npm run test:headless` pass for source changes.
+- Documentation matches source behavior and links to the relevant tests.

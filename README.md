@@ -4,177 +4,183 @@
 <img src="./media/mfe-explorer-logo-big.png" alt="Module Federation Explorer Logo" width="450"/>
 </div>
 
-The **Module Federation Explorer** is a Visual Studio Code extension designed for **local development** that helps you explore, manage, and orchestrate Module Federation applications directly from your workspace. With integrated terminal support, you can start, stop, and monitor your micro-frontends without leaving your editor.
-
+Module Federation Explorer is a Visual Studio Code extension for local development. It discovers Module Federation configurations, presents hosts and remotes in a tree, opens an interactive dependency graph, and manages host/remote development processes in integrated terminals.
 
 [![DeepWiki](https://img.shields.io/badge/DeepWiki-andrecrjr%2Fmodule--federation--explorer-blue.svg?logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAyCAYAAAAnWDnqAAAAAXNSR0IArs4c6QAAA05JREFUaEPtmUtyEzEQhtWTQyQLHNak2AB7ZnyXZMEjXMGeK/AIi+QuHrMnbChYY7MIh8g01fJoopFb0uhhEqqcbWTp06/uv1saEDv4O3n3dV60RfP947Mm9/SQc0ICFQgzfc4CYZoTPAswgSJCCUJUnAAoRHOAUOcATwbmVLWdGoH//PB8mnKqScAhsD0kYP3j/Yt5LPQe2KvcXmGvRHcDnpxfL2zOYJ1mFwrryWTz0advv1Ut4CJgf5uhDuDj5eUcAUoahrdY/56ebRWeraTjMt/00Sh3UDtjgHtQNHwcRGOC98BJEAEymycmYcWwOprTgcB6VZ5JK5TAJ+fXGLBm3FDAmn6oPPjR4rKCAoJCal2eAiQp2x0vxTPB3ALO2CRkwmDy5WohzBDwSEFKRwPbknEggCPB/imwrycgxX2NzoMCHhPkDwqYMr9tRcP5qNrMZHkVnOjRMWwLCcr8ohBVb1OMjxLwGCvjTikrsBOiA6fNyCrm8V1rP93iVPpwaE+gO0SsWmPiXB+jikdf6SizrT5qKasx5j8ABbHpFTx+vFXp9EnYQmLx02h1QTTrl6eDqxLnGjporxl3NL3agEvXdT0WmEost648sQOYAeJS9Q7bfUVoMGnjo4AZdUMQku50McDcMWcBPvr0SzbTAFDfvJqwLzgxwATnCgnp4wDl6Aa+Ax283gghmj+vj7feE2KBBRMW3FzOpLOADl0Isb5587h/U4gGvkt5v60Z1VLG8BhYjbzRwyQZemwAd6cCR5/XFWLYZRIMpX39AR0tjaGGiGzLVyhse5C9RKC6ai42ppWPKiBagOvaYk8lO7DajerabOZP46Lby5wKjw1HCRx7p9sVMOWGzb/vA1hwiWc6jm3MvQDTogQkiqIhJV0nBQBTU+3okKCFDy9WwferkHjtxib7t3xIUQtHxnIwtx4mpg26/HfwVNVDb4oI9RHmx5WGelRVlrtiw43zboCLaxv46AZeB3IlTkwouebTr1y2NjSpHz68WNFjHvupy3q8TFn3Hos2IAk4Ju5dCo8B3wP7VPr/FGaKiG+T+v+TQqIrOqMTL1VdWV1DdmcbO8KXBz6esmYWYKPwDL5b5FA1a0hwapHiom0r/cKaoqr+27/XcrS5UwSMbQAAAABJRU5ErkJggg==)](https://deepwiki.com/andrecrjr/module-federation-explorer)
 
-## 🚀 Key Highlights
+## What it provides
 
-- **Local Development First**: Built specifically for local development workflows
-- **Terminal Integration**: Execute commands directly in VS Code's integrated terminal
-- **Multi-Platform Support**: Works with Webpack, Vite, and ModernJS Module Federation setups
-- **Zero Configuration**: Automatically detects your Module Federation configurations
-- **Visual Management**: Tree view interface for easy navigation and control
+- **Workspace discovery**: scan configured folders for supported Module Federation configuration files.
+- **Tree exploration**: browse remotes and exposed modules, then open exposed-module source files.
+- **Dependency graph**: inspect host/remote consumption, exposed modules, external remotes, and shared dependencies.
+- **Terminal orchestration**: start and stop host applications and remotes in VS Code terminals.
+- **Persisted workspace settings**: keep root folders, remote folders, and commands in a JSON configuration file.
+- **Onboarding**: detect candidate projects and guide first-time root configuration.
 
-## 📋 Prerequisites
+## Requirements
 
-- Visual Studio Code version 1.80.0 or higher
-- Node.js and a package manager (npm, yarn, or pnpm)
-- A local workspace with Module Federation configuration
+- Visual Studio Code 1.80 or newer.
+- Node.js and a package manager (`npm`, `pnpm`, or `yarn`) for projects managed by the extension.
+- A workspace containing Module Federation configuration files.
 
-## 🛠️ Installation
+Node.js 22 is used for repository development and CI. The extension itself runs inside the VS Code extension host.
 
-1. Open Visual Studio Code
-2. Go to the Extensions Marketplace (`Ctrl+Shift+X` or `Cmd+Shift+X` on macOS)
-3. Search for "Module Federation Explorer"
-4. Click "Install"
+## Quick start
 
-## 🎯 Getting Started
+1. Install **Module Federation Explorer** from the VS Code Marketplace.
+2. Open a workspace containing one or more federation projects.
+3. Open the **Module Federation Explorer** view in the Explorer sidebar.
+4. Choose **Change Configuration File** if you want a configuration file other than the default `.vscode/mf-explorer.roots.json`.
+5. Add one or more host folders with **Add New Host Folder**.
+6. Expand a host to inspect remotes and exposed modules. Use the context actions to configure or start applications.
+7. Use **Show Dependency Graph** from the view toolbar to inspect relationships.
 
-### 1. Automatic Activation
-The extension automatically activates when it detects any of these files in your workspace:
-- `webpack.config.js` or `webpack.config.ts`
-- `vite.config.js` or `vite.config.ts`
-- `module-federation.config.js` or `module-federation.config.ts`
-- `.vscode/mf-explorer.roots.json`
+The extension activates when VS Code finds a supported federation configuration or `.vscode/mf-explorer.roots.json`. Activation does not add every detected project automatically: roots are selected by the user or through onboarding.
 
-### 2. Initial Configuration
-Before adding hosts, set up your configuration:
-- Click the gear icon in the Module Federation Explorer view, or
-- Use Command Palette (`Ctrl/Cmd + Shift + P`) → `Module Federation: Change Configuration File`
+## Supported configuration files
 
-### 3. Access the Explorer
-Find the "Module Federation Explorer" view in your VS Code sidebar to start managing your micro-frontends.
+Discovery uses static AST analysis. It reads configuration source without executing project code.
 
-## ✨ Features
+| Configuration type | Files | Recognized shape |
+| --- | --- | --- |
+| Webpack | `webpack.config.js`, `webpack.config.ts` | `new ModuleFederationPlugin({ ... })` |
+| Rspack | `rspack.config.js`, `rspack.config.ts` | `new ModuleFederationPlugin({ ... })`, using the Rspack config type |
+| Vite | `vite.config.js`, `vite.config.ts` | Federation plugin in the exported config |
+| Rsbuild | `rsbuild.config.js`, `rsbuild.config.ts` | `moduleFederation.options` or a federation plugin |
+| Modern.js | `module-federation.config.js`, `module-federation.config.ts`, `modern.config.js`, `modern.config.ts` | `createModuleFederationConfig({ ... })` |
 
-### 🏠 Host Application Management
-- **Add/Remove Hosts**: Manage multiple host applications in your workspace
-- **Custom Start Commands**: Configure specific startup commands for each host
-- **Terminal Execution**: All commands run in VS Code's integrated terminal
-- **Status Monitoring**: Visual indicators show which applications are running
+The shared extractor reads `name`, `remotes`, `exposes`, and `shared` values. Literal values are preserved. Dynamic values are represented with placeholders such as `[ENV: env.REMOTE_URL]`, `[VAR: REMOTE_URL]`, or `[DYNAMIC_URL]`; the extension never evaluates them.
 
-### 🔗 Remote Application Control
-- **Start/Stop Remotes**: Control remote applications with a single click
-- **Custom Build Commands**: Configure build and start commands per remote
-- **Package Manager Detection**: Automatically detects npm, yarn, or pnpm
-- **Real-time Status**: See which remotes are currently running
+Malformed files produce parse diagnostics and do not prevent other configured roots from loading. Overlapping discovery matches are de-duplicated, and `node_modules` is excluded.
 
-### ⚙️ Configuration Management
-- **Auto-Detection**: Automatically finds and parses configuration files
-- **Multi-Framework Support**: Webpack, Vite, and ModernJS configurations
-- **Persistent Settings**: Stores configuration in `.vscode/mf-explorer.roots.json`
-- **File Watching**: Real-time updates when configurations change
+## Root configuration
 
-### 🧭 Navigation & Discovery
-- **Module Explorer**: Browse exposed modules from each remote
-- **Direct File Access**: Click to open module source files
-- **Dependency Visualization**: Interactive graph showing host-remote relationships
-- **Quick Navigation**: Jump between related files and configurations
+The default file is `.vscode/mf-explorer.roots.json` in the first workspace folder. A different JSON file can be selected from the command palette. Root paths are stored as absolute, normalized paths.
 
-## 📖 Usage Guide
+Minimal configuration:
 
-### Managing Hosts
-1. **Add Host**: Click the "+" button in the explorer view
-2. **Configure**: Right-click on any host to:
-   - Start/stop the application (runs in terminal)
-   - Modify start commands
-   - Remove from workspace
+```json
+{
+  "roots": ["/workspace/host"]
+}
+```
 
-### Controlling Remotes
-1. **Start/Stop**: Right-click on any remote for quick actions
-2. **Configure**: Set custom build and start commands
-3. **Monitor**: Visual status indicators show running state
-4. **Navigate**: Click on exposed modules to view source code
+Optional per-root settings store host commands and remote overrides:
 
-### Terminal Integration
-All operations execute in VS Code's integrated terminal, giving you:
-- Full visibility of command output
-- Ability to interact with running processes
-- Standard terminal features (scrollback, search, etc.)
-- Multiple terminal sessions for concurrent operations
+```json
+{
+  "roots": ["/workspace/host"],
+  "rootConfigs": {
+    "/workspace/host": {
+      "startCommand": "pnpm run dev",
+      "remotes": {
+        "auth": {
+          "name": "auth",
+          "folder": "../auth",
+          "packageManager": "pnpm",
+          "configType": "vite",
+          "buildCommand": "pnpm run build",
+          "startCommand": "pnpm run preview"
+        }
+      },
+      "externalRemotes": {
+        "catalog": {
+          "name": "catalog",
+          "url": "https://example.test/catalog/remoteEntry.js",
+          "configType": "external",
+          "isExternal": true
+        }
+      }
+    }
+  }
+}
+```
 
-## 🎮 Available Commands
+Discovered federation data and saved user settings are separate. On reload, saved remote folders and commands are overlaid onto a fresh discovery result. External remotes exist only in the saved root configuration and are added to the in-memory snapshot during hydration.
 
-Access these via Command Palette (`Ctrl/Cmd + Shift + P`):
+## Common workflows
 
-| Command | Description |
-|---------|-------------|
-| `Module Federation: Refresh` | Refresh the explorer view |
-| `Module Federation: Add New Host Folder` | Add a new host application |
-| `Module Federation: Remove Host Folder` | Remove a host from workspace |
-| `Module Federation: Change Configuration File` | Update configuration settings |
-| `Module Federation: Start Host App` | Start the host application |
-| `Module Federation: Stop Host App` | Stop the host application |
-| `Module Federation: Configure Root App` | Configure host settings |
-| `Module Federation: Show Dependency Graph` | Visualize architecture |
-| `Module Federation: Start Remote` | Start a remote application |
-| `Module Federation: Stop Remote` | Stop a remote application |
-| `Module Federation: Show Welcome` | Display welcome guide |
-| `Module Federation: Open View` | Open the explorer view |
-| `Module Federation: Focus View` | Focus on the explorer |
+### Hosts
 
-## 🔧 Supported Configurations
+- Add or remove root folders from the explorer toolbar or context menu.
+- Configure a host start command; the extension suggests a command from the detected lockfile and bundler conventions.
+- Start or stop a host application in one integrated terminal.
+- Drag root folders to change their persisted order.
 
-The extension automatically detects and works with:
+### Remotes
 
-- **Webpack**: `webpack.config.js`, `webpack.config.ts`
-- **Vite**: `vite.config.js`, `vite.config.ts`
-- **ModernJS**: `module-federation.config.js`, `module-federation.config.ts`
+- Start a configured remote. The extension opens one build terminal and one preview/start terminal.
+- Configure the remote project folder, build command, or preview command when values are missing or outdated.
+- Stop a running remote from the tree.
+- Add an external remote by name and URL. External remotes are persisted under their owning host and are not parsed from a local project.
 
-Both JavaScript and TypeScript configuration files are supported.
+### Graph
 
-## 💡 Tips for Local Development
+The graph displays:
 
-- **Multiple Terminals**: The extension creates separate terminal sessions for each application
-- **Port Management**: Ensure your hosts and remotes use different ports
-- **Hot Reload**: Changes to configurations are automatically detected
-- **Dependency Tracking**: Use the dependency graph to understand your architecture
+- host and workspace-remote applications;
+- external remotes that have no matching workspace configuration;
+- exposed-module nodes and `exposes` edges;
+- shared-dependency nodes when a dependency is shared by more than one application;
+- `consumes` edges, including bidirectional relationships.
 
-## 🧪 Testing
+Click a workspace application node to view details or open its configuration file. The graph panel uses the bundled `media/d3.min.js` first and has CDN fallbacks.
 
-Run the core checks and tests with:
+### Live updates and lifecycle
+
+The extension watches supported federation config files and `.vscode/mf-explorer.roots.json`. Changes are debounced for 500 ms before reloading. Terminal state is cleared on activation, updated when terminals close, and cleaned periodically so stale running indicators disappear.
+
+## Commands
+
+Command IDs are grouped by feature:
+
+| Feature | Command IDs |
+| --- | --- |
+| Explorer | `moduleFederation.refresh`, `moduleFederation.reveal`, `moduleFederation.openView`, `moduleFederation.focus`, `moduleFederation.showWelcome` |
+| Roots | `moduleFederation.addRoot`, `moduleFederation.removeRoot`, `moduleFederation.changeConfigFile`, `moduleFederation.configureRootApp`, `moduleFederation.editRootAppCommand`, `moduleFederation.startRootApp`, `moduleFederation.stopRootApp` |
+| Remotes | `moduleFederation.startRemote`, `moduleFederation.stopRemote`, `moduleFederation.editCommand`, `moduleFederation.addExternalRemote`, `moduleFederation.removeExternalRemote` |
+| Graph/runtime | `moduleFederation.showDependencyGraph`, `moduleFederation.cleanupTerminals` |
+| Feedback | `moduleFederation.showFeedback`, `moduleFederation.rateExtension` |
+
+Most commands are available from the command palette and the relevant view toolbar or tree context menu. See `package.json` for contributed titles and menu conditions.
+
+## Development
 
 ```bash
+npm ci
 npm run typecheck
 npm run lint
-npm run test:headless
+npm run compile
 ```
 
-The desktop UI suites use fixture workspaces and package the extension through VS Code Extension Tester:
+Useful scripts:
 
-```bash
-npm run test:ui
-```
+| Script | Purpose |
+| --- | --- |
+| `npm run watch` | Rebuild the extension bundle on changes |
+| `npm run package` | Create the production Rspack bundle in `dist/` |
+| `npm run test:headless` | Run unit and extension-host tests without a desktop UI |
+| `npm run test:coverage` | Run coverage and enforce the checked-in baseline |
+| `npm run test:manual` | Run manual-flow integration tests |
+| `npm run test:ui` | Run configured-workspace and onboarding desktop suites |
+| `npm run test:ui:headless` | Run desktop suites through the Linux headless wrapper |
+| `make package` | Build a `.vsix` using `vsce` |
 
-The UI tests launch VS Code and require a graphical display. On headless Linux environments, run them with Xvfb:
+Desktop UI tests use VS Code Extension Tester and need a graphical display. On headless Linux, use `npm run test:ui:headless`; CI uses the same wrapper. CI runs typecheck, lint, headless tests, coverage, and headless UI tests on Node.js 22.
 
-```bash
-npm run test:ui:headless
-```
+## Documentation map
 
-The headless wrappers select an X11/Xvfb display on Linux and pin the desktop
-fixtures to the VS Code version used by CI. Run `npm run test:coverage` to
-generate the source-mapped unit-test coverage report and enforce at least 80%
-for lines, statements, functions, and branches. The development and CI runtime
-is Node.js 22 or newer.
+- [`docs/architecture.md`](docs/architecture.md): current runtime architecture, boundaries, data flow, and extension points.
+- [`AGENTS.md`](AGENTS.md): repository guidance for coding agents, including safe change paths and validation rules.
+- [`roadmap.md`](roadmap.md): active product and technical backlog.
+- [`todo-refactor.md`](todo-refactor.md): refactor history, remaining boundary work, and definition of done.
 
-Use `npm run test:ui:configured` or `npm run test:ui:onboarding` to run one UI fixture suite independently.
+## Contributing
 
-## 🤝 Support the Project
+Pull requests are welcome. Keep changes focused, preserve strict TypeScript boundaries, add or update tests for behavior changes, and use Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`). See the architecture and agent guides before changing cross-feature behavior.
 
-If this extension improves your Module Federation development experience:
+## Support and license
 
-<a href="https://ko-fi.com/andrecrjr">
-  <img src="https://cdn.prod.website-files.com/5c14e387dab576fe667689cf/670f5a01c01ea9191809398c_support_me_on_kofi_blue-p-500.png" alt="Support on Ko-fi" width="200"/>
-</a>
+If this extension improves your Module Federation workflow, support the project on [Ko-fi](https://ko-fi.com/andrecrjr).
 
-## 🤝 Contributing
-
-We welcome contributions! Please submit Pull Requests at:
-[https://github.com/andrecrjr/module-federation-explorer](https://github.com/andrecrjr/module-federation-explorer)
-
-## 📄 License
-
-This extension is released under the MIT License.
+Released under the MIT License. See [`LICENSE.md`](LICENSE.md).

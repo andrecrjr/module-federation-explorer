@@ -273,7 +273,7 @@
         "compile": "rspack",
         "watch": "rspack --watch",
         "package": "rspack --mode production",
-        "pretest": "npm run compile:test",
+        "pretest": "npm run compile && npm run compile:test",
         "compile:test": "tsc -p tsconfig.test.json",
         "compile:ui": "tsc -p tsconfig.ui-test.json",
         "typecheck": "tsc --noEmit",

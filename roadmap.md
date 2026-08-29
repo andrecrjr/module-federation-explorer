@@ -1,57 +1,52 @@
-# Roadmap & TODO List
+# Roadmap
 
-This document tracks planned improvements, technical debt, and future features for the Module Federation Explorer.
+Product ideas and remaining technical work for Module Federation Explorer. Current architecture and ownership live in [`docs/architecture.md`](docs/architecture.md); refactor history lives in [`todo-refactor.md`](todo-refactor.md).
 
-## Critical Fixes (Pain Points)
+## Completed foundation
 
-- [x] **Make Webview Offline Ready**: Bundle `D3.js` inside the extension `media/` folder and update CSP. Loading from CDN will fail for offline users or those behind corporate proxies.
-- [x] **Sync View IDs**: Fixed mismatched view ID references in `src/index.ts` (was 'moduleFederationExplorer', should be 'moduleFederation').
-- [x] **Complete Activation Support**: Add `.ts` config files (`vite.config.ts`, etc.) to `activationEvents` in `package.json` to ensure the extension auto-activates in TypeScript projects.
-- [x] **Rspack Performance**: Switch from `ts-loader` to build-in `builtin:swc-loader` in `rspack.config.js` to significantly speed up builds.
-- [x] **Redundant Dependency Audit**: Moved bundled dependencies (`d3`, `estraverse`, etc.) to `devDependencies` to clarify the extension is standalone.
-- [ ] **Robust Config Fallback**: Refactor `rootConfigManager.ts` to avoid fragile key-scanning that can cause false positives when configuration is corrupted.
+- [x] Bundle D3 locally for offline-first graph loading, with CDN fallbacks.
+- [x] Keep activation and composition in `src/app/compositionRoot.ts`.
+- [x] Support JavaScript and TypeScript config files for all registered bundlers.
+- [x] Use one discovery registry for Webpack, Rspack, Vite, Rsbuild, and Modern.js.
+- [x] Split tree, root, remote, graph, parser, extractor, and infrastructure responsibilities into focused modules.
+- [x] Use typed ports for application workflows and keep `GraphGenerator` pure.
+- [x] Track host/remote terminal lifecycle and dispose activation resources.
+- [x] Cover parser, discovery, workflows, tree, graph, webview boundaries, manual flows, and desktop UI flows with tests.
 
-## High Priority: Technical Debt & Refactors
+## Technical priorities
 
-- [ ] **Decompose `UnifiedModuleFederationProvider.ts`**: The file is currently ~2500 lines long.
-    - [ ] Move Tree Item logic to a dedicated Factory/Provider.
-    - [ ] Extract terminal management logic into a `TerminalManager` service.
-    - [ ] Separate configuration persistence logic into a dedicated module.
-- [ ] **Refactor `dependencyGraph.ts`**: The file is ~1700 lines long and contains complex graph generation logic and a large embedded webview.
-    - [ ] Extract the `generateDependencyGraph` multi-pass logic into smaller, testable methods or a `GraphBuilder` class.
-    - [ ] Move the massive Webview HTML/CSS/JS string to a separate template file or dedicated generator.
-    - [ ] Improve the robustness of `findAppIdByName` to handle more edge cases in remote naming.
-- [ ] **Modularize `src/index.ts`**: The main entry point is overgrown (~770 lines) and mixes numerous concerns.
-    - [ ] Extract the massive inline HTML string `getWelcomePageHtml` into a dedicated template file (e.g., `src/webviews/welcome.ts`).
-    - [ ] Extract inline command implementations (especially `startRemote` with its complex prompting logic) into dedicated modules (e.g., `src/commands/`).
-    - [ ] Move file watchers and terminal lifecycle hooks into a separate `LifecycleManager` or `WatcherService`.
-- [ ] **Improve Config Extraction**:
-    - [ ] Add support for asynchronous configuration files (`export default async () => ...`).
-    - [ ] Refactor `configExtractors.ts` into smaller, bundler-specific modules (Webpack, Vite, etc.).
-- [ ] **Error Handling**:
-    - [ ] Implement a more robust error reporting system to the user (instead of primarily logging to `outputChannel`).
-    - [ ] Add explicit validation for user-provided start/build commands.
+- [ ] Harden malformed or partially migrated root configuration handling, including clearer recovery guidance.
+- [ ] Move onboarding into `src/features/onboarding/`; separate controller, message validation, and HTML template.
+- [ ] Move rating/feedback behavior into `src/features/feedback/`.
+- [ ] Split `src/types.ts` into domain and presentation models without adding a catch-all shared types module.
+- [ ] Add automated dependency-direction checks for application, feature, infrastructure, and UI imports.
+- [ ] Organize tests under explicit unit, integration, and UI areas while preserving fast extension-host feedback.
+- [ ] Add support for asynchronous config functions and additional safe static-expression shapes.
+- [ ] Add manifest-based discovery for Module Federation 2.0 projects.
 
-## Performance & Optimization
+## Graph improvements
 
-- [ ] **Lazy Loading configurations**: For large mono-repos, scan folders only when expanded in the tree view.
-- [ ] **Cache Extraction Results**: Persist the AST extraction results to avoid re-parsing unchanged config files on every startup.
-- [ ] **Debounce File Watchers**: Ensure multiple rapid file changes don't trigger simultaneous expensive re-scans.
+- [ ] Add search and filter controls to the graph webview.
+- [ ] Add focus mode for immediate upstream/downstream connections.
+- [ ] Improve graph diagnostics presentation inside VS Code.
+- [ ] Evaluate lazy or incremental loading for large multi-root workspaces.
 
-## Feature Enhancements
+## Runtime and workflow improvements
 
-- [ ] **Enhanced Dependency Graph**:
-    - [ ] Add search/filter capabilities to the graph view.
-    - [ ] Visualize "shared" dependencies between modules.
-    - [ ] Add "Focus" mode to view only immediate up/downstream connections of a specific node.
-- [ ] **Better Remote Management**:
-    - [ ] Automatically detect port conflicts when starting multiple remotes.
-    - [ ] Provide "Restart" button for running terminals.
-- [ ] **Manifest Support**: Support `manifest.json` based discovery for Module Federation 2.0.
+- [ ] Detect port conflicts before starting host or remote processes.
+- [ ] Add restart actions for running hosts and remotes.
+- [ ] Improve command validation and project-specific command suggestions.
+- [ ] Add clearer recovery actions for missing remote folders and invalid configuration files.
 
-## Testing & Quality
+## Quality bar
 
-- [ ] **Unit Tests**:
-    - [ ] Add tests for `configExtractors` using various config file samples.
-    - [ ] Test the `rootConfigManager` persistence logic.
-- [ ] **E2E Tests**: Implement Playwright/VS Code extension tests for core user journeys (Add root -> see remotes -> start remote).
+New behavior should include focused tests and documentation updates. Before merge, run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run compile
+npm run test:headless
+```
+
+Run coverage, manual-flow, and headless UI suites when affected. Use Conventional Commits so semantic-release can classify changes.
