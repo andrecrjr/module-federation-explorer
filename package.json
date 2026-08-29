@@ -54,7 +54,7 @@
         "commands": [
             {
                 "command": "moduleFederation.refresh",
-                "title": "Refresh",
+                "title": "Refresh Module Federation Explorer",
                 "icon": "$(refresh)"
             },
             {
