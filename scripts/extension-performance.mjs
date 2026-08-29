@@ -179,7 +179,7 @@ async function runPerformanceTest(worktree, mode, runNumber, runRoot) {
   return {
     run: runNumber,
     mode,
-    activationMs: latestMeasurement(snapshot, 'activation'),
+    activationMs: latestMeasurement(snapshot, 'testHarnessActivation') ?? latestMeasurement(snapshot, 'activation'),
     initialLoadMs: latestMeasurement(snapshot, 'initialLoad'),
     initializeMs: latestMeasurement(snapshot, 'initialize'),
     runnerDurationMs,

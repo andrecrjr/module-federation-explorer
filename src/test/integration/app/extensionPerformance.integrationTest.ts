@@ -50,7 +50,7 @@ async function writeHarnessMeasurement(filePath: string, durationMs: number): Pr
   };
   const names = new Set(snapshot.measurements.map(measurement => measurement.name));
   if (!names.has('activation')) snapshot.measurements.push({ name: 'activation', durationMs });
-  snapshot.measurements.push({ name: 'testHarnessActivation', durationMs });
+  if (!names.has('testHarnessActivation')) snapshot.measurements.push({ name: 'testHarnessActivation', durationMs });
   await fs.writeFile(filePath, JSON.stringify(snapshot, null, 2), 'utf8');
   return snapshot;
 }
@@ -69,10 +69,12 @@ suite('Extension performance', () => {
     await extension.activate();
     const activationMs = performance.now() - started;
 
-    const snapshot = (await readSnapshot(outputPath)) || (await writeHarnessMeasurement(outputPath, activationMs));
+    const sourceSnapshot = await readSnapshot(outputPath);
+    const snapshot = await writeHarnessMeasurement(outputPath, activationMs);
     const measuredNames = new Set(snapshot.measurements.map(measurement => measurement.name));
     assert.ok(measuredNames.has('activation'));
-    if (measuredNames.has('testHarnessActivation')) return;
+    assert.ok(measuredNames.has('testHarnessActivation'));
+    if (!sourceSnapshot) return;
     assert.ok(measuredNames.has('initialize'));
     assert.ok(measuredNames.has('initialLoad'));
   });
