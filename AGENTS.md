@@ -10,8 +10,6 @@ This guide keeps coding agents aligned with the current architecture. Read it be
 
 Repository shell instructions live in `/home/andrecrjr/.codex/RTK.md` in this environment. Prefix shell commands with `rtk`.
 
-For codebase discovery, use the graphify skill first when available. If `graphify-out/graph.json` exists, query it before broad text searches. `graphify-out/` is generated and ignored; never commit its artifacts.
-
 ## Project role
 
 Module Federation Explorer is a VS Code extension for local development. It statically reads supported federation configuration files, builds a normalized in-memory snapshot, renders that snapshot in a tree and graph, and starts host/remote commands in integrated terminals.
@@ -176,10 +174,56 @@ npm run test:ui:headless    # configured and onboarding desktop flows
 
 UI tests use VS Code Extension Tester and target VS Code 1.135.0 in their test configuration. They need a display; use the headless wrapper on Linux. CI uses Node.js 24, pins Ubuntu 24.04, runs Xvfb, and temporarily relaxes AppArmor's unprivileged-user-namespace restriction so ExTester's `openResources()` second-instance CLI call can open fixture workspaces. The UI helper also waits for the workbench to settle before opening a fixture because VS Code startup is slower and race-prone under CI.
 
-For documentation-only changes, at minimum run `git diff --check` and verify relative links. Do not modify generated `dist/`, `out/`, coverage, test resources, `.vsix`, or `graphify-out/` artifacts.
+For documentation-only changes, at minimum run `git diff --check` and verify relative links. Do not modify generated `dist/`, `out/`, coverage, test resources, or `.vsix` artifacts.
 
 ## Documentation and commits
 
 Keep user behavior in `README.md`, architecture and ownership in `docs/architecture.md`, agent rules here, and active work in `roadmap.md`. Update docs when file locations, supported config types, commands, scripts, or persistence shape changes.
 
 Use Conventional Commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, or `chore:`. Keep commits focused and do not mix generated artifacts with source or documentation changes.
+
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **module-federation-explorer** (2242 symbols, 5915 relationships, 168 execution flows).
+
+> Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
+
+## Always Do
+
+- **MUST run impact analysis before editing.** Use `impact({target: "symbolName", direction: "upstream"})` (MCP) or `node .gitnexus/run.cjs impact "symbolName" --direction upstream --repo .` (CLI fallback); report callers, processes, and risk. Never substitute grep for graph analysis.
+- **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node .gitnexus/run.cjs detect-changes --scope all --repo .` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "master"})` or `node .gitnexus/run.cjs detect-changes --scope compare --base-ref "master" --repo .`.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- **MUST treat `risk: UNKNOWN` as unresolved, not as low.** An empty caller set is not evidence the symbol is unused — it can also mean the callers are not resolvable by the index (plain-object property access, dynamic dispatch, cross-language calls). `impact` pairs `UNKNOWN` with a `riskNote` saying so. Confirm with a text search before treating the symbol as safe to change or delete; do not proceed on the strength of a zero.
+- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
+- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
+
+## Never Do
+
+- NEVER edit a function, class, or method before MCP/CLI impact analysis.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis, and never read `UNKNOWN` as an all-clear — it means the walk could not answer, which is the one verdict that requires confirming by other means.
+- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
+- NEVER commit before MCP/CLI graph change analysis.
+
+## Resources
+
+| Resource | Use for |
+| --- | --- |
+| `gitnexus://repo/module-federation-explorer/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/module-federation-explorer/clusters` | All functional areas |
+| `gitnexus://repo/module-federation-explorer/processes` | All execution flows |
+| `gitnexus://repo/module-federation-explorer/process/{name}` | Step-by-step execution trace |
+
+## CLI
+
+| Task | Read this skill file |
+| --- | --- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
+
+<!-- gitnexus:end -->
