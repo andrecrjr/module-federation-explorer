@@ -1,12 +1,5 @@
-import type {
-  AsyncFileSystemPort,
-  DialogService,
-  Logger,
-  PathPort,
-  StoragePort,
-  WorkspacePort
-} from '../../app/ports';
-import type { UnifiedRootConfig } from '../../types';
+import type { AsyncFileSystemPort, DialogService, Logger, PathPort, StoragePort, WorkspacePort } from '../../app/ports';
+import type { UnifiedRootConfig } from './types';
 import { migrateLegacyRootConfig, parseRootConfig } from './rootConfigSchema';
 import type { RootConfigRepository } from '../../infrastructure/node/rootConfigRepository';
 import { normalizePath } from '../../infrastructure/node/pathUtils';
@@ -45,7 +38,11 @@ export class RootConfigManager {
     if (configured) return configured;
     const workspaceFolder = this.dependencies.workspace.folders[0];
     return workspaceFolder
-      ? this.dependencies.path.join(workspaceFolder.path, RootConfigManager.CONFIG_DIR, RootConfigManager.CONFIG_FILENAME)
+      ? this.dependencies.path.join(
+          workspaceFolder.path,
+          RootConfigManager.CONFIG_DIR,
+          RootConfigManager.CONFIG_FILENAME
+        )
       : undefined;
   }
 
@@ -60,9 +57,9 @@ export class RootConfigManager {
       const directory = this.dependencies.path.join(folder.path, RootConfigManager.CONFIG_DIR);
       try {
         const entries = await this.dependencies.fileSystem.readDirectory(directory);
-        paths.push(...entries
-          .filter(file => file.endsWith('.json'))
-          .map(file => this.dependencies.path.join(directory, file)));
+        paths.push(
+          ...entries.filter(file => file.endsWith('.json')).map(file => this.dependencies.path.join(directory, file))
+        );
       } catch {
         // Missing .vscode directory is expected.
       }
@@ -101,7 +98,10 @@ export class RootConfigManager {
     if (workspaceFolders.length > 1) {
       const selected = await this.dependencies.dialogs.showQuickPick(
         workspaceFolders.map(folder => ({ label: folder.name, description: folder.path })),
-        { title: 'Create Module Federation Configuration', placeholder: 'Select a workspace folder for the configuration' }
+        {
+          title: 'Create Module Federation Configuration',
+          placeholder: 'Select a workspace folder for the configuration'
+        }
       );
       if (!selected || Array.isArray(selected)) return undefined;
       const folder = workspaceFolders.find(candidate => candidate.name === selected.label);
@@ -126,7 +126,7 @@ export class RootConfigManager {
   async loadRootConfig(): Promise<UnifiedRootConfig | null> {
     const configPath = this.getConfigPath();
     if (!configPath) return null;
-    if (!await this.dependencies.repository.exists(configPath)) return { roots: [] };
+    if (!(await this.dependencies.repository.exists(configPath))) return { roots: [] };
     try {
       const parsed = await this.dependencies.repository.read(configPath);
       const config = parseRootConfig(parsed);
@@ -160,10 +160,10 @@ export class RootConfigManager {
 
   async addRoot(rootPath: string): Promise<void> {
     try {
-      if (!await this.dependencies.fileSystem.isDirectory(rootPath)) {
+      if (!(await this.dependencies.fileSystem.isDirectory(rootPath))) {
         throw new Error(`${rootPath} is not a directory`);
       }
-      const config = await this.loadRootConfig() || { roots: [] };
+      const config = (await this.loadRootConfig()) || { roots: [] };
       const normalizedRoot = normalizePath(rootPath);
       if (config.roots.some(candidate => normalizePath(candidate) === normalizedRoot)) return;
       config.roots.push(normalizedRoot);
@@ -203,7 +203,7 @@ export class RootConfigManager {
       const configPath = await this.selectOrCreateConfigPath();
       if (!configPath) return false;
       await this.setConfigPath(configPath);
-      if (!await this.dependencies.repository.exists(configPath)) {
+      if (!(await this.dependencies.repository.exists(configPath))) {
         await this.dependencies.repository.write(configPath, { roots: [] });
       }
       await this.dependencies.dialogs.showSuccess(`Changed configuration to ${configPath}`);

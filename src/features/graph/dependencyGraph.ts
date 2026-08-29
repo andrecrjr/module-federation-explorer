@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { ModuleFederationConfig } from '../../types';
+import type { ModuleFederationConfig } from '../../federation/types';
 import type { DependencyGraph, GraphDiagnostic } from './types';
 import { GraphGenerator } from './generator';
 import { generateWebviewContent } from './webview/template';
@@ -43,13 +43,11 @@ export class DependencyGraphManager {
    */
   showDependencyGraph(graph: DependencyGraph): void {
     if (graph.nodes.length === 0) {
-      vscode.window.showInformationMessage("No Module Federation configurations found to display in the graph.");
+      vscode.window.showInformationMessage('No Module Federation configurations found to display in the graph.');
       return;
     }
 
-    const columnToShowIn = vscode.window.activeTextEditor
-      ? vscode.window.activeTextEditor.viewColumn
-      : undefined;
+    const columnToShowIn = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : undefined;
 
     if (this._panel) {
       this._panel.reveal(columnToShowIn);
@@ -62,16 +60,20 @@ export class DependencyGraphManager {
         {
           enableScripts: true,
           retainContextWhenHidden: true,
-          localResourceRoots: [
-            vscode.Uri.file(this.context.extensionPath),
-          ]
+          localResourceRoots: [vscode.Uri.file(this.context.extensionPath)]
         }
       );
       this.context.subscriptions.push(this._panel);
 
       this.updateWebviewContent(this._panel.webview, graph);
 
-      this._panel.onDidDispose(() => { this._panel = undefined; }, null, this.context.subscriptions);
+      this._panel.onDidDispose(
+        () => {
+          this._panel = undefined;
+        },
+        null,
+        this.context.subscriptions
+      );
 
       this._panel.webview.onDidReceiveMessage(
         message => this.messageHandler.handleMessage(message),

@@ -32,5 +32,7 @@ if (regressions.length > 0) {
   for (const regression of regressions) console.error(`- ${regression}`);
   process.exitCode = 1;
 } else {
-  console.log(`Coverage meets ${minimum.toFixed(0)}% minimum: ${metrics.map(metric => `${metric} ${Number(report.total[metric].pct).toFixed(2)}%`).join(', ')}`);
+  console.log(
+    `Coverage meets ${minimum.toFixed(0)}% minimum: ${metrics.map(metric => `${metric} ${Number(report.total[metric].pct).toFixed(2)}%`).join(', ')}`
+  );
 }

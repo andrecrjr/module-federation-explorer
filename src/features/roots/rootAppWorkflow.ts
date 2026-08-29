@@ -1,4 +1,5 @@
-import { ModuleFederationConfig, RemotesFolder, RootFolder } from '../../types';
+import type { ModuleFederationConfig } from '../../federation/types';
+import type { RemotesFolder, RootFolder } from '../explorer/types';
 import type {
   DialogService,
   FileSystemPort,
@@ -34,7 +35,10 @@ export class RootAppController {
   async addRoot(): Promise<void> {
     try {
       if (!this.dependencies.rootConfigManager.getConfigPath()) {
-        const result = await this.dependencies.dialogs.showInfo('You need to set up your configuration file before adding hosts.', { actions: [{ title: 'Configure Settings' }, { title: 'Cancel', isCloseAffordance: true }] });
+        const result = await this.dependencies.dialogs.showInfo(
+          'You need to set up your configuration file before adding hosts.',
+          { actions: [{ title: 'Configure Settings' }, { title: 'Cancel', isCloseAffordance: true }] }
+        );
         if (result !== 'Configure Settings') return;
         await this.changeConfigFile();
         if (!this.dependencies.rootConfigManager.getConfigPath()) return;
@@ -57,7 +61,10 @@ export class RootAppController {
 
   async removeRoot(rootFolder: RootFolder): Promise<void> {
     try {
-      const confirmed = await this.dependencies.dialogs.showConfirmation(`Are you sure you want to remove "${rootFolder.path}" from the configuration?`, { destructive: true, confirmText: 'Remove', cancelText: 'Cancel' });
+      const confirmed = await this.dependencies.dialogs.showConfirmation(
+        `Are you sure you want to remove "${rootFolder.path}" from the configuration?`,
+        { destructive: true, confirmText: 'Remove', cancelText: 'Cancel' }
+      );
       if (!confirmed) return;
       await this.dependencies.rootConfigManager.removeRoot(rootFolder.path);
       this.dependencies.removeRootFromMemory(rootFolder.path);
@@ -83,15 +90,15 @@ export class RootAppController {
       }
       if (!rootFolder.startCommand) {
         const config = await this.dependencies.rootConfigManager.loadRootConfig();
-        const configuredRootPath = Object.keys(config?.rootConfigs || {}).find(candidate => normalizePath(candidate) === normalizePath(rootFolder.path));
-        rootFolder.startCommand = configuredRootPath ? config?.rootConfigs?.[configuredRootPath]?.startCommand : undefined;
+        const configuredRootPath = Object.keys(config?.rootConfigs || {}).find(
+          candidate => normalizePath(candidate) === normalizePath(rootFolder.path)
+        );
+        rootFolder.startCommand = configuredRootPath
+          ? config?.rootConfigs?.[configuredRootPath]?.startCommand
+          : undefined;
       }
-      if (!rootFolder.startCommand && !await this.configureRootAppStartCommand(rootFolder)) return;
-      this.dependencies.terminalManager.startRootApp(
-        rootFolder.path,
-        rootFolder.name,
-        rootFolder.startCommand!
-      );
+      if (!rootFolder.startCommand && !(await this.configureRootAppStartCommand(rootFolder))) return;
+      this.dependencies.terminalManager.startRootApp(rootFolder.path, rootFolder.name, rootFolder.startCommand!);
       this.dependencies.refresh();
       await this.dependencies.dialogs.showSuccess(`Started Host app: ${rootFolder.name}`);
     } catch (error) {
@@ -116,12 +123,19 @@ export class RootAppController {
   async configureRootAppStartCommand(rootFolder: RootFolder): Promise<string | undefined> {
     try {
       const { startCommand: defaultCommand } = await this.dependencies.detectPackageManager(rootFolder.path, 'webpack');
-      const startCommand = await this.dependencies.dialogs.showInput({ title: `Configure App Start Command for ${rootFolder.name}`, prompt: `Configure app start command for ${rootFolder.name}`, value: rootFolder.startCommand || defaultCommand, placeholder: 'e.g., npm run start, yarn dev, etc.' });
+      const startCommand = await this.dependencies.dialogs.showInput({
+        title: `Configure App Start Command for ${rootFolder.name}`,
+        prompt: `Configure app start command for ${rootFolder.name}`,
+        value: rootFolder.startCommand || defaultCommand,
+        placeholder: 'e.g., npm run start, yarn dev, etc.'
+      });
       if (!startCommand) return undefined;
       rootFolder.startCommand = startCommand;
       await this.saveRootFolderConfig(rootFolder);
       this.dependencies.refresh();
-      await this.dependencies.dialogs.showSuccess(`Configured app start command for ${rootFolder.name}: ${startCommand}`);
+      await this.dependencies.dialogs.showSuccess(
+        `Configured app start command for ${rootFolder.name}: ${startCommand}`
+      );
       return startCommand;
     } catch (error) {
       this.dependencies.logError(`Failed to configure start command for ${rootFolder.name}`, error);
@@ -132,11 +146,14 @@ export class RootAppController {
   async editRootAppCommands(rootFolder: RootFolder): Promise<void> {
     try {
       let { packageManager } = await this.dependencies.detectPackageManager(rootFolder.path, 'webpack');
-      const selected = await this.dependencies.dialogs.showQuickPick([
-        { label: '▶️ Edit Start Command', description: rootFolder.startCommand || 'Not configured' },
-        { label: '📁 Change Project Folder', description: rootFolder.path },
-        { label: '🔗 Add External Remote', description: 'Add an external remote to this host app' }
-      ], { title: `Edit Configuration for ${rootFolder.name}`, placeholder: 'What would you like to edit?' });
+      const selected = await this.dependencies.dialogs.showQuickPick(
+        [
+          { label: '▶️ Edit Start Command', description: rootFolder.startCommand || 'Not configured' },
+          { label: '📁 Change Project Folder', description: rootFolder.path },
+          { label: '🔗 Add External Remote', description: 'Add an external remote to this host app' }
+        ],
+        { title: `Edit Configuration for ${rootFolder.name}`, placeholder: 'What would you like to edit?' }
+      );
       if (!selected || Array.isArray(selected)) return;
 
       if (selected.label.includes('Change Project Folder')) {
@@ -144,10 +161,16 @@ export class RootAppController {
           ? this.dependencies.path.dirname(this.dependencies.workspaceRoot)
           : undefined;
         const newFolder = await this.dependencies.dialogs.showFolderPicker({
-          title: `Select New Project Folder for Host App "${rootFolder.name}"`, openLabel: `Select "${rootFolder.name}" Project Folder`, defaultPath,
+          title: `Select New Project Folder for Host App "${rootFolder.name}"`,
+          openLabel: `Select "${rootFolder.name}" Project Folder`,
+          defaultPath,
           validateFolder: async folderPath => {
-            if (this.dependencies.fileSystem.existsSync(this.dependencies.path.join(folderPath, 'package.json'))) return { valid: true };
-            const continueAnyway = await this.dependencies.dialogs.showConfirmation('The selected folder doesn\'t contain a package.json file.', { detail: `Folder: ${folderPath}`, confirmText: 'Continue Anyway', cancelText: 'Select Different Folder' });
+            if (this.dependencies.fileSystem.existsSync(this.dependencies.path.join(folderPath, 'package.json')))
+              return { valid: true };
+            const continueAnyway = await this.dependencies.dialogs.showConfirmation(
+              "The selected folder doesn't contain a package.json file.",
+              { detail: `Folder: ${folderPath}`, confirmText: 'Continue Anyway', cancelText: 'Select Different Folder' }
+            );
             return { valid: continueAnyway, message: 'Invalid Node.js project folder' };
           }
         });
@@ -162,7 +185,13 @@ export class RootAppController {
         return;
       }
       if (selected.label.includes('Edit Start Command')) {
-        const startCommand = await this.dependencies.dialogs.showCommandConfig({ title: `Configure Start Command for ${rootFolder.name}`, commandType: 'start', currentCommand: rootFolder.startCommand, packageManager, projectPath: rootFolder.path });
+        const startCommand = await this.dependencies.dialogs.showCommandConfig({
+          title: `Configure Start Command for ${rootFolder.name}`,
+          commandType: 'start',
+          currentCommand: rootFolder.startCommand,
+          packageManager,
+          projectPath: rootFolder.path
+        });
         if (startCommand !== undefined) {
           rootFolder.startCommand = startCommand;
           await this.saveRootFolderConfig(rootFolder);
@@ -171,21 +200,28 @@ export class RootAppController {
         }
         return;
       }
-      await this.dependencies.addExternalRemoteToHost({ type: 'remotesFolder', parentName: rootFolder.name, parentPath: rootFolder.path, remotes: [] }, rootFolder.path);
+      await this.dependencies.addExternalRemoteToHost(
+        { type: 'remotesFolder', parentName: rootFolder.name, parentPath: rootFolder.path, remotes: [] },
+        rootFolder.path
+      );
     } catch (error) {
       this.dependencies.logError(`Failed to edit commands for ${rootFolder.name}`, error);
     }
   }
 
   async loadRootFolderConfigs(): Promise<void> {
-    if (await this.dependencies.rootConfigManager.loadRootConfig()) this.dependencies.log('Loaded Host folder configurations');
+    if (await this.dependencies.rootConfigManager.loadRootConfig())
+      this.dependencies.log('Loaded Host folder configurations');
   }
 
   private async saveRootFolderConfig(rootFolder: RootFolder): Promise<void> {
     const config = await this.dependencies.rootConfigManager.loadRootConfig();
     if (!config) return;
     config.rootConfigs ??= {};
-    config.rootConfigs[rootFolder.path] = { ...config.rootConfigs[rootFolder.path], startCommand: rootFolder.startCommand };
+    config.rootConfigs[rootFolder.path] = {
+      ...config.rootConfigs[rootFolder.path],
+      startCommand: rootFolder.startCommand
+    };
     await this.dependencies.rootConfigManager.saveRootConfig(config);
   }
 }

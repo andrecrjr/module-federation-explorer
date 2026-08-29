@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { ModuleFederationConfig } from './types';
+import type { ModuleFederationConfig } from './federation/types';
 import {
   createVscodeDiscoveryDependencies,
   FederationDiscoveryService,
@@ -24,8 +24,14 @@ export interface ConfigurationSnapshot {
 }
 
 export interface ConfigurationServiceDependencies extends WorkspaceFileDiscovery {
-  parseConfigFile: (filePath: string, extractor: ConfigExtractor<ModuleFederationConfig>) => Promise<ModuleFederationConfig>;
-  enrichRemote?: (remote: ModuleFederationConfig['remotes'][number], configPath: string) => Promise<Partial<ModuleFederationConfig['remotes'][number]>>;
+  parseConfigFile: (
+    filePath: string,
+    extractor: ConfigExtractor<ModuleFederationConfig>
+  ) => Promise<ModuleFederationConfig>;
+  enrichRemote?: (
+    remote: ModuleFederationConfig['remotes'][number],
+    configPath: string
+  ) => Promise<Partial<ModuleFederationConfig['remotes'][number]>>;
 }
 
 const defaultDependencies: ConfigurationServiceDependencies = {
@@ -51,11 +57,13 @@ export class ConfigurationService {
     const configs = new Map<string, ModuleFederationConfig[]>();
 
     for (const discovered of result.configurations) {
-      const remotes = await Promise.all(discovered.config.remotes.map(async remote => ({
-        ...remote,
-        ...(this.dependencies.enrichRemote ? await this.dependencies.enrichRemote(remote, discovered.filePath) : {}),
-        configSource: discovered.filePath
-      })));
+      const remotes = await Promise.all(
+        discovered.config.remotes.map(async remote => ({
+          ...remote,
+          ...(this.dependencies.enrichRemote ? await this.dependencies.enrichRemote(remote, discovered.filePath) : {}),
+          configSource: discovered.filePath
+        }))
+      );
       const config = {
         ...discovered.config,
         configPath: discovered.filePath,

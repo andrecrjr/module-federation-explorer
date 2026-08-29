@@ -63,7 +63,7 @@ ExplorerApplication
 | Dependency graph | `src/features/graph/` | Generate graph, render D3 webview, validate webview messages |
 | Node adapters | `src/infrastructure/node/` | Filesystem path resolution, package-manager detection, JSON repository |
 | VS Code adapters | `src/infrastructure/vscode/` | Dialogs, output channel, terminal implementation |
-| Supporting UI | `src/onboarding.ts`, `src/app/welcome.ts`, `src/ratingPrompt.ts` | Onboarding, welcome panel, feedback/rating state; still transitional modules |
+| Supporting UI | `src/features/onboarding/`, `src/app/welcome.ts`, `src/features/feedback/` | Onboarding, welcome panel, feedback/rating state |
 
 ## Runtime rules
 
@@ -128,10 +128,10 @@ Parse failures become `ConfigParseError` diagnostics. Discovery collects errors 
 1. Update the extractor in `src/extractors/`.
 2. Update `CONFIG_FILE_DEFINITIONS` in `src/federation/configFileRegistry.ts` if file patterns or config type change.
 3. Update activation events in `package.json` and `CONFIG_WATCH_PATTERN` in `src/app/registerWatchers.ts` for new filenames.
-4. Add a focused fixture/test in `src/test/federationPipeline.test.ts` or a nearby parser test.
+4. Add a focused fixture/test in `src/test/unit/federation/federationPipeline.test.ts` or a nearby parser test.
 5. Update the support table and static-analysis notes in `README.md` and this guide if user behavior changed.
 
-Do not create a second discovery path. `workspaceScanner.ts` is an onboarding adapter over the shared registry/discovery service.
+Do not create a second discovery path. `src/features/onboarding/workspaceScanner.ts` is an onboarding adapter over the shared registry/discovery service.
 
 ### Add or change a command
 
@@ -144,7 +144,7 @@ Do not create a second discovery path. `workspaceScanner.ts` is an onboarding ad
 
 ### Change root or remote persistence
 
-Update the model in `src/types.ts`, validation/migration in `rootConfigSchema.ts`, repository behavior if needed, and the owning workflow/service. Use `normalizePath()` and `findContainingRoot()` for path association. Add tests for multiple roots, duplicate names, missing folders, malformed JSON, and external remotes where relevant.
+Update the owning model in `src/features/roots/types.ts` or `src/federation/types.ts`, validation/migration in `rootConfigSchema.ts`, repository behavior if needed, and the owning workflow/service. Use `normalizePath()` and `findContainingRoot()` for path association. Add tests for multiple roots, duplicate names, missing folders, malformed JSON, and external remotes where relevant.
 
 ### Change graph behavior
 
@@ -180,6 +180,6 @@ For documentation-only changes, at minimum run `git diff --check` and verify rel
 
 ## Documentation and commits
 
-Keep user behavior in `README.md`, architecture and ownership in `docs/architecture.md`, agent rules here, active work in `roadmap.md`, and refactor history in `todo-refactor.md`. Update docs when file locations, supported config types, commands, scripts, or persistence shape changes.
+Keep user behavior in `README.md`, architecture and ownership in `docs/architecture.md`, agent rules here, and active work in `roadmap.md`. Update docs when file locations, supported config types, commands, scripts, or persistence shape changes.
 
 Use Conventional Commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, or `chore:`. Keep commits focused and do not mix generated artifacts with source or documentation changes.

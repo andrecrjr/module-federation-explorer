@@ -1,4 +1,4 @@
-import type { ModuleFederationConfig, SharedDependency } from '../../types';
+import type { ModuleFederationConfig, SharedDependency } from '../../federation/types';
 
 export type GraphNodeType = 'host' | 'remote' | 'shared-dependency' | 'exposed-module';
 export type GraphEdgeType = 'consumes' | 'exposes' | 'shares' | 'depends-on';

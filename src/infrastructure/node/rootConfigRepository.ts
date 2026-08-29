@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import type { UnifiedRootConfig } from '../../types';
+import type { UnifiedRootConfig } from '../../features/roots/types';
 
 export interface RootConfigRepository {
   exists(filePath: string): Promise<boolean>;

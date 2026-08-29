@@ -1,4 +1,5 @@
-import { ModuleFederationConfig, RootFolder } from '../../types';
+import type { ModuleFederationConfig } from '../../federation/types';
+import type { RootFolder } from './types';
 
 export interface ExplorerSnapshot {
   readonly configs: ReadonlyMap<string, ModuleFederationConfig[]>;

@@ -1,10 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import type {
-  PackageManager,
-  PackageManagerConfigType,
-  PackageManagerInfo
-} from '../../app/ports';
+import type { PackageManager, PackageManagerConfigType, PackageManagerInfo } from '../../app/ports';
 
 export type { PackageManager, PackageManagerConfigType, PackageManagerInfo } from '../../app/ports';
 
@@ -39,9 +35,8 @@ export async function detectPackageManagerAndStartCommand(
     if (await fileExists(path.join(folder, lockFile.file))) {
       return {
         packageManager: lockFile.packageManager,
-        startCommand: lockFile.packageManager === 'yarn'
-          ? `yarn ${startScript}`
-          : `${lockFile.packageManager} run ${startScript}`
+        startCommand:
+          lockFile.packageManager === 'yarn' ? `yarn ${startScript}` : `${lockFile.packageManager} run ${startScript}`
       };
     }
   }

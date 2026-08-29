@@ -27,7 +27,7 @@ export class WebviewMessageHandler {
         break;
 
       case 'loaded':
-        this.log("Enhanced dependency graph loaded successfully");
+        this.log('Enhanced dependency graph loaded successfully');
         if (message.metadata) {
           this.log(`Graph metadata: ${JSON.stringify(message.metadata)}`);
         }
@@ -53,18 +53,17 @@ export class WebviewMessageHandler {
       actions.push('Open Config');
     }
 
-    vscode.window.showQuickPick(actions, { placeHolder: `${node.label} (${node.type})` })
-      .then(selection => {
-        if (!selection) return;
+    vscode.window.showQuickPick(actions, { placeHolder: `${node.label} (${node.type})` }).then(selection => {
+      if (!selection) return;
 
-        if (selection === 'View Details') {
-          this.showNodeDetails(node);
-        }
+      if (selection === 'View Details') {
+        this.showNodeDetails(node);
+      }
 
-        if (selection === 'Open Config') {
-          this.openConfigForNode(node);
-        }
-      });
+      if (selection === 'Open Config') {
+        this.openConfigForNode(node);
+      }
+    });
   }
 
   /**
@@ -74,7 +73,7 @@ export class WebviewMessageHandler {
     const lines = [
       `## ${node.label}`,
       `**Type:** ${node.type.replace('-', ' ')}`,
-      `**Config Type:** ${node.configType}`,
+      `**Config Type:** ${node.configType}`
     ];
 
     if (node.url) lines.push(`**URL:** ${node.url}`);
@@ -86,10 +85,7 @@ export class WebviewMessageHandler {
     if (node.group) lines.push(`**Group:** ${node.group}`);
 
     // Show as information message
-    vscode.window.showInformationMessage(
-      `${node.label} (${node.type})`,
-      { modal: false, detail: lines.join('\n') }
-    );
+    vscode.window.showInformationMessage(`${node.label} (${node.type})`, { modal: false, detail: lines.join('\n') });
   }
 
   /**
@@ -101,9 +97,12 @@ export class WebviewMessageHandler {
       return;
     }
 
-    vscode.workspace.openTextDocument(vscode.Uri.file(node.configPath))
+    vscode.workspace
+      .openTextDocument(vscode.Uri.file(node.configPath))
       .then(document => vscode.window.showTextDocument(document))
-      .then(undefined, error => vscode.window.showWarningMessage(`Could not open configuration for "${node.label}": ${String(error)}`));
+      .then(undefined, error =>
+        vscode.window.showWarningMessage(`Could not open configuration for "${node.label}": ${String(error)}`)
+      );
   }
 }
 
@@ -127,11 +126,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isDependencyGraphNode(value: unknown): value is DependencyGraphNode {
-  if (!isRecord(value)
-    || typeof value.id !== 'string'
-    || typeof value.label !== 'string'
-    || !isGraphNodeType(value.type)
-    || !isConfigType(value.configType)) {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.label !== 'string' ||
+    !isGraphNodeType(value.type) ||
+    !isConfigType(value.configType)
+  ) {
     return false;
   }
 
@@ -151,17 +152,16 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function isGraphNodeType(value: unknown): value is DependencyGraphNode['type'] {
-  return value === 'host'
-    || value === 'remote'
-    || value === 'shared-dependency'
-    || value === 'exposed-module';
+  return value === 'host' || value === 'remote' || value === 'shared-dependency' || value === 'exposed-module';
 }
 
 function isConfigType(value: unknown): value is DependencyGraphNode['configType'] {
-  return value === 'webpack'
-    || value === 'vite'
-    || value === 'modernjs'
-    || value === 'rsbuild'
-    || value === 'rspack'
-    || value === 'external';
+  return (
+    value === 'webpack' ||
+    value === 'vite' ||
+    value === 'modernjs' ||
+    value === 'rsbuild' ||
+    value === 'rspack' ||
+    value === 'external'
+  );
 }

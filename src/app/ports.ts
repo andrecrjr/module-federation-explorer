@@ -1,6 +1,7 @@
 import type { ConfigurationSnapshot } from '../configurationService';
 import type { DependencyGraph } from '../features/graph/types';
-import type { ModuleFederationConfig, UnifiedRootConfig } from '../types';
+import type { ModuleFederationConfig } from '../federation/types';
+import type { UnifiedRootConfig } from '../features/roots/types';
 
 /** Application logging boundary. Implementations may target VS Code output channels. */
 export interface Logger {
@@ -174,13 +175,7 @@ export interface TerminalCleanupResult {
 }
 
 export interface TerminalPort {
-  startRemote(
-    remoteKey: string,
-    remoteName: string,
-    folder: string,
-    buildCommand: string,
-    startCommand: string
-  ): void;
+  startRemote(remoteKey: string, remoteName: string, folder: string, buildCommand: string, startCommand: string): void;
   startRootApp(rootPath: string, rootName: string, startCommand: string): void;
   setRunningRemote(remoteKey: string, startTerminal: TerminalLike, buildTerminal?: TerminalLike): void;
   getRunningRemoteTerminal(remoteKey: string): TerminalLike | undefined;
@@ -204,9 +199,20 @@ export interface ApplicationHostPort {
 
 export type SuccessEvent = 'onboarding-complete' | 'remote-started';
 
+export interface FeedbackPort {
+  initialize(): Promise<void>;
+  trackSuccess(event: SuccessEvent): Promise<void>;
+  openFeedback(): Promise<void>;
+  openMarketplaceReview(): Promise<void>;
+}
+
+export interface ExternalLinkPort {
+  openExternal(url: string): PromiseLike<unknown>;
+}
+
 /** Extension storage boundary used by feature workflows. */
 export interface StoragePort {
-  get<T>(key: string): T | undefined;
+  get<T>(key: string, defaultValue?: T): T | undefined;
   update<T>(key: string, value: T): PromiseLike<void>;
 }
 

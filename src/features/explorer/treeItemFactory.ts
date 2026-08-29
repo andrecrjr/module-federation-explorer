@@ -1,12 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import {
-  ExposedModule,
-  ExposesFolder,
-  Remote,
-  RemotesFolder,
-  RootFolder
-} from '../../types';
+import type { ExposedModule, Remote } from '../../federation/types';
+import type { ExposesFolder, RemotesFolder, RootFolder } from './types';
 
 export interface LoadingPlaceholder {
   type: 'loadingPlaceholder';
@@ -60,10 +55,7 @@ export function isEmptyState(element: unknown): element is EmptyState {
   return isRecord(element) && element.type === 'emptyState';
 }
 
-export function createTreeItem(
-  element: TreeElement,
-  isRemoteRunning: (remoteKey: string) => boolean
-): vscode.TreeItem {
+export function createTreeItem(element: TreeElement, isRemoteRunning: (remoteKey: string) => boolean): vscode.TreeItem {
   if (isLoadingPlaceholder(element)) {
     const treeItem = new vscode.TreeItem(
       'Loading Module Federation configurations...',
@@ -74,27 +66,21 @@ export function createTreeItem(
   }
 
   if (isEmptyState(element)) {
-    const treeItem = new vscode.TreeItem(
-      element.name,
-      vscode.TreeItemCollapsibleState.None
-    );
+    const treeItem = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
     treeItem.description = element.description;
     treeItem.iconPath = new vscode.ThemeIcon('info');
     treeItem.tooltip = new vscode.MarkdownString(
       '**No Module Federation Hosts found**\n\n' +
-      'To get started:\n\n' +
-      '1. Click the "+" button in the toolbar to add a Host folder\n' +
-      '2. Select a folder containing Module Federation configurations\n' +
-      '3. The extension will automatically scan for webpack, Vite, ModernJS, or RSBuild configurations'
+        'To get started:\n\n' +
+        '1. Click the "+" button in the toolbar to add a Host folder\n' +
+        '2. Select a folder containing Module Federation configurations\n' +
+        '3. The extension will automatically scan for webpack, Vite, ModernJS, or RSBuild configurations'
     );
     return treeItem;
   }
 
   if (isRootFolder(element)) {
-    const treeItem = new vscode.TreeItem(
-      element.name,
-      vscode.TreeItemCollapsibleState.Expanded
-    );
+    const treeItem = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Expanded);
     const tooltip = new vscode.MarkdownString(`## ${element.name}\n\n**Path:** ${element.path}\n\n`);
 
     if (element.configs.length > 0) {
@@ -127,9 +113,7 @@ export function createTreeItem(
   if (isRemotesFolder(element)) {
     const treeItem = new vscode.TreeItem(
       `Remotes (${element.remotes.length})`,
-      element.remotes.length > 0
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.None
+      element.remotes.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
     );
     treeItem.iconPath = new vscode.ThemeIcon('references');
     treeItem.tooltip = new vscode.MarkdownString(
@@ -142,9 +126,7 @@ export function createTreeItem(
   if (isExposesFolder(element)) {
     const treeItem = new vscode.TreeItem(
       `Exposed Modules (${element.exposes.length})`,
-      element.exposes.length > 0
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.None
+      element.exposes.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
     );
     treeItem.iconPath = new vscode.ThemeIcon('export');
     treeItem.tooltip = new vscode.MarkdownString(
@@ -160,10 +142,7 @@ export function createTreeItem(
     const hasStartCommand = !!element.startCommand;
     const isExternal = element.isExternal || element.configType === 'external';
 
-    const treeItem = new vscode.TreeItem(
-      element.name,
-      vscode.TreeItemCollapsibleState.None
-    );
+    const treeItem = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
     const tooltip = new vscode.MarkdownString(`## Remote: ${element.name}\n\n`);
 
     if (isExternal) {
@@ -217,10 +196,7 @@ export function createTreeItem(
   }
 
   if (isExposedModule(element)) {
-    const treeItem = new vscode.TreeItem(
-      element.name,
-      vscode.TreeItemCollapsibleState.None
-    );
+    const treeItem = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
     treeItem.iconPath = new vscode.ThemeIcon('symbol-module');
     treeItem.tooltip = new vscode.MarkdownString(
       `## Exposed Module: ${element.name}\n\n**Path:** ${element.path}\n\n**From remote:** ${element.remoteName}`

@@ -15,20 +15,16 @@ import { detectPackageManagerAndStartCommand } from '../node/packageManager';
  * Enhanced dialog utilities for better user experience
  */
 export class DialogUtils {
-  
   /**
    * Show an enhanced information message with better formatting and icons
    */
-  static async showInfo(
-    message: string, 
-    options?: DialogMessageOptions
-  ): Promise<string | undefined> {
+  static async showInfo(message: string, options?: DialogMessageOptions): Promise<string | undefined> {
     const formattedMessage = `ℹ️ ${message}`;
     const messageOptions: vscode.MessageOptions = {
       modal: options?.modal || false,
       detail: options?.detail
     };
-    
+
     const actionTitles = options?.actions?.map(a => a.title) || [];
     return await vscode.window.showInformationMessage(formattedMessage, messageOptions, ...actionTitles);
   }
@@ -36,16 +32,13 @@ export class DialogUtils {
   /**
    * Show an enhanced warning message with better formatting and icons
    */
-  static async showWarning(
-    message: string,
-    options?: DialogMessageOptions
-  ): Promise<string | undefined> {
+  static async showWarning(message: string, options?: DialogMessageOptions): Promise<string | undefined> {
     const formattedMessage = `⚠️ ${message}`;
     const messageOptions: vscode.MessageOptions = {
       modal: options?.modal || false,
       detail: options?.detail
     };
-    
+
     const actionTitles = options?.actions?.map(a => a.title) || [];
     return await vscode.window.showWarningMessage(formattedMessage, messageOptions, ...actionTitles);
   }
@@ -53,16 +46,13 @@ export class DialogUtils {
   /**
    * Show an enhanced error message with better formatting and icons
    */
-  static async showError(
-    message: string,
-    options?: DialogMessageOptions
-  ): Promise<string | undefined> {
+  static async showError(message: string, options?: DialogMessageOptions): Promise<string | undefined> {
     const formattedMessage = `❌ ${message}`;
     const messageOptions: vscode.MessageOptions = {
       modal: options?.modal || false,
       detail: options?.detail
     };
-    
+
     const actionTitles = options?.actions?.map(a => a.title) || [];
     return await vscode.window.showErrorMessage(formattedMessage, messageOptions, ...actionTitles);
   }
@@ -122,17 +112,11 @@ export class DialogUtils {
       if (options.validateFolder) {
         const validation = await options.validateFolder(folderPath);
         if (!validation.valid) {
-          const retry = await this.showWarning(
-            validation.message || 'Invalid folder selected',
-            {
-              modal: true,
-              actions: [
-                { title: 'Try Again' },
-                { title: 'Cancel', isCloseAffordance: true }
-              ]
-            }
-          );
-          
+          const retry = await this.showWarning(validation.message || 'Invalid folder selected', {
+            modal: true,
+            actions: [{ title: 'Try Again' }, { title: 'Cancel', isCloseAffordance: true }]
+          });
+
           if (retry !== 'Try Again') {
             return undefined;
           }
@@ -147,34 +131,28 @@ export class DialogUtils {
   /**
    * Show a confirmation dialog with enhanced formatting
    */
-  static async showConfirmation(
-    message: string,
-    options?: ConfirmationOptions
-  ): Promise<boolean> {
+  static async showConfirmation(message: string, options?: ConfirmationOptions): Promise<boolean> {
     const icon = options?.destructive ? '🗑️' : '❓';
     const confirmText = options?.confirmText || 'Yes';
     const cancelText = options?.cancelText || 'Cancel';
-    
+
     const result = await vscode.window.showWarningMessage(
       `${icon} ${message}`,
-      { 
+      {
         modal: true,
         detail: options?.detail
       },
       confirmText,
       cancelText
     );
-    
+
     return result === confirmText;
   }
 
   /**
    * Show a progress dialog for long-running operations
    */
-  static async withProgress<T>(
-    title: string,
-    task: (progress: ProgressReporter) => Promise<T>
-  ): Promise<T> {
+  static async withProgress<T>(title: string, task: (progress: ProgressReporter) => Promise<T>): Promise<T> {
     return await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -188,40 +166,39 @@ export class DialogUtils {
   /**
    * Show a multi-step wizard dialog
    */
-  static async showWizard<T>(steps: Array<{
-    title: string;
-    execute: () => Promise<T | undefined>;
-  }>): Promise<T | undefined> {
+  static async showWizard<T>(
+    steps: Array<{
+      title: string;
+      execute: () => Promise<T | undefined>;
+    }>
+  ): Promise<T | undefined> {
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       const stepTitle = `${step.title} (${i + 1}/${steps.length})`;
-      
+
       try {
         const result = await this.withProgress(stepTitle, async () => {
           return await step.execute();
         });
-        
+
         if (result === undefined) {
           // User cancelled this step
           return undefined;
         }
-        
+
         // If this is the last step, return the result
         if (i === steps.length - 1) {
           return result;
         }
       } catch (error) {
-        await this.showError(
-          `Failed at step: ${step.title}`,
-          {
-            detail: error instanceof Error ? error.message : String(error),
-            actions: [{ title: 'OK' }]
-          }
-        );
+        await this.showError(`Failed at step: ${step.title}`, {
+          detail: error instanceof Error ? error.message : String(error),
+          actions: [{ title: 'OK' }]
+        });
         return undefined;
       }
     }
-    
+
     return undefined;
   }
 
@@ -257,7 +234,7 @@ export class DialogUtils {
       prompt: `Enter the ${options.commandType} command`,
       placeholder: `Example: ${examples[options.commandType]}`,
       value: options.currentCommand || defaultCommand,
-      validateInput: (value) => {
+      validateInput: value => {
         if (!value.trim()) {
           return 'Command cannot be empty';
         }
@@ -307,13 +284,10 @@ export class DialogUtils {
       try {
         await selectedStep.step.action();
       } catch (error) {
-        await this.showError(
-          `Failed to execute step: ${selectedStep.step.title}`,
-          {
-            detail: error instanceof Error ? error.message : String(error)
-          }
-        );
+        await this.showError(`Failed to execute step: ${selectedStep.step.title}`, {
+          detail: error instanceof Error ? error.message : String(error)
+        });
       }
     }
   }
-} 
+}

@@ -1,6 +1,6 @@
 import { asNode, findProperty, getLiteralString, getPropertyKey, nodeList } from '../parser/astUtils';
 import { resolveStringExpression } from '../parser/expressionResolver';
-import type { ModuleFederationConfig, SharedDependency } from '../types';
+import type { ModuleFederationConfig, SharedDependency } from '../federation/types';
 
 export function createConfig(configType: ModuleFederationConfig['configType']): ModuleFederationConfig {
   return { name: '', remotes: [], exposes: [], shared: [], detected: false, configType, configPath: '' };
@@ -17,9 +17,12 @@ export function extractConfigFromOptions(options: unknown, config: ModuleFederat
       const remoteName = getPropertyKey(property);
       if (!remoteName) continue;
       const remoteObject = asNode(property.value);
-      const remoteUrl = remoteObject?.type === 'ObjectExpression'
-        ? resolveStringExpression(findProperty(remoteObject, 'url')?.value || findProperty(remoteObject, 'entry')?.value)
-        : resolveStringExpression(property.value);
+      const remoteUrl =
+        remoteObject?.type === 'ObjectExpression'
+          ? resolveStringExpression(
+              findProperty(remoteObject, 'url')?.value || findProperty(remoteObject, 'entry')?.value
+            )
+          : resolveStringExpression(property.value);
       if (!remoteUrl) continue;
 
       let finalName = remoteName;

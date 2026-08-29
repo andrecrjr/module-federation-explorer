@@ -1,4 +1,5 @@
-import { ModuleFederationConfig, Remote, UnifiedRootConfig } from '../../types';
+import type { ModuleFederationConfig, Remote } from '../../federation/types';
+import type { UnifiedRootConfig } from '../roots/types';
 import type { FileSystemPort, PathPort } from '../../app/ports';
 import { findContainingRoot, normalizePath } from '../../infrastructure/node/pathUtils';
 
@@ -28,8 +29,10 @@ function cloneConfig(config: ModuleFederationConfig): ModuleFederationConfig {
 
 function savedRootKey(config: UnifiedRootConfig, rootPath: string): string | undefined {
   const normalized = normalizePath(rootPath);
-  return config.roots.find(candidate => normalizePath(candidate) === normalized) ||
-    Object.keys(config.rootConfigs || {}).find(candidate => normalizePath(candidate) === normalized);
+  return (
+    config.roots.find(candidate => normalizePath(candidate) === normalized) ||
+    Object.keys(config.rootConfigs || {}).find(candidate => normalizePath(candidate) === normalized)
+  );
 }
 
 function savedRemoteSettings(remote: Remote, saved?: Remote): Remote {
@@ -55,7 +58,10 @@ export class RemoteConfigurationService {
     for (const rootPath of roots) {
       const candidate = this.dependencies.path.resolve(rootPath, remote.folder);
       try {
-        if (this.dependencies.fileSystem.existsSync(candidate) && this.dependencies.fileSystem.statSync(candidate).isDirectory()) {
+        if (
+          this.dependencies.fileSystem.existsSync(candidate) &&
+          this.dependencies.fileSystem.statSync(candidate).isDirectory()
+        ) {
           this.dependencies.log(`Resolved remote ${remote.name} folder path to: ${candidate}`);
           return candidate;
         }
@@ -65,7 +71,8 @@ export class RemoteConfigurationService {
     }
 
     if (roots.length === 1) return this.dependencies.path.resolve(roots[0], remote.folder);
-    if (this.dependencies.workspaceRoot) return this.dependencies.path.resolve(this.dependencies.workspaceRoot, remote.folder);
+    if (this.dependencies.workspaceRoot)
+      return this.dependencies.path.resolve(this.dependencies.workspaceRoot, remote.folder);
     return remote.folder;
   }
 
@@ -78,24 +85,27 @@ export class RemoteConfigurationService {
     for (const [rootPath, configs] of discoveredConfigs.entries()) {
       const key = persisted ? savedRootKey(persisted, rootPath) : undefined;
       const saved = key ? persisted?.rootConfigs?.[key] : undefined;
-      hydrated.set(rootPath, configs.map(config => {
-        const next = cloneConfig(config);
-        next.remotes = next.remotes.map(remote => savedRemoteSettings(remote, saved?.remotes?.[remote.name]));
+      hydrated.set(
+        rootPath,
+        configs.map(config => {
+          const next = cloneConfig(config);
+          next.remotes = next.remotes.map(remote => savedRemoteSettings(remote, saved?.remotes?.[remote.name]));
 
-        for (const external of Object.values(saved?.externalRemotes || {})) {
-          if (!next.remotes.some(remote => remote.name === external.name && remote.isExternal)) {
-            next.remotes.push({
-              name: external.name,
-              url: external.url,
-              folder: '',
-              configType: 'external',
-              packageManager: '',
-              isExternal: true
-            });
+          for (const external of Object.values(saved?.externalRemotes || {})) {
+            if (!next.remotes.some(remote => remote.name === external.name && remote.isExternal)) {
+              next.remotes.push({
+                name: external.name,
+                url: external.url,
+                folder: '',
+                configType: 'external',
+                packageManager: '',
+                isExternal: true
+              });
+            }
           }
-        }
-        return next;
-      }));
+          return next;
+        })
+      );
     }
     return hydrated;
   }
@@ -116,8 +126,8 @@ export class RemoteConfigurationService {
           const existingRemotes = existingConfig.remotes;
           Object.assign(existingConfig, nextConfig, { remotes: existingRemotes });
           for (const nextRemote of nextConfig.remotes) {
-            const existingRemote = existingRemotes.find(candidate =>
-              candidate.name === nextRemote.name && candidate.isExternal === nextRemote.isExternal
+            const existingRemote = existingRemotes.find(
+              candidate => candidate.name === nextRemote.name && candidate.isExternal === nextRemote.isExternal
             );
             if (existingRemote) Object.assign(existingRemote, nextRemote);
             else existingRemotes.push(nextRemote);
@@ -171,7 +181,8 @@ export class RemoteConfigurationService {
       const config = await this.dependencies.rootConfigurationStore.loadRootConfig();
       if (!config) throw new Error('No configuration found');
       const owningRoot = findContainingRoot(rootPath, config.roots) || savedRootKey(config, rootPath);
-      if (!owningRoot) throw new Error(`Could not identify configured root for external remote "${externalRemote.name}"`);
+      if (!owningRoot)
+        throw new Error(`Could not identify configured root for external remote "${externalRemote.name}"`);
 
       config.rootConfigs ??= {};
       config.rootConfigs[owningRoot] ??= {};

@@ -13,9 +13,7 @@ if (process.platform === 'linux') {
 }
 
 const command = useVirtualDisplay ? 'xvfb-run' : npmExecutable;
-const args = useVirtualDisplay
-  ? ['-a', npmExecutable, ...commandArguments]
-  : commandArguments;
+const args = useVirtualDisplay ? ['-a', npmExecutable, ...commandArguments] : commandArguments;
 
 const child = spawn(command, args, {
   env: environment,
@@ -28,5 +26,5 @@ child.once('error', error => {
 });
 
 child.once('close', (code, signal) => {
-  process.exitCode = signal ? 1 : code ?? 1;
+  process.exitCode = signal ? 1 : (code ?? 1);
 });

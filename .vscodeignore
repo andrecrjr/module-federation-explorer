@@ -18,6 +18,7 @@ coverage-baseline.json
 .vscode-test.mjs
 .gitignore
 Makefile
+.oxfmtrc.json
 webpack.config.js
 tsconfig.json
 .eslintrc.json

@@ -3,7 +3,15 @@ import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ExplorerApplication, type ExplorerApplicationServices } from './explorerApplication';
-import type { AsyncFileSystemPort, ApplicationHostPort, FileSystemPort, PathPort, StoragePort, WorkspacePort } from './ports';
+import type {
+  AsyncFileSystemPort,
+  ApplicationHostPort,
+  ExternalLinkPort,
+  FileSystemPort,
+  PathPort,
+  StoragePort,
+  WorkspacePort
+} from './ports';
 import { registerCommands } from './registerCommands';
 import { registerTerminalLifecycle, scheduleOnboarding } from './lifecycle';
 import { registerWatchers } from './registerWatchers';
@@ -18,8 +26,7 @@ import { detectPackageManagerAndStartCommand } from '../infrastructure/node/pack
 import { TerminalManager } from '../infrastructure/vscode/terminalManager';
 import { RootConfigManager } from '../features/roots/rootConfigManager';
 import { JsonRootConfigRepository } from '../infrastructure/node/rootConfigRepository';
-import { trackSuccessAndPrompt } from '../ratingPrompt';
-import { initializeRatingState } from '../ratingPrompt';
+import { FeedbackWorkflow } from '../features/feedback/feedbackWorkflow';
 
 export interface ExtensionComposition {
   application: ExplorerApplication;
@@ -53,8 +60,16 @@ export function createDefaultExplorerApplicationServices(
     isAbsolute: filePath => path.isAbsolute(filePath)
   };
   const storage: StoragePort = {
-    get: <T>(key: string) => context.workspaceState.get<T>(key),
+    get: <T>(key: string, defaultValue?: T) =>
+      defaultValue === undefined
+        ? context.workspaceState.get<T>(key)
+        : context.workspaceState.get<T>(key, defaultValue),
     update: <T>(key: string, value: T) => context.workspaceState.update(key, value)
+  };
+  const globalStorage: StoragePort = {
+    get: <T>(key: string, defaultValue?: T) =>
+      defaultValue === undefined ? context.globalState.get<T>(key) : context.globalState.get<T>(key, defaultValue),
+    update: <T>(key: string, value: T) => context.globalState.update(key, value)
   };
   const workspace: WorkspacePort = {
     folders: (vscode.workspace.workspaceFolders ?? []).map(folder => ({
@@ -77,14 +92,15 @@ export function createDefaultExplorerApplicationServices(
   const host: ApplicationHostPort = {
     executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
     setContext: (key, value) => vscode.commands.executeCommand('setContext', key, value),
-    withProgress: (title, task) => vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title,
-        cancellable: false
-      },
-      progress => task(progress)
-    ),
+    withProgress: (title, task) =>
+      vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title,
+          cancellable: false
+        },
+        progress => task(progress)
+      ),
     showErrorMessage: message => vscode.window.showErrorMessage(message),
     schedule: (task, delayMs) => {
       const timer = setTimeout(task, delayMs);
@@ -94,6 +110,9 @@ export function createDefaultExplorerApplicationServices(
   const logger = {
     log: (message: string) => outputChannel.appendLine(message),
     logError: (message: string, error: unknown) => outputChannel.appendLine(`${message}: ${String(error)}`)
+  };
+  const externalLinks: ExternalLinkPort = {
+    openExternal: url => vscode.env.openExternal(vscode.Uri.parse(url))
   };
 
   return {
@@ -116,7 +135,12 @@ export function createDefaultExplorerApplicationServices(
     fileSystem,
     path: nodePath,
     host,
-    trackSuccess: event => trackSuccessAndPrompt(context, event)
+    feedback: new FeedbackWorkflow({
+      storage: globalStorage,
+      dialogs: DialogUtils,
+      externalLinks,
+      logger
+    })
   };
 }
 
@@ -124,11 +148,7 @@ export function createDefaultExplorerApplicationServices(
 export function createCompositionRoot(context: vscode.ExtensionContext): ExtensionComposition {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const store = new ExplorerStore();
-  const application = new ExplorerApplication(
-    workspaceRoot,
-    store,
-    createDefaultExplorerApplicationServices(context)
-  );
+  const application = new ExplorerApplication(workspaceRoot, store, createDefaultExplorerApplicationServices(context));
   const provider = new UnifiedModuleFederationProvider(store, {
     isRemoteRunning: remoteKey => application.getRunningRemoteTerminal(remoteKey) !== undefined,
     log: message => application.log(message),
@@ -146,17 +166,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
     const viewId = 'moduleFederation';
     context.subscriptions.push(vscode.window.registerTreeDataProvider(viewId, provider));
-    context.subscriptions.push(vscode.window.createTreeView(viewId, {
-      treeDataProvider: provider,
-      showCollapseAll: true,
-      dragAndDropController: provider
-    }));
+    context.subscriptions.push(
+      vscode.window.createTreeView(viewId, {
+        treeDataProvider: provider,
+        showCollapseAll: true,
+        dragAndDropController: provider
+      })
+    );
 
     context.subscriptions.push(...registerCommands(context, application));
     context.subscriptions.push(...registerWatchers(application));
     registerTerminalLifecycle(context, application);
     scheduleOnboarding(context, application);
-    await initializeRatingState(context);
+    await application.initializeFeedback();
     await application.initialize();
 
     vscode.window.showInformationMessage('Module Federation Explorer is now active!');

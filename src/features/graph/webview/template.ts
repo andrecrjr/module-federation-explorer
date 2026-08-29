@@ -16,11 +16,7 @@ export function serializeForScript(value: unknown): string {
  * Generate the full HTML/CSS/JS for the D3.js dependency graph webview.
  * Extracted from the monolithic DependencyGraphManager.getWebviewContent().
  */
-export function generateWebviewContent(
-  webview: vscode.Webview,
-  extensionPath: string,
-  graph: DependencyGraph
-): string {
+export function generateWebviewContent(webview: vscode.Webview, extensionPath: string, graph: DependencyGraph): string {
   const d3GraphData: D3GraphData = {
     nodes: graph.nodes,
     links: graph.edges.map(edge => ({
@@ -33,9 +29,7 @@ export function generateWebviewContent(
     }))
   };
 
-  const d3Uri = webview.asWebviewUri(
-    vscode.Uri.file(path.join(extensionPath, 'media', 'd3.min.js'))
-  );
+  const d3Uri = webview.asWebviewUri(vscode.Uri.file(path.join(extensionPath, 'media', 'd3.min.js')));
 
   return `<!DOCTYPE html>
 <html lang="en">

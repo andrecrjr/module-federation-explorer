@@ -1,6 +1,6 @@
 # Roadmap
 
-Product ideas and remaining technical work for Module Federation Explorer. Current architecture and ownership live in [`docs/architecture.md`](docs/architecture.md); refactor history lives in [`todo-refactor.md`](todo-refactor.md).
+Product ideas and remaining technical work for Module Federation Explorer. Current architecture and ownership live in [`docs/architecture.md`](docs/architecture.md).
 
 ## Completed foundation
 
@@ -16,11 +16,11 @@ Product ideas and remaining technical work for Module Federation Explorer. Curre
 ## Technical priorities
 
 - [ ] Harden malformed or partially migrated root configuration handling, including clearer recovery guidance.
-- [ ] Move onboarding into `src/features/onboarding/`; separate controller, message validation, and HTML template.
-- [ ] Move rating/feedback behavior into `src/features/feedback/`.
-- [ ] Split `src/types.ts` into domain and presentation models without adding a catch-all shared types module.
-- [ ] Add automated dependency-direction checks for application, feature, infrastructure, and UI imports.
-- [ ] Organize tests under explicit unit, integration, and UI areas while preserving fast extension-host feedback.
+- [x] Move onboarding into `src/features/onboarding/`; separate controller, message validation, and HTML template.
+- [x] Move rating/feedback behavior into `src/features/feedback/`.
+- [x] Split shared models into domain and presentation models without adding a catch-all shared types module.
+- [x] Add automated dependency-direction checks for low-level, feature, and adapter imports.
+- [x] Organize tests under explicit unit, integration, and UI areas while preserving fast extension-host feedback.
 - [ ] Add support for asynchronous config functions and additional safe static-expression shapes.
 - [ ] Add manifest-based discovery for Module Federation 2.0 projects.
 

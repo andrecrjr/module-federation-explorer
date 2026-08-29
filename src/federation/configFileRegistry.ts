@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { ModuleFederationConfig } from '../types';
+import type { ModuleFederationConfig } from './types';
 import { parseConfigFile, type ConfigExtractor, type ParseDiagnostic } from '../parser/parseConfigFile';
 import { extractConfigFromModernJS } from '../extractors/modernjs';
 import { extractConfigFromRSBuild } from '../extractors/rsbuild';
@@ -17,7 +17,11 @@ export interface ConfigFileDefinition {
 export const CONFIG_FILE_DEFINITIONS: readonly ConfigFileDefinition[] = [
   { type: 'webpack', pattern: '**/{webpack.config.js,webpack.config.ts}', extractor: extractConfigFromWebpack },
   { type: 'vite', pattern: '**/{vite.config.js,vite.config.ts}', extractor: extractConfigFromVite },
-  { type: 'modernjs', pattern: '**/{module-federation.config.js,module-federation.config.ts,modern.config.js,modern.config.ts}', extractor: extractConfigFromModernJS },
+  {
+    type: 'modernjs',
+    pattern: '**/{module-federation.config.js,module-federation.config.ts,modern.config.js,modern.config.ts}',
+    extractor: extractConfigFromModernJS
+  },
   { type: 'rsbuild', pattern: '**/{rsbuild.config.js,rsbuild.config.ts}', extractor: extractConfigFromRSBuild },
   {
     type: 'rspack',
@@ -31,7 +35,10 @@ export interface FederationFileDiscovery {
 }
 
 export interface FederationDiscoveryDependencies extends FederationFileDiscovery {
-  parseConfigFile: (filePath: string, extractor: ConfigExtractor<ModuleFederationConfig>) => Promise<ModuleFederationConfig>;
+  parseConfigFile: (
+    filePath: string,
+    extractor: ConfigExtractor<ModuleFederationConfig>
+  ) => Promise<ModuleFederationConfig>;
 }
 
 export interface DiscoveredConfiguration {
@@ -55,10 +62,12 @@ export class FederationDiscoveryService {
     const seenFiles = new Set<string>();
 
     for (const rootPath of rootPaths) {
-      const matches = await Promise.all(CONFIG_FILE_DEFINITIONS.map(async definition => ({
-        definition,
-        files: await this.dependencies.findFiles(rootPath, definition.pattern, '**/node_modules/**')
-      })));
+      const matches = await Promise.all(
+        CONFIG_FILE_DEFINITIONS.map(async definition => ({
+          definition,
+          files: await this.dependencies.findFiles(rootPath, definition.pattern, '**/node_modules/**')
+        }))
+      );
 
       for (const { definition, files } of matches) {
         for (const filePath of files) {
@@ -68,9 +77,10 @@ export class FederationDiscoveryService {
             const config = await this.dependencies.parseConfigFile(filePath, definition.extractor);
             if (config.detected) configurations.push({ rootPath, filePath, type: definition.type, config });
           } catch (error) {
-            const diagnostics = error && typeof error === 'object' && 'diagnostics' in error
-              ? (error as { diagnostics?: readonly ParseDiagnostic[] }).diagnostics
-              : undefined;
+            const diagnostics =
+              error && typeof error === 'object' && 'diagnostics' in error
+                ? (error as { diagnostics?: readonly ParseDiagnostic[] }).diagnostics
+                : undefined;
             errors.push({ filePath, error, diagnostics });
           }
         }

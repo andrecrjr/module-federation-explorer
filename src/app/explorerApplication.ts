@@ -3,22 +3,26 @@ import type {
   ConfigurationLoader,
   DependencyGraphService,
   DialogService,
+  FeedbackPort,
   FileSystemPort,
   Logger,
   PackageManagerDetector,
   PathPort,
   PathResolverPort,
   RootConfigService,
-  SuccessEvent,
   TerminalLike,
   TerminalPort
 } from './ports';
 import { ExplorerStore } from '../features/explorer/explorerStore';
-import { Remote, RemotesFolder, RootFolder, UnifiedRootConfig } from '../types';
+import type { Remote } from '../federation/types';
+import type { RemotesFolder, RootFolder } from '../features/explorer/types';
+import type { UnifiedRootConfig } from '../features/roots/types';
 import { RemoteConfigurationService } from '../features/remotes/remoteConfigurationService';
 import { RemoteWorkflow } from '../features/remotes/remoteWorkflow';
 import { RootAppController } from '../features/roots/rootAppWorkflow';
 import { normalizePath } from '../infrastructure/node/pathUtils';
+import { OnboardingWorkflow } from '../features/onboarding/onboardingWorkflow';
+import type { DetectedProject, OnboardingConfigurationResult, OnboardingSelection } from '../features/onboarding/types';
 
 export interface ExplorerApplicationServices {
   rootConfigManager: RootConfigService;
@@ -32,7 +36,7 @@ export interface ExplorerApplicationServices {
   fileSystem: Pick<FileSystemPort, 'existsSync' | 'statSync'>;
   path: PathPort;
   host: ApplicationHostPort;
-  trackSuccess: (event: SuccessEvent) => Promise<void>;
+  feedback: FeedbackPort;
 }
 
 /** Coordinates explorer workflows while keeping the tree provider focused on rendering. */
@@ -40,6 +44,7 @@ export class ExplorerApplication {
   private readonly remoteConfigurationService: RemoteConfigurationService;
   private readonly remoteWorkflow: RemoteWorkflow;
   private readonly rootAppController: RootAppController;
+  private readonly onboardingWorkflow: OnboardingWorkflow;
   private reloadQueued = false;
 
   constructor(
@@ -97,6 +102,12 @@ export class ExplorerApplication {
         this.remoteWorkflow.addExternalRemoteToHost(remotesFolder, targetRootPath),
       log: message => this.log(message),
       logError: (message, error) => this.logError(message, error)
+    });
+
+    this.onboardingWorkflow = new OnboardingWorkflow({
+      rootConfigManager: this.services.rootConfigManager,
+      path: this.services.path,
+      reloadConfigurations: () => this.reloadConfigurations()
     });
   }
 
@@ -172,54 +183,57 @@ export class ExplorerApplication {
     this.store.setLoading(true);
     try {
       await this.services.host.withProgress('Module Federation Explorer', async progress => {
-          progress.report({ message: 'Loading configurations...' });
-          const rootConfig = await this.services.rootConfigManager.loadRootConfig();
-          if (!rootConfig) {
-            this.store.clear();
-            this.log('Failed to load root configuration');
-            return;
-          }
+        progress.report({ message: 'Loading configurations...' });
+        const rootConfig = await this.services.rootConfigManager.loadRootConfig();
+        if (!rootConfig) {
+          this.store.clear();
+          this.log('Failed to load root configuration');
+          return;
+        }
 
-          if (rootConfig.roots.length === 0) {
-            this.store.clear();
-            this.log('No Host directories configured. Configure at least one Host directory.');
-            void this.services.host.setContext('moduleFederation.hasRoots', false);
-            this.services.host.schedule(() => {
-              void this.services.dialogs.showInfo('No Host directories are configured.', {
+        if (rootConfig.roots.length === 0) {
+          this.store.clear();
+          this.log('No Host directories configured. Configure at least one Host directory.');
+          void this.services.host.setContext('moduleFederation.hasRoots', false);
+          this.services.host.schedule(() => {
+            void this.services.dialogs
+              .showInfo('No Host directories are configured.', {
                 detail: 'Use the Add Host button in the toolbar to configure your first Host, then add more Hosts.',
-                actions: [
-                  { title: 'Add Host' },
-                  { title: 'Later', isCloseAffordance: true }
-                ]
-              }).then(selection => {
+                actions: [{ title: 'Add Host' }, { title: 'Later', isCloseAffordance: true }]
+              })
+              .then(selection => {
                 if (selection === 'Add Host') void this.services.host.executeCommand('moduleFederation.addRoot');
               });
-            }, 1000);
-            return;
-          }
+          }, 1000);
+          return;
+        }
 
-          this.log(`Found ${rootConfig.roots.length} configured roots`);
-          progress.report({ message: 'Scanning federation configuration files...' });
-          const snapshot = await this.services.configurationService.load(rootConfig.roots);
-          this.store.replace(snapshot.configs);
-          for (const loadError of snapshot.errors) {
-            this.log(`Failed to parse configuration file ${loadError.filePath}: ${String(loadError.error)}`);
-          }
+        this.log(`Found ${rootConfig.roots.length} configured roots`);
+        progress.report({ message: 'Scanning federation configuration files...' });
+        const snapshot = await this.services.configurationService.load(rootConfig.roots);
+        this.store.replace(snapshot.configs);
+        for (const loadError of snapshot.errors) {
+          this.log(`Failed to parse configuration file ${loadError.filePath}: ${String(loadError.error)}`);
+        }
 
-          progress.report({ message: 'Loading host configurations...' });
-          await this.rootAppController.loadRootFolderConfigs();
-          progress.report({ message: 'Loading remote configurations...' });
-          const hydratedConfigs = await this.remoteConfigurationService.hydrateRemoteConfigurations(this.store.getConfigs());
-          this.store.replace(hydratedConfigs);
-          await this.updateRootFolders();
-          void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
-          this.log('Finished loading configurations from all roots');
-        });
+        progress.report({ message: 'Loading host configurations...' });
+        await this.rootAppController.loadRootFolderConfigs();
+        progress.report({ message: 'Loading remote configurations...' });
+        const hydratedConfigs = await this.remoteConfigurationService.hydrateRemoteConfigurations(
+          this.store.getConfigs()
+        );
+        this.store.replace(hydratedConfigs);
+        await this.updateRootFolders();
+        void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
+        this.log('Finished loading configurations from all roots');
+      });
 
       this.services.dependencyGraphManager.refreshDependencyGraph(this.store.getConfigs());
     } catch (error) {
       this.logError('Failed to load Module Federation configurations', error);
-      void this.services.host.showErrorMessage('Failed to load Module Federation configurations. See output panel for details.');
+      void this.services.host.showErrorMessage(
+        'Failed to load Module Federation configurations. See output panel for details.'
+      );
     } finally {
       this.store.setLoading(false);
       if (this.reloadQueued) {
@@ -237,19 +251,21 @@ export class ExplorerApplication {
     }
 
     const rootFolders: RootFolder[] = Array.from(this.store.getConfigs().entries()).map(([rootPath, configs]) => {
-      const configuredRootPath = Object.keys(config.rootConfigs || {}).find(candidate => normalizePath(candidate) === normalizePath(rootPath));
+      const configuredRootPath = Object.keys(config.rootConfigs || {}).find(
+        candidate => normalizePath(candidate) === normalizePath(rootPath)
+      );
       const configuredRoot = configuredRootPath
         ? config.rootConfigs?.[configuredRootPath]
         : Object.keys(config.rootConfigs || {}).length === 1
           ? Object.values(config.rootConfigs || {})[0]
           : undefined;
       return {
-      type: 'rootFolder',
-      path: rootPath,
-      name: this.services.path.basename(rootPath),
-      configs,
-      startCommand: configuredRoot?.startCommand,
-      isRunning: this.services.terminalManager.isRootAppRunning(rootPath)
+        type: 'rootFolder',
+        path: rootPath,
+        name: this.services.path.basename(rootPath),
+        configs,
+        startCommand: configuredRoot?.startCommand,
+        isRunning: this.services.terminalManager.isRootAppRunning(rootPath)
       };
     });
 
@@ -269,17 +285,12 @@ export class ExplorerApplication {
           {
             modal: true,
             detail: 'This should be the folder containing the package.json file for this remote application.',
-            actions: [
-              { title: 'Browse for Folder' },
-              { title: 'Cancel', isCloseAffordance: true }
-            ]
+            actions: [{ title: 'Browse for Folder' }, { title: 'Cancel', isCloseAffordance: true }]
           }
         );
         if (proceed !== 'Browse for Folder') return;
 
-        const defaultPath = this.workspaceRoot
-          ? this.services.path.dirname(this.workspaceRoot)
-          : undefined;
+        const defaultPath = this.workspaceRoot ? this.services.path.dirname(this.workspaceRoot) : undefined;
         const selectedFolder = await this.services.dialogs.showFolderPicker({
           title: `Select Project Folder for Remote "${remote.name}"`,
           openLabel: `Select "${remote.name}" Project Folder`,
@@ -287,7 +298,7 @@ export class ExplorerApplication {
           validateFolder: async folderPath => {
             if (!this.services.fileSystem.existsSync(this.services.path.join(folderPath, 'package.json'))) {
               const continueAnyway = await this.services.dialogs.showConfirmation(
-                'The selected folder doesn\'t contain a package.json file.',
+                "The selected folder doesn't contain a package.json file.",
                 {
                   detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
                   confirmText: 'Continue Anyway',
@@ -315,13 +326,11 @@ export class ExplorerApplication {
           const newFolder = await this.services.dialogs.showFolderPicker({
             title: `Select New Project Folder for Remote "${remote.name}"`,
             openLabel: `Select "${remote.name}" Project Folder`,
-            defaultPath: this.workspaceRoot
-              ? this.services.path.dirname(this.workspaceRoot)
-              : undefined,
+            defaultPath: this.workspaceRoot ? this.services.path.dirname(this.workspaceRoot) : undefined,
             validateFolder: async folderPath => {
               if (!this.services.fileSystem.existsSync(this.services.path.join(folderPath, 'package.json'))) {
                 const continueAnyway = await this.services.dialogs.showConfirmation(
-                  'The selected folder doesn\'t contain a package.json file.',
+                  "The selected folder doesn't contain a package.json file.",
                   {
                     detail: `Folder: ${folderPath}\n\nThis might not be a valid Node.js project folder. Do you want to continue anyway?`,
                     confirmText: 'Continue Anyway',
@@ -349,9 +358,8 @@ export class ExplorerApplication {
       if (!remote.buildCommand || !remote.startCommand) {
         let packageManager = remote.packageManager;
         if (!packageManager) {
-          const configType = remote.configType === 'vite' || remote.configType === 'rsbuild'
-            ? remote.configType
-            : 'webpack';
+          const configType =
+            remote.configType === 'vite' || remote.configType === 'rsbuild' ? remote.configType : 'webpack';
           ({ packageManager } = await this.services.detectPackageManager(folder, configType));
           remote.packageManager = packageManager;
         }
@@ -399,7 +407,7 @@ export class ExplorerApplication {
       );
       this.refresh();
       await this.services.dialogs.showSuccess(`Started remote ${remote.name}`);
-      await this.services.trackSuccess('remote-started');
+      await this.services.feedback.trackSuccess('remote-started');
     } catch (error) {
       await this.services.dialogs.showError(`Failed to start remote ${remote.name}`, {
         detail: error instanceof Error ? error.message : String(error)
@@ -419,19 +427,56 @@ export class ExplorerApplication {
     }
   }
 
-  async addRoot(): Promise<void> { await this.rootAppController.addRoot(); }
-  async removeRoot(rootFolder: RootFolder): Promise<void> { await this.rootAppController.removeRoot(rootFolder); }
-  async changeConfigFile(): Promise<void> { await this.rootAppController.changeConfigFile(); }
-  async startRootApp(rootFolder: RootFolder): Promise<void> { await this.rootAppController.startRootApp(rootFolder); }
-  async editRootAppCommands(rootFolder: RootFolder): Promise<void> { await this.rootAppController.editRootAppCommands(rootFolder); }
-  async stopRootApp(rootFolder: RootFolder): Promise<void> { await this.rootAppController.stopRootApp(rootFolder); }
+  async addRoot(): Promise<void> {
+    await this.rootAppController.addRoot();
+  }
+  async removeRoot(rootFolder: RootFolder): Promise<void> {
+    await this.rootAppController.removeRoot(rootFolder);
+  }
+  async changeConfigFile(): Promise<void> {
+    await this.rootAppController.changeConfigFile();
+  }
+  async startRootApp(rootFolder: RootFolder): Promise<void> {
+    await this.rootAppController.startRootApp(rootFolder);
+  }
+  async editRootAppCommands(rootFolder: RootFolder): Promise<void> {
+    await this.rootAppController.editRootAppCommands(rootFolder);
+  }
+  async stopRootApp(rootFolder: RootFolder): Promise<void> {
+    await this.rootAppController.stopRootApp(rootFolder);
+  }
   async configureRootAppStartCommand(rootFolder: RootFolder): Promise<string | undefined> {
     return this.rootAppController.configureRootAppStartCommand(rootFolder);
   }
 
-  editRemoteCommands(remote: Remote): Promise<void> { return this.remoteWorkflow.editRemoteCommands(remote); }
-  addExternalRemote(remotesFolder: RemotesFolder): Promise<void> { return this.remoteWorkflow.addExternalRemote(remotesFolder); }
-  removeExternalRemote(remote: Remote): Promise<void> { return this.remoteWorkflow.removeExternalRemote(remote); }
+  async completeOnboarding(
+    selections: readonly OnboardingSelection[],
+    detectedProjects: readonly DetectedProject[]
+  ): Promise<OnboardingConfigurationResult> {
+    const result = await this.onboardingWorkflow.configure(selections, detectedProjects);
+    if (result.configuredProjects > 0) await this.services.feedback.trackSuccess('onboarding-complete');
+    return result;
+  }
+
+  initializeFeedback(): Promise<void> {
+    return this.services.feedback.initialize();
+  }
+  openFeedback(): Promise<void> {
+    return this.services.feedback.openFeedback();
+  }
+  openMarketplaceReview(): Promise<void> {
+    return this.services.feedback.openMarketplaceReview();
+  }
+
+  editRemoteCommands(remote: Remote): Promise<void> {
+    return this.remoteWorkflow.editRemoteCommands(remote);
+  }
+  addExternalRemote(remotesFolder: RemotesFolder): Promise<void> {
+    return this.remoteWorkflow.addExternalRemote(remotesFolder);
+  }
+  removeExternalRemote(remote: Remote): Promise<void> {
+    return this.remoteWorkflow.removeExternalRemote(remote);
+  }
   addExternalRemoteToHost(remotesFolder: RemotesFolder, targetRootPath: string): Promise<void> {
     return this.remoteWorkflow.addExternalRemoteToHost(remotesFolder, targetRootPath);
   }
@@ -448,7 +493,9 @@ export class ExplorerApplication {
     return this.remoteConfigurationService.saveRemoteConfiguration(remote);
   }
 
-  clearAllRunningApps(): void { this.services.terminalManager.clearAllRunningApps(); }
+  clearAllRunningApps(): void {
+    this.services.terminalManager.clearAllRunningApps();
+  }
 
   cleanupDisposedTerminals(): void {
     const cleanup = this.services.terminalManager.cleanupDisposedTerminals();
@@ -467,7 +514,9 @@ export class ExplorerApplication {
   async showDependencyGraph(): Promise<void> {
     try {
       if (this.store.getConfigs().size === 0) {
-        await this.services.dialogs.showInfo('No Module Federation configurations found. Please add a Host folder first.');
+        await this.services.dialogs.showInfo(
+          'No Module Federation configurations found. Please add a Host folder first.'
+        );
         return;
       }
 

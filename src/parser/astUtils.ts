@@ -6,7 +6,7 @@ export type AstNode = {
 export function asNode(value: unknown): AstNode | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
   const candidate = value as { type?: unknown };
-  return typeof candidate.type === 'string' ? value as AstNode : undefined;
+  return typeof candidate.type === 'string' ? (value as AstNode) : undefined;
 }
 
 export function nodeList(value: unknown): AstNode[] {
@@ -17,8 +17,8 @@ export function findProperty(objectNode: unknown, name: string): AstNode | undef
   const object = asNode(objectNode);
   if (!object || object.type !== 'ObjectExpression') return undefined;
 
-  return nodeList(object.properties).find(property =>
-    property.type === 'Property' && getPropertyKey(property) === name
+  return nodeList(object.properties).find(
+    property => property.type === 'Property' && getPropertyKey(property) === name
   );
 }
 
@@ -34,8 +34,10 @@ export function getPropertyKey(propertyNode: unknown): string | undefined {
 export function getMemberName(memberNode: unknown): string | undefined {
   const member = asNode(memberNode);
   const property = asNode(member?.property);
-  return member?.type === 'MemberExpression' && !member.computed &&
-    property?.type === 'Identifier' && typeof property.name === 'string'
+  return member?.type === 'MemberExpression' &&
+    !member.computed &&
+    property?.type === 'Identifier' &&
+    typeof property.name === 'string'
     ? property.name
     : undefined;
 }

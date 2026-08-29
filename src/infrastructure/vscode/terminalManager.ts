@@ -1,10 +1,5 @@
 import * as vscode from 'vscode';
-import type {
-  TerminalCleanupResult,
-  TerminalCreator,
-  TerminalLike,
-  TerminalPort
-} from '../../app/ports';
+import type { TerminalCleanupResult, TerminalCreator, TerminalLike, TerminalPort } from '../../app/ports';
 
 export type { TerminalCleanupResult, TerminalLike } from '../../app/ports';
 
@@ -40,13 +35,7 @@ export class TerminalManager implements TerminalPort {
     this.createTerminal = onChangeOrDependencies.createTerminal ?? defaultTerminalCreator.createTerminal;
   }
 
-  startRemote(
-    remoteKey: string,
-    remoteName: string,
-    folder: string,
-    buildCommand: string,
-    startCommand: string
-  ): void {
+  startRemote(remoteKey: string, remoteName: string, folder: string, buildCommand: string, startCommand: string): void {
     const buildTerminal = this.createTerminal(`Build: ${remoteName} - Remote`);
     const startTerminal = this.createTerminal(`Preview: ${remoteName} - Remote`, buildTerminal);
     buildTerminal.show?.();
@@ -116,8 +105,10 @@ export class TerminalManager implements TerminalPort {
   }
 
   cleanupDisposedTerminals(): TerminalCleanupResult {
-    const remotes = this.removeDisposed(this.runningRemotes, remote => this.isAlive(remote.startTerminal)
-      && (!remote.buildTerminal || this.isAlive(remote.buildTerminal)));
+    const remotes = this.removeDisposed(
+      this.runningRemotes,
+      remote => this.isAlive(remote.startTerminal) && (!remote.buildTerminal || this.isAlive(remote.buildTerminal))
+    );
     const rootApps = this.removeDisposed(this.runningRootApps, app => this.isAlive(app.terminal));
 
     if (remotes > 0 || rootApps > 0) {
@@ -129,8 +120,10 @@ export class TerminalManager implements TerminalPort {
 
   handleTerminalClosed(closedTerminal: TerminalLike): boolean {
     for (const [remoteKey, remote] of this.runningRemotes) {
-      if (this.terminalsMatch(remote.startTerminal, closedTerminal)
-        || (remote.buildTerminal && this.terminalsMatch(remote.buildTerminal, closedTerminal))) {
+      if (
+        this.terminalsMatch(remote.startTerminal, closedTerminal) ||
+        (remote.buildTerminal && this.terminalsMatch(remote.buildTerminal, closedTerminal))
+      ) {
         this.runningRemotes.delete(remoteKey);
         this.onChange();
         return true;
@@ -160,19 +153,18 @@ export class TerminalManager implements TerminalPort {
     if (first === second) return true;
 
     try {
-      return first.name === second.name
-        && first.processId !== undefined
-        && second.processId !== undefined
-        && first.processId === second.processId;
+      return (
+        first.name === second.name &&
+        first.processId !== undefined &&
+        second.processId !== undefined &&
+        first.processId === second.processId
+      );
     } catch {
       return first.name === second.name;
     }
   }
 
-  private removeDisposed<T>(
-    entries: Map<string, T>,
-    isAlive: (entry: T) => boolean
-  ): number {
+  private removeDisposed<T>(entries: Map<string, T>, isAlive: (entry: T) => boolean): number {
     let removed = 0;
     for (const [key, entry] of entries) {
       if (!isAlive(entry)) {

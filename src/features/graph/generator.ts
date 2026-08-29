@@ -1,7 +1,4 @@
-import {
-  ModuleFederationConfig,
-  SharedDependency
-} from '../../types';
+import type { ModuleFederationConfig, SharedDependency } from '../../federation/types';
 import {
   AppCapability,
   DependencyGraph,
@@ -16,7 +13,6 @@ import {
  * Extracted from the original monolithic DependencyGraphManager.
  */
 export class GraphGenerator {
-
   /**
    * Generate a dependency graph from the provided configurations.
    * Six-pass algorithm:
@@ -107,7 +103,10 @@ export class GraphGenerator {
         appCapabilities.set(appId, { isHost: isHost || isBidirectional, isRemote, config });
 
         if (config.exposes.length > 0) {
-          exposedModulesMap.set(appId, config.exposes.map(e => e.name));
+          exposedModulesMap.set(
+            appId,
+            config.exposes.map(e => e.name)
+          );
         }
       });
     });
@@ -261,13 +260,12 @@ export class GraphGenerator {
         const directedPairKey = `${hostId}->${remoteId}`;
         if (processedPairs.has(directedPairKey)) return;
 
-        const isHostAlsoRemote =
-          remoteToHostMap.has(hostId) && remoteToHostMap.get(hostId)!.includes(remoteId);
+        const isHostAlsoRemote = remoteToHostMap.has(hostId) && remoteToHostMap.get(hostId)!.includes(remoteId);
 
         const hostConfig = appCapabilities.get(hostId)?.config;
-        const remoteConfig = hostConfig?.remotes.find(r =>
-          this.findAppIdByName(r.name, appCapabilities, diagnostics) === remoteId ||
-          `external-${r.name}` === remoteId
+        const remoteConfig = hostConfig?.remotes.find(
+          r =>
+            this.findAppIdByName(r.name, appCapabilities, diagnostics) === remoteId || `external-${r.name}` === remoteId
         );
 
         if (remoteConfig?.url && !remoteNode.url) {
@@ -460,7 +458,7 @@ function hashPath(input: string): string {
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
     const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash;
   }
   return Math.abs(hash).toString(36).substring(0, 8);

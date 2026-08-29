@@ -7,7 +7,7 @@
     "extensionsDir": ".test-extensions/configured"
   },
   "run": {
-    "testFiles": ["./out/ui-test/ui-test/configured.test.js"],
+    "testFiles": ["./out/ui-test/test/integration/ui/configured.test.js"],
     "resources": [],
     "vscodeVersion": "1.135.0",
     "storage": ".test-resources/configured",

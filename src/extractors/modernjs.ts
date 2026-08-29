@@ -7,7 +7,12 @@ export function extractConfigFromModernJS(ast: AstNode, _workspaceRoot: string) 
   for (const statement of getProgramBody(ast)) {
     const declaration = asNode(statement.declaration);
     const callee = asNode(declaration?.callee);
-    if (statement.type === 'ExportDefaultDeclaration' && declaration?.type === 'CallExpression' && getIdentifierName(callee) === 'createModuleFederationConfig' && asNode(nodeList(declaration.arguments)[0])?.type === 'ObjectExpression') {
+    if (
+      statement.type === 'ExportDefaultDeclaration' &&
+      declaration?.type === 'CallExpression' &&
+      getIdentifierName(callee) === 'createModuleFederationConfig' &&
+      asNode(nodeList(declaration.arguments)[0])?.type === 'ObjectExpression'
+    ) {
       config.detected = true;
       extractConfigFromOptions(nodeList(declaration.arguments)[0], config);
     }

@@ -147,24 +147,43 @@ Most commands are available from the command palette and the relevant view toolb
 ## Development
 
 ```bash
-npm ci
-npm run typecheck
-npm run lint
-npm run compile
+make setup
+make check
 ```
 
-Useful scripts:
+Useful Make targets:
+
+| Target | Purpose |
+| --- | --- |
+| `make setup` | Install locked dependencies |
+| `make run` | Launch the VS Code Extension Development Host |
+| `make watch` | Rebuild the extension bundle on changes |
+| `make format` | Format supported files with Oxfmt |
+| `make format-check` | Check formatting without writing files |
+| `make lint` | Run Oxlint |
+| `make check` | Run formatting, lint, typecheck, and headless tests |
+| `make vsce` | Build and package a `.vsix` with VSCE |
+| `make install` | Install the generated `.vsix` in VS Code |
+
+Equivalent npm scripts:
 
 | Script | Purpose |
 | --- | --- |
+| `npm run format` | Format supported files with Oxfmt |
+| `npm run format:check` | Check formatting without writing files |
 | `npm run watch` | Rebuild the extension bundle on changes |
 | `npm run package` | Create the production Rspack bundle in `dist/` |
+| `npm run vsce` | Package the extension as a `.vsix` |
 | `npm run test:headless` | Run unit and extension-host tests without a desktop UI |
 | `npm run test:coverage` | Run coverage and enforce the checked-in baseline |
 | `npm run test:manual` | Run manual-flow integration tests |
 | `npm run test:ui` | Run configured-workspace and onboarding desktop suites |
 | `npm run test:ui:headless` | Run desktop suites through the Linux headless wrapper |
-| `make package` | Build a `.vsix` using `vsce` |
+`make package` is kept as an alias for `make vsce`.
+
+VSCE is installed as a local dev dependency. Run `make setup` once, then use
+`make vsce`; the generated `.vsix` can be installed with `make install` or the
+VS Code Extensions view.
 
 Desktop UI tests use VS Code Extension Tester and need a graphical display. On headless Linux, use `npm run test:ui:headless`; the wrapper runs the suite inside Xvfb. CI uses Node.js 24 on Ubuntu 24.04, applies the temporary AppArmor setting required by ExTester's `openResources()` workflow, and runs the same wrapper. The test helper opens fixture workspaces only after the VS Code workbench settles because ExTester starts VS Code through ChromeDriver and then uses a second-instance CLI call to open resources.
 
@@ -173,7 +192,7 @@ Desktop UI tests use VS Code Extension Tester and need a graphical display. On h
 - [`docs/architecture.md`](docs/architecture.md): current runtime architecture, boundaries, data flow, and extension points.
 - [`AGENTS.md`](AGENTS.md): repository guidance for coding agents, including safe change paths and validation rules.
 - [`roadmap.md`](roadmap.md): active product and technical backlog.
-- [`todo-refactor.md`](todo-refactor.md): refactor history, remaining boundary work, and definition of done.
+- [`docs/architecture.md`](docs/architecture.md): current architecture, ownership, dependency direction, and testing layout.
 
 ## Contributing
 

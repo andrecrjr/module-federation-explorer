@@ -7,7 +7,7 @@
     "extensionsDir": ".test-extensions/onboarding"
   },
   "run": {
-    "testFiles": ["./out/ui-test/ui-test/onboarding.test.js"],
+    "testFiles": ["./out/ui-test/test/integration/ui/onboarding.test.js"],
     "resources": [],
     "vscodeVersion": "1.135.0",
     "storage": ".test-resources/onboarding",

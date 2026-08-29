@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { ExplorerApplication } from './explorerApplication';
-import { detectModuleFederationProjects } from '../workspaceScanner';
-import { showOnboardingPage } from '../onboarding';
+import { detectModuleFederationProjects, showOnboardingPage } from '../features/onboarding';
 
 const DEFAULT_ONBOARDING_DELAY_MS = 1500;
 const DEFAULT_TERMINAL_CLEANUP_INTERVAL_MS = 10000;
@@ -30,16 +29,10 @@ export function registerTerminalLifecycle(
   });
   const cleanupTimer = setInterval(() => application.cleanupDisposedTerminals(), cleanupIntervalMs);
 
-  context.subscriptions.push(
-    terminalDisposalListener,
-    new vscode.Disposable(() => clearInterval(cleanupTimer))
-  );
+  context.subscriptions.push(terminalDisposalListener, new vscode.Disposable(() => clearInterval(cleanupTimer)));
 }
 
-async function runOnboarding(
-  context: vscode.ExtensionContext,
-  application: ExplorerApplication
-): Promise<void> {
+async function runOnboarding(context: vscode.ExtensionContext, application: ExplorerApplication): Promise<void> {
   try {
     if (await application.hasConfiguredRoots()) return;
 

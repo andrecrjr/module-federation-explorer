@@ -1,6 +1,6 @@
 import type { AstNode } from '../parser/astUtils';
 import { asNode, getIdentifierName, getMemberName, walkAst } from '../parser/astUtils';
-import type { ModuleFederationConfig } from '../types';
+import type { ModuleFederationConfig } from '../federation/types';
 import { createConfig, extractConfigFromOptions } from './shared';
 
 export function extractConfigFromWebpack(

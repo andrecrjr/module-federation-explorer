@@ -62,18 +62,20 @@ src/
 │   ├── explorer/                    store, tree model, provider, tree commands
 │   ├── roots/                       root persistence and host workflow
 │   ├── remotes/                     remote persistence and remote workflow
-│   └── graph/                       graph model, generator, webview, commands
+│   ├── graph/                       graph model, generator, webview, commands
+│   ├── onboarding/                  detection, setup workflow, controller, template
+│   └── feedback/                    rating and external feedback workflow
 ├── infrastructure/
 │   ├── node/                        filesystem, paths, package manager, JSON repo
 │   └── vscode/                      dialogs, output channel, terminals
-├── types.ts                         federation and root domain models
-├── configurationService.ts           discovery façade and remote enrichment
-├── workspaceScanner.ts               onboarding adapter over shared discovery
-├── onboarding.ts                     onboarding webview (transitional)
-└── ratingPrompt.ts                   feedback state (transitional)
+├── federation/
+│   └── types.ts                     federation domain models
+├── features/explorer/types.ts       explorer presentation models
+├── features/roots/types.ts          persisted root models
+└── configurationService.ts           discovery façade and remote enrichment
 ```
 
-Graph-specific types live in `src/features/graph/types.ts`. Federation and root models remain in `src/types.ts`; splitting those models is tracked in `todo-refactor.md`.
+Graph-specific types live in `src/features/graph/types.ts`. Federation, root, and explorer presentation models live beside their owning areas.
 
 ## Dependency direction
 
@@ -125,7 +127,7 @@ On activation, running-terminal bookkeeping is cleared. VS Code terminals that c
 - roots configured → load and hydrate configurations;
 - no roots configured → leave the store empty and wait for user setup/onboarding.
 
-After 1.5 seconds, `scheduleOnboarding()` checks again. If roots are still absent, `workspaceScanner.ts` runs the same `FederationDiscoveryService` used by normal loading and passes detected projects to the onboarding webview.
+After 1.5 seconds, `scheduleOnboarding()` checks again. If roots are still absent, `features/onboarding/workspaceScanner.ts` runs the same `FederationDiscoveryService` used by normal loading and passes detected projects to `OnboardingController`.
 
 ### Configuration reload
 
@@ -322,25 +324,23 @@ Application IDs combine hashes of root/config paths, app name, and config type. 
 
 ## Onboarding, welcome, and feedback
 
-These modules remain outside `features/` and are known transitional seams:
-
-- `src/onboarding.ts` renders the setup webview, reuses shared discovery, writes selected roots/settings through `ExplorerApplication`, and reloads the store;
+- `src/features/onboarding/workspaceScanner.ts` adapts the shared federation discovery pipeline for onboarding;
+- `src/features/onboarding/controller.ts` owns the VS Code webview lifecycle, folder picker, validated messages, and UI notifications;
+- `src/features/onboarding/template.ts` renders the setup webview without persistence or workflow logic;
+- `src/features/onboarding/onboardingWorkflow.ts` persists selected roots/remotes through `ExplorerApplication`;
 - `src/app/welcome.ts` renders the welcome webview and routes buttons to VS Code commands/external links;
-- `src/ratingPrompt.ts` stores global rating state and tracks onboarding/remote-start success events.
+- `src/features/feedback/feedbackWorkflow.ts` owns global rating state, review links, feedback links, and success prompts through application ports.
 
-Future extraction should preserve the application boundary and webview message validation rather than adding business logic to UI handlers.
+Webview controllers validate messages at the boundary and delegate business-state changes to application workflows.
 
 ## Testing architecture
 
 Tests mirror behavior and boundaries:
 
-- parser/extractor/discovery tests: `src/test/federationPipeline.test.ts`, `parserExpressions.test.ts`, `configurationService.test.ts`;
-- application/store/workflow tests: `explorerApplication.test.ts`, `explorerStore.test.ts`, `root*`, `remote*`, `packageManager.test.ts`;
-- tree tests: `treeModel.test.ts`, `treeItemFactory.test.ts`, `unifiedTreeProvider.test.ts`;
-- graph/webview tests: `src/test/graph/` and `webviewSecurity.test.ts`;
-- lifecycle/terminal/registration tests: `lifecycle.test.ts`, `terminalManager.test.ts`, `commandRegistration.test.ts`;
-- manual extension-host flow: `manualFlows.integrationTest.ts`;
-- desktop UI fixtures: `src/ui-test/` with configured and onboarding workspaces.
+- unit tests mirror production areas under `src/test/unit/`, including parser, extractors, application, features, and infrastructure;
+- integration tests live under `src/test/integration/`, including architecture, lifecycle, command registration, and manual extension-host flows;
+- graph and webview tests live under `src/test/unit/features/graph/`;
+- desktop UI tests live under `src/test/integration/ui/` and compile separately from headless tests.
 
 Use injected ports and pure helpers for fast tests. Use extension-host or desktop suites only when behavior depends on VS Code runtime APIs.
 
@@ -361,8 +361,8 @@ npm run test:ui:headless
 
 CI runs these checks on Node.js 24. Desktop tests target VS Code 1.135.0 and require a display unless run through the headless wrapper. The CI job pins Ubuntu 24.04, runs the desktop suite inside Xvfb, and temporarily relaxes Ubuntu 24.04's AppArmor unprivileged-user-namespace restriction because ExTester's `openResources()` launches the VS Code CLI as a second process. The UI fixtures are opened after the workbench settles to avoid the separate VS Code startup race documented in the test helper.
 
-## Extension points and remaining work
+## Extension points and future work
 
 When adding a bundler, update the registry, extractor, activation events, watcher pattern, tests, and user documentation. When adding a command, update `COMMAND_IDS`, the owning feature registrar, manifest contributions/menu conditions, type guards, tests, and README.
 
-Remaining architectural work is tracked in `todo-refactor.md`, including moving onboarding/feedback into feature folders, splitting shared models, and organizing tests into more explicit unit/integration trees. Do not treat its historical target layout as current source layout.
+Future product and technical work is tracked in `roadmap.md`. The automated dependency-direction test documents and enforces the current import ownership rules.

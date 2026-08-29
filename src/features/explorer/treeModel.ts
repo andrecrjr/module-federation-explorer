@@ -1,10 +1,5 @@
-import {
-  ExposedModule,
-  ExposesFolder,
-  ModuleFederationConfig,
-  RemotesFolder,
-  RootFolder
-} from '../../types';
+import type { ExposedModule, ModuleFederationConfig } from '../../federation/types';
+import type { ExposesFolder, RemotesFolder, RootFolder } from './types';
 
 export type RootFolderChild = RemotesFolder | ExposesFolder;
 
@@ -16,7 +11,9 @@ export function getRootFolderChildren(
   const allExposes = rootFolder.configs.flatMap(config => config.exposes);
 
   log(`Building tree for Host folder ${rootFolder.name}:`);
-  log(`- Found ${rootFolder.configs.length} configs with ${allRemotes.length} remotes and ${allExposes.length} exposes`);
+  log(
+    `- Found ${rootFolder.configs.length} configs with ${allRemotes.length} remotes and ${allExposes.length} exposes`
+  );
 
   if (allRemotes.length > 0) {
     log(`- Remotes to display: ${allRemotes.map(remote => remote.name).join(', ')}`);

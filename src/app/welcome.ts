@@ -13,25 +13,33 @@ export function showWelcomePage(context: vscode.ExtensionContext): void {
   );
 
   panel.webview.html = getWelcomePageHtml(context, panel.webview);
-  panel.webview.onDidReceiveMessage(message => {
-    if (!isWelcomeMessage(message)) return;
+  panel.webview.onDidReceiveMessage(
+    message => {
+      if (!isWelcomeMessage(message)) return;
 
-    switch (message.command) {
-      case 'openExtensionExplorer':
-        void vscode.commands.executeCommand('moduleFederation.openView');
-        break;
-      case 'openDocs':
-        void vscode.env.openExternal(vscode.Uri.parse('https://github.com/andrecrjr/module-federation-explorer'));
-        break;
-      case 'openFeedback':
-        void vscode.env.openExternal(vscode.Uri.parse('https://acjr.notion.site/202b5e58148c8017ba2ad355fc377e4b?pvs=105'));
-        break;
-    }
-  }, undefined, context.subscriptions);
+      switch (message.command) {
+        case 'openExtensionExplorer':
+          void vscode.commands.executeCommand('moduleFederation.openView');
+          break;
+        case 'openDocs':
+          void vscode.env.openExternal(vscode.Uri.parse('https://github.com/andrecrjr/module-federation-explorer'));
+          break;
+        case 'openFeedback':
+          void vscode.env.openExternal(
+            vscode.Uri.parse('https://acjr.notion.site/202b5e58148c8017ba2ad355fc377e4b?pvs=105')
+          );
+          break;
+      }
+    },
+    undefined,
+    context.subscriptions
+  );
   context.subscriptions.push(panel);
 }
 
-function isWelcomeMessage(message: unknown): message is { command: 'openExtensionExplorer' | 'openDocs' | 'openFeedback' } {
+function isWelcomeMessage(
+  message: unknown
+): message is { command: 'openExtensionExplorer' | 'openDocs' | 'openFeedback' } {
   if (!message || typeof message !== 'object' || !('command' in message)) return false;
   const command = (message as { command?: unknown }).command;
   return command === 'openExtensionExplorer' || command === 'openDocs' || command === 'openFeedback';

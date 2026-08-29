@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ExplorerStore } from './explorerStore';
-import { RootFolder } from '../../types';
+import type { RootFolder } from './types';
 import {
   LoadingPlaceholder,
   TreeElement,
@@ -20,8 +20,9 @@ export interface ExplorerTreeActions {
 }
 
 /** VS Code adapter for the explorer tree; application workflows live outside this class. */
-export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<TreeElement>,
-  vscode.TreeDragAndDropController<TreeElement>, vscode.Disposable {
+export class UnifiedModuleFederationProvider
+  implements vscode.TreeDataProvider<TreeElement>, vscode.TreeDragAndDropController<TreeElement>, vscode.Disposable
+{
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeElement | undefined>();
   private readonly unsubscribeFromStore: () => void;
 
@@ -53,10 +54,12 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     try {
       const snapshot = this.store.getSnapshot();
       if (snapshot.isLoading) {
-        return Promise.resolve([{
-          type: 'loadingPlaceholder',
-          name: 'Loading configurations...'
-        } as LoadingPlaceholder]);
+        return Promise.resolve([
+          {
+            type: 'loadingPlaceholder',
+            name: 'Loading configurations...'
+          } as LoadingPlaceholder
+        ]);
       }
 
       if (!element) return Promise.resolve([...snapshot.rootFolders]);
@@ -82,10 +85,7 @@ export class UnifiedModuleFederationProvider implements vscode.TreeDataProvider<
     _token: vscode.CancellationToken
   ): void {
     if (source.length === 1 && isRootFolder(source[0])) {
-      dataTransfer.set(
-        'application/vnd.code.tree.moduleFederation',
-        new vscode.DataTransferItem(source[0])
-      );
+      dataTransfer.set('application/vnd.code.tree.moduleFederation', new vscode.DataTransferItem(source[0]));
     }
   }
 

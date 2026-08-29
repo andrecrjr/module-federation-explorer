@@ -86,9 +86,7 @@ export class PathResolver {
             }
           }
 
-          const matchingFiles = dirContents.filter(file =>
-            file.startsWith(`${pattern}.`) || file === pattern
-          );
+          const matchingFiles = dirContents.filter(file => file.startsWith(`${pattern}.`) || file === pattern);
 
           if (matchingFiles.length > 0) {
             const sortedFiles = matchingFiles.sort((first, second) =>
@@ -134,9 +132,7 @@ export class PathResolver {
             }
           }
 
-          const matchingFiles = dirContents.filter(file =>
-            file.startsWith(`${baseName}.`) || file === baseName
-          );
+          const matchingFiles = dirContents.filter(file => file.startsWith(`${baseName}.`) || file === baseName);
 
           if (matchingFiles.length > 0) {
             const order = ['.ts', '.tsx', '.js', '.jsx', '.vue', '.svelte'];
@@ -166,9 +162,7 @@ export class PathResolver {
     }
   }
 
-  private getExtensionPriority(
-    projectType: 'react' | 'vue' | 'angular' | 'svelte' | 'unknown'
-  ): string[] {
+  private getExtensionPriority(projectType: 'react' | 'vue' | 'angular' | 'svelte' | 'unknown'): string[] {
     if (projectType === 'react') return ['.tsx', '.jsx', '.ts', '.js'];
     if (projectType === 'vue') return ['.vue', '.ts', '.js'];
     if (projectType === 'angular') return ['.component.ts', '.component.html', '.ts', '.js'];
