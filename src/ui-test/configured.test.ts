@@ -47,6 +47,7 @@ suite('Desktop UI smoke tests', function (this: Mocha.Suite) {
     const rootPath = path.join(workspacePath, 'host');
     const rootConfigPath = path.join(workspacePath, '.vscode', 'mf-explorer.roots.json');
     state = { workspacePath, rootPath, rootConfigPath };
+    await findTreeItem('host', 1);
   });
 
   beforeEach(async function (this: Mocha.Context) {

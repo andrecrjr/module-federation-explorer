@@ -37,7 +37,6 @@ export async function prepareConfiguredFixture(): Promise<void> {
 export async function resetConfiguredFixture(): Promise<void> {
   const { rootPath } = configuredFixturePaths;
   await Promise.all([
-    fs.rm(configuredFixturePaths.configPath, { force: true }),
     fs.rm(path.join(rootPath, '.ui-host-start.started'), { force: true }),
     fs.rm(path.join(rootPath, 'auth', '.ui-remote-build.started'), { force: true }),
     fs.rm(path.join(rootPath, 'auth', '.ui-remote-start.started'), { force: true })
