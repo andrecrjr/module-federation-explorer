@@ -37,11 +37,12 @@ export function latestMeasurement(snapshot, name) {
 }
 
 export function summarize(values) {
-  if (values.length === 0) {
+  const numericValues = values.filter(value => typeof value === 'number' && Number.isFinite(value));
+  if (numericValues.length === 0) {
     return { count: 0, minMs: null, maxMs: null, medianMs: null, p95Ms: null };
   }
 
-  const sorted = [...values].sort((left, right) => left - right);
+  const sorted = [...numericValues].sort((left, right) => left - right);
   const percentile = ratio => {
     const position = (sorted.length - 1) * ratio;
     const lower = Math.floor(position);

@@ -34,3 +34,20 @@ test('summarizes values with median and p95', () => {
     p95Ms: null
   });
 });
+
+test('ignores missing measurements', () => {
+  assert.deepEqual(summarize([10, undefined, 30]), {
+    count: 2,
+    minMs: 10,
+    maxMs: 30,
+    medianMs: 20,
+    p95Ms: 29
+  });
+  assert.deepEqual(summarize([undefined]), {
+    count: 0,
+    minMs: null,
+    maxMs: null,
+    medianMs: null,
+    p95Ms: null
+  });
+});
