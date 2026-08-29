@@ -6,7 +6,8 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Keep the desktop runner explicit: ubuntu-latest can move between Ubuntu releases.
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
@@ -20,6 +21,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Prepare Linux desktop test environment
+        run: |
+          # ExTester's openResources() invokes the VS Code CLI from a second
+          # process. Ubuntu 24.04 AppArmor blocks that unprivileged operation
+          # unless this ephemeral CI runner opts out for the test job.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Cache VS Code test runtime
         uses: actions/cache@v4
@@ -42,6 +50,27 @@ jobs:
       - name: Run desktop UI tests
         run: npm run test:ui:headless
 
+      - name: Capture desktop diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "Runner: $(uname -a)"
+            echo "OS:"
+            lsb_release -a || true
+            echo "DISPLAY=${DISPLAY:-<unset>}"
+            echo "AppArmor user namespace restriction:"
+            sysctl kernel.apparmor_restrict_unprivileged_userns || true
+            echo "Processes:"
+            ps -ef | grep -E 'VSCode|chromedriver|xvfb' | grep -v grep || true
+            echo "Desktop test files:"
+            find .test-resources -maxdepth 4 -type f -print 2>/dev/null || true
+            for log in $(find .test-resources -type f -name '*.log' 2>/dev/null); do
+              echo "===== $log ====="
+              tail -200 "$log" || true
+            done
+          } 2>&1 | tee desktop-diagnostics.txt
+
       - name: Upload desktop test artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -51,4 +80,5 @@ jobs:
             .test-resources/**/screenshots
             .test-resources/**/*.log
             reports/coverage/**
+            desktop-diagnostics.txt
           if-no-files-found: ignore

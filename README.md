@@ -166,7 +166,7 @@ Useful scripts:
 | `npm run test:ui:headless` | Run desktop suites through the Linux headless wrapper |
 | `make package` | Build a `.vsix` using `vsce` |
 
-Desktop UI tests use VS Code Extension Tester and need a graphical display. On headless Linux, use `npm run test:ui:headless`; CI uses the same wrapper. CI runs typecheck, lint, headless tests, coverage, and headless UI tests on Node.js 22.
+Desktop UI tests use VS Code Extension Tester and need a graphical display. On headless Linux, use `npm run test:ui:headless`; the wrapper runs the suite inside Xvfb. CI uses Ubuntu 24.04, applies the temporary AppArmor setting required by ExTester's `openResources()` workflow, and runs the same wrapper. The test helper opens fixture workspaces only after the VS Code workbench settles because ExTester starts VS Code through ChromeDriver and then uses a second-instance CLI call to open resources.
 
 ## Documentation map
 

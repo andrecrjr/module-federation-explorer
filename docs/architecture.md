@@ -359,7 +359,7 @@ npm run test:coverage
 npm run test:ui:headless
 ```
 
-CI runs these checks on Node.js 22. Desktop tests target VS Code 1.135.0 and require a display unless run through the headless wrapper.
+CI runs these checks on Node.js 22. Desktop tests target VS Code 1.135.0 and require a display unless run through the headless wrapper. The CI job pins Ubuntu 24.04, runs the desktop suite inside Xvfb, and temporarily relaxes Ubuntu 24.04's AppArmor unprivileged-user-namespace restriction because ExTester's `openResources()` launches the VS Code CLI as a second process. The UI fixtures are opened after the workbench settles to avoid the separate VS Code startup race documented in the test helper.
 
 ## Extension points and remaining work
 

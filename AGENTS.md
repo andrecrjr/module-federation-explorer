@@ -174,7 +174,7 @@ npm run test:manual         # manual-flow integration
 npm run test:ui:headless    # configured and onboarding desktop flows
 ```
 
-UI tests use VS Code Extension Tester and target VS Code 1.135.0 in their test configuration. They need a display; use the headless wrapper on Linux. CI runs typecheck, lint, headless tests, coverage, and headless UI tests on Node.js 22.
+UI tests use VS Code Extension Tester and target VS Code 1.135.0 in their test configuration. They need a display; use the headless wrapper on Linux. CI pins Ubuntu 24.04, runs Xvfb, and temporarily relaxes AppArmor's unprivileged-user-namespace restriction so ExTester's `openResources()` second-instance CLI call can open fixture workspaces. The UI helper also waits for the workbench to settle before opening a fixture because VS Code startup is slower and race-prone under CI.
 
 For documentation-only changes, at minimum run `git diff --check` and verify relative links. Do not modify generated `dist/`, `out/`, coverage, test resources, `.vsix`, or `graphify-out/` artifacts.
 
