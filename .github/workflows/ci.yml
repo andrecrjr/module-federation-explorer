@@ -21,6 +21,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache VS Code test runtime
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test/vscode-linux-x64-1.135.0
+          key: vscode-test-${{ runner.os }}-1.135.0
+
       - name: Typecheck
         run: npm run typecheck
 

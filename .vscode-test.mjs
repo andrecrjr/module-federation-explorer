@@ -1,5 +1,8 @@
 import { defineConfig } from '@vscode/test-cli';
 
+const vscodeVersion = '1.135.0';
+const vscodeDownload = { timeout: 120_000 };
+
 export default defineConfig({
   coverage: {
     includeAll: true,
@@ -49,7 +52,8 @@ export default defineConfig({
       files: 'out/test/test/**/*.test.js',
       extensionDevelopmentPath: process.cwd(),
       srcDir: './src',
-      version: '1.135.0',
+      version: vscodeVersion,
+      download: vscodeDownload,
       mocha: {
         timeout: 20000
       }
@@ -60,7 +64,8 @@ export default defineConfig({
       extensionDevelopmentPath: process.cwd(),
       srcDir: './src',
       workspaceFolder: './src/test/fixtures/extension-workspace',
-      version: '1.135.0',
+      version: vscodeVersion,
+      download: vscodeDownload,
       mocha: {
         timeout: 20000
       }
