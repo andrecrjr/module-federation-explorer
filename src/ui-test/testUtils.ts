@@ -8,6 +8,7 @@ import {
   Notification,
   NotificationType,
   SideBarView,
+  VSBrowser,
   Workbench
 } from 'vscode-extension-tester';
 
@@ -77,6 +78,13 @@ export async function clickWhenReady(
 
 export function getFixtureWorkspacePath(name: string): string {
   return path.resolve(__dirname, '../../../src/test/fixtures', name);
+}
+
+/** Open a workspace only after VS Code startup has settled for ExTester's second-instance CLI call. */
+export async function openWorkspaceResource(resourcePath: string): Promise<void> {
+  await VSBrowser.instance.waitForWorkbench(30000);
+  await new Promise(resolve => setTimeout(resolve, 10000));
+  await VSBrowser.instance.openResources(resourcePath);
 }
 
 export async function getExplorerTree(): Promise<CustomTreeSection> {
