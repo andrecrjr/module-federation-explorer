@@ -179,6 +179,16 @@ Equivalent npm scripts:
 | `npm run test:manual` | Run manual-flow integration tests |
 | `npm run test:ui` | Run configured-workspace and onboarding desktop suites |
 | `npm run test:ui:headless` | Run desktop suites through the Linux headless wrapper |
+
+### Measure extension startup
+
+The performance benchmark measures extension activation and initial configuration loading in clean VS Code test hosts. It intentionally excludes dependency-graph metrics.
+
+```bash
+rtk npm run perf:extension -- --base master --head feature/refactoring --runs 5 --mode cold,warm
+```
+
+The command writes `reports/refactor/extension-performance.json` and `.md`. It uses temporary detached worktrees, explicitly activates the extension, and reports median and p95 timings for activation, initialization, and initial loading. Run `npm run test:performance-cli` to test the report parser and statistics helpers.
 `make package` is kept as an alias for `make vsce`.
 
 VSCE is installed as a local dev dependency. Run `make setup` once, then use

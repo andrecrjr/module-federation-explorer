@@ -9,10 +9,12 @@ import type {
   PackageManagerDetector,
   PathPort,
   PathResolverPort,
+  PerformancePort,
   RootConfigService,
   TerminalLike,
   TerminalPort
 } from './ports';
+import { NOOP_PERFORMANCE } from './performance';
 import { ExplorerStore } from '../features/explorer/explorerStore';
 import type { Remote } from '../federation/types';
 import type { RemotesFolder, RootFolder } from '../features/explorer/types';
@@ -37,6 +39,7 @@ export interface ExplorerApplicationServices {
   path: PathPort;
   host: ApplicationHostPort;
   feedback: FeedbackPort;
+  performance?: PerformancePort;
 }
 
 /** Coordinates explorer workflows while keeping the tree provider focused on rendering. */
@@ -45,6 +48,8 @@ export class ExplorerApplication {
   private readonly remoteWorkflow: RemoteWorkflow;
   private readonly rootAppController: RootAppController;
   private readonly onboardingWorkflow: OnboardingWorkflow;
+  private readonly performance: PerformancePort;
+  private initialLoadCompleted = false;
   private reloadQueued = false;
 
   constructor(
@@ -52,6 +57,7 @@ export class ExplorerApplication {
     private readonly store: ExplorerStore,
     private readonly services: ExplorerApplicationServices
   ) {
+    this.performance = services.performance ?? NOOP_PERFORMANCE;
     this.remoteConfigurationService = new RemoteConfigurationService({
       rootConfigurationStore: this.services.rootConfigManager,
       getRootConfigs: () => this.store.getConfigs(),
@@ -120,14 +126,16 @@ export class ExplorerApplication {
   }
 
   async initialize(): Promise<void> {
-    this.log('Initializing Module Federation Explorer application...');
-    if (await this.services.rootConfigManager.hasConfiguredRoots()) {
-      await this.loadConfigurations();
-      return;
-    }
+    await this.performance.measure('initialize', async () => {
+      this.log('Initializing Module Federation Explorer application...');
+      if (await this.services.rootConfigManager.hasConfiguredRoots()) {
+        await this.loadConfigurations();
+        return;
+      }
 
-    void this.services.host.setContext('moduleFederation.hasRoots', false);
-    this.log('No host directories configured yet. Waiting for user to set up configuration.');
+      void this.services.host.setContext('moduleFederation.hasRoots', false);
+      this.log('No host directories configured yet. Waiting for user to set up configuration.');
+    });
   }
 
   async hasConfiguredRoots(): Promise<boolean> {
@@ -180,67 +188,75 @@ export class ExplorerApplication {
       return;
     }
 
-    this.store.setLoading(true);
-    try {
-      await this.services.host.withProgress('Module Federation Explorer', async progress => {
-        progress.report({ message: 'Loading configurations...' });
-        const rootConfig = await this.services.rootConfigManager.loadRootConfig();
-        if (!rootConfig) {
-          this.store.clear();
-          this.log('Failed to load root configuration');
-          return;
-        }
+    const measureName = this.initialLoadCompleted ? 'reload' : 'initialLoad';
+    await this.performance.measure(measureName, async () => {
+      this.store.setLoading(true);
+      try {
+        await this.services.host.withProgress('Module Federation Explorer', async progress => {
+          progress.report({ message: 'Loading configurations...' });
+          const rootConfig = await this.performance.measure('rootConfigLoad', () =>
+            this.services.rootConfigManager.loadRootConfig()
+          );
+          if (!rootConfig) {
+            this.store.clear();
+            this.log('Failed to load root configuration');
+            return;
+          }
 
-        if (rootConfig.roots.length === 0) {
-          this.store.clear();
-          this.log('No Host directories configured. Configure at least one Host directory.');
-          void this.services.host.setContext('moduleFederation.hasRoots', false);
-          this.services.host.schedule(() => {
-            void this.services.dialogs
-              .showInfo('No Host directories are configured.', {
-                detail: 'Use the Add Host button in the toolbar to configure your first Host, then add more Hosts.',
-                actions: [{ title: 'Add Host' }, { title: 'Later', isCloseAffordance: true }]
-              })
-              .then(selection => {
-                if (selection === 'Add Host') void this.services.host.executeCommand('moduleFederation.addRoot');
-              });
-          }, 1000);
-          return;
-        }
+          if (rootConfig.roots.length === 0) {
+            this.store.clear();
+            this.log('No Host directories configured. Configure at least one Host directory.');
+            void this.services.host.setContext('moduleFederation.hasRoots', false);
+            this.services.host.schedule(() => {
+              void this.services.dialogs
+                .showInfo('No Host directories are configured.', {
+                  detail: 'Use the Add Host button in the toolbar to configure your first Host, then add more Hosts.',
+                  actions: [{ title: 'Add Host' }, { title: 'Later', isCloseAffordance: true }]
+                })
+                .then(selection => {
+                  if (selection === 'Add Host') void this.services.host.executeCommand('moduleFederation.addRoot');
+                });
+            }, 1000);
+            return;
+          }
 
-        this.log(`Found ${rootConfig.roots.length} configured roots`);
-        progress.report({ message: 'Scanning federation configuration files...' });
-        const snapshot = await this.services.configurationService.load(rootConfig.roots);
-        this.store.replace(snapshot.configs);
-        for (const loadError of snapshot.errors) {
-          this.log(`Failed to parse configuration file ${loadError.filePath}: ${String(loadError.error)}`);
-        }
+          this.log(`Found ${rootConfig.roots.length} configured roots`);
+          progress.report({ message: 'Scanning federation configuration files...' });
+          const snapshot = await this.performance.measure('configurationLoad', () =>
+            this.services.configurationService.load(rootConfig.roots)
+          );
+          this.store.replace(snapshot.configs);
+          for (const loadError of snapshot.errors) {
+            this.log(`Failed to parse configuration file ${loadError.filePath}: ${String(loadError.error)}`);
+          }
 
-        progress.report({ message: 'Loading host configurations...' });
-        await this.rootAppController.loadRootFolderConfigs();
-        progress.report({ message: 'Loading remote configurations...' });
-        const hydratedConfigs = await this.remoteConfigurationService.hydrateRemoteConfigurations(
-          this.store.getConfigs()
+          progress.report({ message: 'Loading host configurations...' });
+          await this.performance.measure('rootAppConfigLoad', () => this.rootAppController.loadRootFolderConfigs());
+          progress.report({ message: 'Loading remote configurations...' });
+          const hydratedConfigs = await this.performance.measure('remoteHydration', () =>
+            this.remoteConfigurationService.hydrateRemoteConfigurations(this.store.getConfigs())
+          );
+          this.store.replace(hydratedConfigs);
+          await this.performance.measure('treeStateUpdate', () => this.updateRootFolders());
+          void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
+          this.log('Finished loading configurations from all roots');
+        });
+
+        this.services.dependencyGraphManager.refreshDependencyGraph(this.store.getConfigs());
+      } catch (error) {
+        this.logError('Failed to load Module Federation configurations', error);
+        void this.services.host.showErrorMessage(
+          'Failed to load Module Federation configurations. See output panel for details.'
         );
-        this.store.replace(hydratedConfigs);
-        await this.updateRootFolders();
-        void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
-        this.log('Finished loading configurations from all roots');
-      });
-
-      this.services.dependencyGraphManager.refreshDependencyGraph(this.store.getConfigs());
-    } catch (error) {
-      this.logError('Failed to load Module Federation configurations', error);
-      void this.services.host.showErrorMessage(
-        'Failed to load Module Federation configurations. See output panel for details.'
-      );
-    } finally {
-      this.store.setLoading(false);
-      if (this.reloadQueued) {
-        this.reloadQueued = false;
-        void this.loadConfigurations();
+      } finally {
+        this.store.setLoading(false);
+        this.initialLoadCompleted = true;
+        if (this.reloadQueued) {
+          this.reloadQueued = false;
+          void this.loadConfigurations();
+        }
       }
-    }
+    });
   }
 
   private async updateRootFolders(): Promise<void> {

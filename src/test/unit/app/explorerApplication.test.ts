@@ -11,6 +11,8 @@ import type {
   Logger,
   PathPort,
   PathResolverPort,
+  PerformancePort,
+  PerformanceSnapshot,
   ProgressReporter,
   QuickPickItem,
   QuickPickOptions,
@@ -153,6 +155,24 @@ class RecordingTerminalManager implements TerminalPort {
   }
 }
 
+class RecordingPerformance implements PerformancePort {
+  readonly enabled = true;
+  readonly measurements: string[] = [];
+
+  mark(_name: string): void {}
+
+  async measure<T>(name: string, operation: () => Promise<T>): Promise<T> {
+    this.measurements.push(name);
+    return operation();
+  }
+
+  getSnapshot(): PerformanceSnapshot {
+    return { schemaVersion: 1, startedAt: '', measurements: [], marks: [] };
+  }
+
+  async flush(): Promise<void> {}
+}
+
 function hostConfig(): ModuleFederationConfig {
   return {
     name: 'host',
@@ -198,6 +218,7 @@ function createServices(
   rootConfig: MemoryRootConfig;
   dialogs: TestDialogs;
   terminalManager: RecordingTerminalManager;
+  performance: RecordingPerformance;
   graphCalls: { refresh: number; generate: number; show: number };
   contextValues: Map<string, boolean>;
   scheduledTasks: Array<() => void>;
@@ -209,6 +230,7 @@ function createServices(
   const rootConfig = options.rootConfig || new MemoryRootConfig();
   const dialogs = options.dialogs || new TestDialogs();
   const terminalManager = options.terminalManager || new RecordingTerminalManager();
+  const performance = new RecordingPerformance();
   const snapshot = options.configurationSnapshot || {
     configs: new Map<string, ModuleFederationConfig[]>([['/workspace/host', [hostConfig()]]]),
     errors: []
@@ -296,11 +318,13 @@ function createServices(
       fileSystem,
       path: pathPort,
       host,
-      feedback
+      feedback,
+      performance
     },
     rootConfig,
     dialogs,
     terminalManager,
+    performance,
     graphCalls,
     contextValues,
     scheduledTasks,
@@ -336,6 +360,15 @@ suite('ExplorerApplication', () => {
     assert.equal(store.getSnapshot().rootFolders[0]?.isRunning, false);
     assert.equal(harness.contextValues.get('moduleFederation.hasRoots'), true);
     assert.equal(harness.graphCalls.refresh, 1);
+    assert.deepEqual(harness.performance.measurements, [
+      'initialize',
+      'initialLoad',
+      'rootConfigLoad',
+      'configurationLoad',
+      'rootAppConfigLoad',
+      'remoteHydration',
+      'treeStateUpdate'
+    ]);
   });
 
   test('shows an informational message instead of opening an empty graph', async () => {

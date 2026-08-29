@@ -2,6 +2,21 @@ import { defineConfig } from '@vscode/test-cli';
 
 const vscodeVersion = '1.135.0';
 const vscodeDownload = { timeout: 120_000 };
+const performanceOutput = process.env.MF_EXPLORER_PERF_OUTPUT;
+const performanceUserDataDir = process.env.MF_EXPLORER_PERF_USER_DATA_DIR;
+const performanceExtensionsDir = process.env.MF_EXPLORER_PERF_EXTENSIONS_DIR;
+const performanceVscodePath = process.env.MF_EXPLORER_PERF_VSCODE_PATH;
+const performanceEnv = Object.fromEntries(
+  Object.entries({
+    MF_EXPLORER_PERF_OUTPUT: performanceOutput,
+    MF_EXPLORER_PERF_USER_DATA_DIR: performanceUserDataDir,
+    MF_EXPLORER_PERF_EXTENSIONS_DIR: performanceExtensionsDir
+  }).filter(([, value]) => value !== undefined)
+);
+const performanceLaunchArgs = [
+  performanceUserDataDir ? `--user-data-dir=${performanceUserDataDir}` : undefined,
+  performanceExtensionsDir ? `--extensions-dir=${performanceExtensionsDir}` : undefined
+].filter(value => value !== undefined);
 
 export default defineConfig({
   coverage: {
@@ -80,6 +95,19 @@ export default defineConfig({
       download: vscodeDownload,
       mocha: {
         timeout: 20000
+      }
+    },
+    {
+      label: 'extension-performance',
+      files: 'out/test/test/integration/app/extensionPerformance.integrationTest.js',
+      extensionDevelopmentPath: process.cwd(),
+      workspaceFolder: './src/test/fixtures/extension-workspace',
+      version: vscodeVersion,
+      useInstallation: performanceVscodePath ? { fromPath: performanceVscodePath } : undefined,
+      launchArgs: performanceLaunchArgs,
+      env: performanceEnv,
+      mocha: {
+        timeout: 30000
       }
     }
   ]

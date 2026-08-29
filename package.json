@@ -279,6 +279,8 @@
         "typecheck": "tsc --noEmit",
         "test": "vscode-test",
         "test:headless": "node scripts/run-vscode-tests.mjs test",
+        "test:performance-cli": "node --test scripts/performance-metrics.test.mjs",
+        "perf:extension": "node scripts/extension-performance.mjs",
         "test:coverage": "node scripts/run-vscode-tests.mjs test -- --label unit-and-extension-tests --coverage --coverage-output reports/coverage && node scripts/check-coverage-baseline.mjs",
         "test:manual": "npm run compile && npm run compile:test && vscode-test --label manual-flow-integration",
         "prepare:ui:configured": "node out/ui-test/test/integration/ui/prepareConfiguredFixture.js",

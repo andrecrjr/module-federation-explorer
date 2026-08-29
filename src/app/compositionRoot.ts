@@ -9,6 +9,7 @@ import type {
   ExternalLinkPort,
   FileSystemPort,
   PathPort,
+  PerformancePort,
   StoragePort,
   WorkspacePort
 } from './ports';
@@ -27,6 +28,7 @@ import { TerminalManager } from '../infrastructure/vscode/terminalManager';
 import { RootConfigManager } from '../features/roots/rootConfigManager';
 import { JsonRootConfigRepository } from '../infrastructure/node/rootConfigRepository';
 import { FeedbackWorkflow } from '../features/feedback/feedbackWorkflow';
+import { createExtensionPerformancePort } from '../infrastructure/node/extensionPerformance';
 
 export interface ExtensionComposition {
   application: ExplorerApplication;
@@ -34,7 +36,8 @@ export interface ExtensionComposition {
 }
 
 export function createDefaultExplorerApplicationServices(
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
+  performance: PerformancePort = createExtensionPerformancePort()
 ): ExplorerApplicationServices {
   const fileSystem: FileSystemPort = {
     existsSync: filePath => fs.existsSync(filePath),
@@ -140,15 +143,23 @@ export function createDefaultExplorerApplicationServices(
       dialogs: DialogUtils,
       externalLinks,
       logger
-    })
+    }),
+    performance
   };
 }
 
 /** Creates the application graph once; activation only composes and registers VS Code adapters. */
-export function createCompositionRoot(context: vscode.ExtensionContext): ExtensionComposition {
+export function createCompositionRoot(
+  context: vscode.ExtensionContext,
+  performance: PerformancePort = createExtensionPerformancePort()
+): ExtensionComposition {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const store = new ExplorerStore();
-  const application = new ExplorerApplication(workspaceRoot, store, createDefaultExplorerApplicationServices(context));
+  const application = new ExplorerApplication(
+    workspaceRoot,
+    store,
+    createDefaultExplorerApplicationServices(context, performance)
+  );
   const provider = new UnifiedModuleFederationProvider(store, {
     isRemoteRunning: remoteKey => application.getRunningRemoteTerminal(remoteKey) !== undefined,
     log: message => application.log(message),
@@ -160,34 +171,41 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Extensi
 
 /** VS Code activation entry point. Business workflows are registered by app modules. */
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionComposition> {
+  const performance = createExtensionPerformancePort();
   try {
-    const { application, provider } = createCompositionRoot(context);
-    context.subscriptions.push(provider);
+    const composition = await performance.measure('activation', async () => {
+      const { application, provider } = createCompositionRoot(context, performance);
+      context.subscriptions.push(provider);
 
-    const viewId = 'moduleFederation';
-    context.subscriptions.push(vscode.window.registerTreeDataProvider(viewId, provider));
-    context.subscriptions.push(
-      vscode.window.createTreeView(viewId, {
-        treeDataProvider: provider,
-        showCollapseAll: true,
-        dragAndDropController: provider
-      })
-    );
+      const viewId = 'moduleFederation';
+      context.subscriptions.push(vscode.window.registerTreeDataProvider(viewId, provider));
+      context.subscriptions.push(
+        vscode.window.createTreeView(viewId, {
+          treeDataProvider: provider,
+          showCollapseAll: true,
+          dragAndDropController: provider
+        })
+      );
 
-    context.subscriptions.push(...registerCommands(context, application));
-    context.subscriptions.push(...registerWatchers(application));
-    registerTerminalLifecycle(context, application);
-    scheduleOnboarding(context, application);
-    await application.initializeFeedback();
-    await application.initialize();
+      context.subscriptions.push(...registerCommands(context, application));
+      context.subscriptions.push(...registerWatchers(application));
+      registerTerminalLifecycle(context, application);
+      scheduleOnboarding(context, application);
+      await application.initializeFeedback();
+      await application.initialize();
 
-    vscode.window.showInformationMessage('Module Federation Explorer is now active!');
-    application.log('Extension activated successfully');
-    return { application, provider };
+      vscode.window.showInformationMessage('Module Federation Explorer is now active!');
+      application.log('Extension activated successfully');
+      performance.mark('extension-ready');
+      return { application, provider };
+    });
+    return composition;
   } catch (error) {
     vscode.window.showErrorMessage(
       `Module Federation Explorer failed to activate: ${error instanceof Error ? error.message : String(error)}`
     );
     throw error;
+  } finally {
+    await performance.flush();
   }
 }

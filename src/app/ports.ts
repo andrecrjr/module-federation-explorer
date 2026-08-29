@@ -9,6 +9,33 @@ export interface Logger {
   logError(message: string, error: unknown): void;
 }
 
+export interface PerformanceMeasurement {
+  readonly name: string;
+  readonly durationMs: number;
+}
+
+export interface PerformanceMark {
+  readonly name: string;
+  readonly elapsedMs: number;
+}
+
+export interface PerformanceSnapshot {
+  readonly schemaVersion: 1;
+  readonly startedAt: string;
+  readonly completedAt?: string;
+  readonly measurements: readonly PerformanceMeasurement[];
+  readonly marks: readonly PerformanceMark[];
+}
+
+/** Optional timing boundary used by the activation benchmark. */
+export interface PerformancePort {
+  readonly enabled: boolean;
+  mark(name: string): void;
+  measure<T>(name: string, operation: () => Promise<T>): Promise<T>;
+  getSnapshot(): PerformanceSnapshot;
+  flush(): Promise<void>;
+}
+
 export interface DialogMessageAction {
   title: string;
   isCloseAffordance?: boolean;
