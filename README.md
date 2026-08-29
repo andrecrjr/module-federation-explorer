@@ -23,7 +23,7 @@ Module Federation Explorer is a Visual Studio Code extension for local developme
 - Node.js and a package manager (`npm`, `pnpm`, or `yarn`) for projects managed by the extension.
 - A workspace containing Module Federation configuration files.
 
-Node.js 22 is used for repository development and CI. The extension itself runs inside the VS Code extension host.
+Node.js 24 is used for repository development and CI. The extension itself runs inside the VS Code extension host.
 
 ## Quick start
 
@@ -166,7 +166,7 @@ Useful scripts:
 | `npm run test:ui:headless` | Run desktop suites through the Linux headless wrapper |
 | `make package` | Build a `.vsix` using `vsce` |
 
-Desktop UI tests use VS Code Extension Tester and need a graphical display. On headless Linux, use `npm run test:ui:headless`; the wrapper runs the suite inside Xvfb. CI uses Ubuntu 24.04, applies the temporary AppArmor setting required by ExTester's `openResources()` workflow, and runs the same wrapper. The test helper opens fixture workspaces only after the VS Code workbench settles because ExTester starts VS Code through ChromeDriver and then uses a second-instance CLI call to open resources.
+Desktop UI tests use VS Code Extension Tester and need a graphical display. On headless Linux, use `npm run test:ui:headless`; the wrapper runs the suite inside Xvfb. CI uses Node.js 24 on Ubuntu 24.04, applies the temporary AppArmor setting required by ExTester's `openResources()` workflow, and runs the same wrapper. The test helper opens fixture workspaces only after the VS Code workbench settles because ExTester starts VS Code through ChromeDriver and then uses a second-instance CLI call to open resources.
 
 ## Documentation map
 
