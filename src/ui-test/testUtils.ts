@@ -89,30 +89,43 @@ export async function getExplorerTree(): Promise<CustomTreeSection> {
   return content.getSection('Module Federation Explorer', CustomTreeSection);
 }
 
-export async function findTreeItem(label: string, maxLevel = 0): Promise<CustomTreeItem> {
+export async function findTreeItem(label: string, maxLevel = 0, timeoutMs = 15000): Promise<CustomTreeItem> {
   let item: CustomTreeItem | undefined;
-  await waitFor(async () => {
-    const tree = await getExplorerTree();
-    if (!(await tree.isExpanded())) {
-      await (await tree.findElement(By.className('twisty-container'))).click();
-      await waitFor(() => tree.isExpanded(), 5000, 'Explorer tree section did not expand');
-    }
-    const rows = await tree.findElements(By.css('.monaco-list-row'));
-    for (const row of rows) {
-      try {
-        const candidate = new CustomTreeItem(row, tree);
-        if (await candidate.getLabel() !== label) continue;
-        const level = Number(await row.getAttribute('aria-level'));
-        if (maxLevel < 1 || level <= maxLevel) {
-          item = candidate;
-          break;
-        }
-      } catch {
-        // Tree refreshes replace rows; retry the lookup against the new tree.
+  let visibleItems: string[] = [];
+  try {
+    await waitFor(async () => {
+      const tree = await getExplorerTree();
+      if (!(await tree.isExpanded())) {
+        await (await tree.findElement(By.className('twisty-container'))).click();
+        await waitFor(() => tree.isExpanded(), 5000, 'Explorer tree section did not expand');
       }
-    }
-    return item !== undefined;
-  }, 15000, `Tree item not found: ${label}`);
+      const rows = await tree.findElements(By.css('.monaco-list-row'));
+      const currentItems: string[] = [];
+      for (const row of rows) {
+        try {
+          const candidate = new CustomTreeItem(row, tree);
+          const candidateLabel = await candidate.getLabel();
+          const level = Number(await row.getAttribute('aria-level'));
+          currentItems.push(`${candidateLabel} (level ${level})`);
+          if (candidateLabel !== label) continue;
+          if (maxLevel < 1 || level <= maxLevel) {
+            item = candidate;
+            break;
+          }
+        } catch {
+          // Tree refreshes replace rows; retry the lookup against the new tree.
+        }
+      }
+      visibleItems = currentItems;
+      return item !== undefined;
+    }, timeoutMs, `Tree item not found: ${label}`);
+  } catch (error) {
+    const visible = visibleItems.length > 0
+      ? ` Visible items: ${visibleItems.join(', ')}.`
+      : ' No visible tree rows found.';
+    const cause = error instanceof Error ? ` ${error.message}` : '';
+    throw new Error(`Tree item not found: ${label}.${visible}${cause}`);
+  }
   if (!item) throw new Error(`Tree item not found: ${label}`);
   return item;
 }

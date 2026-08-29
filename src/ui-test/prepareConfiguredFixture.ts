@@ -13,8 +13,9 @@ export const configuredFixturePaths = {
 
 export async function prepareConfiguredFixture(): Promise<void> {
   const { rootPath, configPath } = configuredFixturePaths;
+  const tempConfigPath = `${configPath}.tmp`;
   await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(configPath, JSON.stringify({
+  await fs.writeFile(tempConfigPath, JSON.stringify({
     roots: [rootPath],
     rootConfigs: {
       [rootPath]: {
@@ -32,6 +33,7 @@ export async function prepareConfiguredFixture(): Promise<void> {
       }
     }
   }, null, 2), 'utf8');
+  await fs.rename(tempConfigPath, configPath);
 }
 
 export async function resetConfiguredFixture(): Promise<void> {

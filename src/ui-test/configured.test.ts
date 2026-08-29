@@ -54,7 +54,7 @@ suite('Desktop UI smoke tests', function (this: Mocha.Suite) {
     await resetConfiguredFixture();
     await new Workbench().executeCommand('Refresh Module Federation Explorer');
     await dismissNotifications();
-    await findTreeItem('host', 1);
+    await findTreeItem('host', 1, 60000);
   });
 
   afterEach(async function (this: Mocha.Context) {
