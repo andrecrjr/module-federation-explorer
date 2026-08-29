@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { afterEach, suite, test } from 'mocha';
 import { By } from 'selenium-webdriver';
 import { EditorView, WebView, Workbench } from 'vscode-extension-tester';
-import { clickWhenReady, closeEditorsAndTerminals, dismissNotifications, getFixtureWorkspacePath, waitFor } from './testUtils';
+import { clickWhenReady, closeEditorsAndTerminals, dismissNotifications, findNotification, getFixtureWorkspacePath, waitFor } from './testUtils';
 
 suite('Desktop onboarding UI smoke test', function (this: Mocha.Suite) {
   this.timeout(120000);
@@ -28,10 +28,30 @@ suite('Desktop onboarding UI smoke test', function (this: Mocha.Suite) {
     try {
       const project = await onboarding.findWebElement(By.css('.project-item'));
       assert.ok(await project.isDisplayed(), 'Detected project must be visible');
+      const checkbox = await onboarding.findWebElement(By.id('proj-0'));
+      await checkbox.click();
       await clickWhenReady(
         () => onboarding.findWebElement(By.id('addBtn')),
         15000,
         'Add Selected Projects button did not become clickable'
+      );
+    } finally {
+      await onboarding.switchBack();
+    }
+
+    await findNotification('No projects selected to add.');
+
+    await onboarding.switchToFrame(15000);
+    try {
+      await clickWhenReady(
+        () => onboarding.findWebElement(By.id('proj-0')),
+        15000,
+        'Detected project checkbox did not become clickable'
+      );
+      await clickWhenReady(
+        () => onboarding.findWebElement(By.id('addBtn')),
+        15000,
+        'Add Selected Projects button did not become clickable after reselecting the project'
       );
     } finally {
       await onboarding.switchBack();

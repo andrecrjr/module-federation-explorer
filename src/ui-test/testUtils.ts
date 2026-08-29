@@ -204,9 +204,13 @@ export async function findNotification(message: string): Promise<Notification> {
 
 export async function closeEditorsAndTerminals(): Promise<void> {
   const workbench = new Workbench();
-  await runCleanupCommand(workbench, 'workbench.action.terminal.killAll', 'terminals');
-  await runCleanupCommand(workbench, 'workbench.action.closeAllEditors', 'editors');
-  await runCleanupCommand(workbench, 'workbench.action.closePanel', 'bottom panel');
+  await runCleanupCommand(workbench, 'Terminal: Kill All Terminals', 'terminals');
+  await runCleanupCommand(workbench, 'View: Close All Editors', 'editors');
+  try {
+    await workbench.getBottomBar().toggle(false);
+  } catch (error) {
+    reportCleanupFailure('bottom panel', error);
+  }
   await dismissNotifications();
 }
 
@@ -220,5 +224,14 @@ async function runCleanupCommand(workbench: Workbench, command: string, target: 
 
 function reportCleanupFailure(target: string, error: unknown): void {
   const details = error instanceof Error ? error.message : String(error);
+  if (
+    details.includes('stale element reference') ||
+    details.includes('no such element') ||
+    details.includes('element not interactable') ||
+    details.includes('element click intercepted') ||
+    details.includes('Waiting until element is visible')
+  ) {
+    return;
+  }
   console.warn(`[ui-test] Could not clean up ${target}: ${details}`);
 }
