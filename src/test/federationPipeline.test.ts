@@ -63,6 +63,94 @@ suite('Federation discovery pipeline', () => {
     }
   });
 
+  test('preserves dynamic remote values and shared dependency options', async () => {
+    const config = await parseConfigText([
+      "new ModuleFederationPlugin({",
+      "  name: 'host',",
+      "  remotes: {",
+      "    catalog: 'catalog@https://example.test/remoteEntry.js',",
+      "    dynamic: process.env.REMOTE_URL,",
+      "    templated: `https://${REMOTE_HOST}/remoteEntry.js`,",
+      "    configured: { url: 'configured@https://example.test/configured.js' }",
+      "  },",
+      "  exposes: {",
+      "    './App': process.env.APP_PATH,",
+      "    './Fallback': getExposePath()",
+      "  },",
+      "  shared: {",
+      "    react: {",
+      "      singleton: true,",
+      "      eager: false,",
+      "      strictVersion: true,",
+      "      version: '18.3.0',",
+      "      requiredVersion: '^18.0.0',",
+      "      ignored: 42",
+      "    },",
+      "    lodash: '4.17.21'",
+      "  }",
+      "})"
+    ].join('\n'),
+      '/workspace/webpack.config.ts',
+      (ast, workspaceRoot) => extractConfigFromWebpack(ast, workspaceRoot)
+    );
+
+    assert.deepStrictEqual(config.remotes.map(remote => remote.name), ['catalog', 'dynamic', 'templated', 'configured']);
+    assert.strictEqual(config.remotes[0].url, 'https://example.test/remoteEntry.js');
+    assert.strictEqual(config.remotes[1].url, '[ENV: env.REMOTE_URL]');
+    assert.strictEqual(config.remotes[2].url, 'https://[EXPR]/remoteEntry.js');
+    assert.strictEqual(config.remotes[3].name, 'configured');
+    assert.strictEqual(config.exposes[0].path, '[ENV: env.APP_PATH]');
+    assert.strictEqual(config.exposes[1].path, '[FUNC: getExposePath()]');
+    assert.deepStrictEqual(config.shared, [
+      {
+        name: 'react',
+        singleton: true,
+        eager: false,
+        strictVersion: true,
+        version: '18.3.0',
+        requiredVersion: '^18.0.0'
+      },
+      { name: 'lodash' }
+    ]);
+  });
+
+  test('supports imported Vite aliases and RSBuild plugin object syntax', async () => {
+    const vite = await parseConfigText(
+      `import { federation as mf } from '@originjs/vite-plugin-federation';
+       export default { plugins: [mf({ name: 'vite-alias' })] }`,
+      '/workspace/vite.config.ts',
+      extractConfigFromVite
+    );
+    const rsbuild = await parseConfigText(
+      `export default {
+        plugins: { federation: pluginModuleFederation({ name: 'rsbuild-plugin' }) }
+      }`,
+      '/workspace/rsbuild.config.ts',
+      extractConfigFromRSBuild
+    );
+
+    assert.strictEqual(vite.detected, true);
+    assert.strictEqual(vite.name, 'vite-alias');
+    assert.strictEqual(rsbuild.detected, true);
+    assert.strictEqual(rsbuild.name, 'rsbuild-plugin');
+  });
+
+  test('returns undetected configs for unsupported plugin shapes', async () => {
+    const vite = await parseConfigText(
+      `export default { plugins: [otherPlugin({ name: 'not-federation' })] }`,
+      '/workspace/vite.config.ts',
+      extractConfigFromVite
+    );
+    const rsbuild = await parseConfigText(
+      `export default { plugins: [] }`,
+      '/workspace/rsbuild.config.ts',
+      extractConfigFromRSBuild
+    );
+
+    assert.strictEqual(vite.detected, false);
+    assert.strictEqual(rsbuild.detected, false);
+  });
+
   test('discovery service deduplicates overlapping registry matches', async () => {
     const service = new FederationDiscoveryService({
       findFiles: async (_rootPath, pattern) => pattern.includes('modern')

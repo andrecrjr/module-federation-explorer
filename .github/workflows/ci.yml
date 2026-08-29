@@ -15,10 +15,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 22.x
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
@@ -27,10 +28,13 @@ jobs:
         run: npm run lint
 
       - name: Run unit and integration tests
-        run: xvfb-run -a npm test
+        run: npm run test:headless
+
+      - name: Run unit coverage and baseline check
+        run: npm run test:coverage
 
       - name: Run desktop UI tests
-        run: xvfb-run -a npm run test:ui
+        run: npm run test:ui:headless
 
       - name: Upload desktop test artifacts
         if: always()
@@ -38,6 +42,7 @@ jobs:
         with:
           name: vscode-desktop-test-artifacts
           path: |
-            .test-resources/screenshots
-            .test-resources/*.log
+            .test-resources/**/screenshots
+            .test-resources/**/*.log
+            reports/coverage/**
           if-no-files-found: ignore

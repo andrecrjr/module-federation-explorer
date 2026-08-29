@@ -1,15 +1,17 @@
 {
   "$schema": "./node_modules/vscode-extension-tester/resources/extester.schema.json",
   "setup": {
-    "vscodeVersion": "latest",
+    "vscodeVersion": "1.135.0",
     "type": "stable",
-    "storage": ".test-resources",
-    "extensionsDir": ".test-extensions"
+    "storage": ".test-resources/onboarding",
+    "extensionsDir": ".test-extensions/onboarding"
   },
   "run": {
     "testFiles": ["./out/ui-test/ui-test/onboarding.test.js"],
     "resources": ["./src/test/fixtures/ui-onboarding"],
-    "extensionsDir": ".test-extensions",
+    "vscodeVersion": "1.135.0",
+    "storage": ".test-resources/onboarding",
+    "extensionsDir": ".test-extensions/onboarding",
     "settings": "./src/test/fixtures/ui-settings.json"
   }
 }

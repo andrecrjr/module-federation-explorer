@@ -139,7 +139,7 @@ Run the core checks and tests with:
 ```bash
 npm run typecheck
 npm run lint
-npm test
+npm run test:headless
 ```
 
 The desktop UI suites use fixture workspaces and package the extension through VS Code Extension Tester:
@@ -151,8 +151,14 @@ npm run test:ui
 The UI tests launch VS Code and require a graphical display. On headless Linux environments, run them with Xvfb:
 
 ```bash
-xvfb-run -a npm run test:ui
+npm run test:ui:headless
 ```
+
+The headless wrappers select an X11/Xvfb display on Linux and pin the desktop
+fixtures to the VS Code version used by CI. Run `npm run test:coverage` to
+generate the source-mapped unit-test coverage report and enforce at least 80%
+for lines, statements, functions, and branches. The development and CI runtime
+is Node.js 22 or newer.
 
 Use `npm run test:ui:configured` or `npm run test:ui:onboarding` to run one UI fixture suite independently.
 

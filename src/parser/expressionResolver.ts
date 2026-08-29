@@ -29,8 +29,11 @@ export function resolveStringExpression(value: unknown): string | undefined {
     const expressions = Array.isArray(node.expressions) ? node.expressions : [];
     return quasis.map((quasi, index) => {
       const quasiNode = asNode(quasi);
-      const quasiValue = asNode(quasiNode?.value);
-      const raw = typeof quasiValue?.raw === 'string' ? quasiValue.raw : '';
+      const quasiValue = quasiNode?.value;
+      const raw = typeof quasiValue === 'object' && quasiValue !== null && !Array.isArray(quasiValue) &&
+        typeof (quasiValue as { raw?: unknown }).raw === 'string'
+        ? (quasiValue as { raw: string }).raw
+        : '';
       return raw + (index < expressions.length ? '[EXPR]' : '');
     }).join('');
   }

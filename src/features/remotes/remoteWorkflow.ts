@@ -93,7 +93,7 @@ export class RemoteWorkflow {
       if (selectedOption.label.includes('Edit Preview Build Command') || selectedOption.label.includes('Edit Both Commands')) {
         const startCommand = await this.dependencies.dialogs.showCommandConfig({ title: `Configure Start Command for ${remote.name}`, commandType: 'start', currentCommand: remote.startCommand, packageManager, projectPath: resolvedFolderPath, configType: remote.configType });
         if (startCommand !== undefined) remote.startCommand = startCommand;
-        else if (selectedOption.label.includes('Edit Start Command')) return;
+        else if (selectedOption.label.includes('Edit Preview Build Command')) return;
       }
       await this.dependencies.remoteConfigurationService.saveRemoteConfiguration(remote);
       this.dependencies.refresh();

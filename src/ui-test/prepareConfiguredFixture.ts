@@ -1,11 +1,18 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-const workspacePath = path.resolve(__dirname, '../../../src/test/fixtures/ui-configured');
-const rootPath = path.join(workspacePath, 'host');
-const configPath = path.join(workspacePath, '.vscode', 'mf-explorer.roots.json');
+export const configuredFixturePaths = {
+  workspacePath: path.resolve(__dirname, '../../../src/test/fixtures/ui-configured'),
+  get rootPath(): string {
+    return path.join(this.workspacePath, 'host');
+  },
+  get configPath(): string {
+    return path.join(this.workspacePath, '.vscode', 'mf-explorer.roots.json');
+  }
+};
 
-async function main(): Promise<void> {
+export async function prepareConfiguredFixture(): Promise<void> {
+  const { rootPath, configPath } = configuredFixturePaths;
   await fs.mkdir(path.dirname(configPath), { recursive: true });
   await fs.writeFile(configPath, JSON.stringify({
     roots: [rootPath],
@@ -27,4 +34,20 @@ async function main(): Promise<void> {
   }, null, 2), 'utf8');
 }
 
-void main();
+export async function resetConfiguredFixture(): Promise<void> {
+  const { rootPath } = configuredFixturePaths;
+  await Promise.all([
+    fs.rm(configuredFixturePaths.configPath, { force: true }),
+    fs.rm(path.join(rootPath, '.ui-host-start.started'), { force: true }),
+    fs.rm(path.join(rootPath, 'auth', '.ui-remote-build.started'), { force: true }),
+    fs.rm(path.join(rootPath, 'auth', '.ui-remote-start.started'), { force: true })
+  ]);
+  await prepareConfiguredFixture();
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename)) {
+  void prepareConfiguredFixture().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

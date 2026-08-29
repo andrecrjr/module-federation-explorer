@@ -410,8 +410,8 @@ function getOnboardingHtml(context: vscode.ExtensionContext, webview: vscode.Web
         </div>
 
         <div class="actions">
-          <button class="button secondary" id="skipBtn">Skip for now</button>
-          <button class="button" id="addBtn">Add Selected Projects</button>
+          <button class="button secondary" id="skipBtn" aria-label="Skip onboarding">Skip for now</button>
+          <button class="button" id="addBtn" aria-label="Add selected projects">Add Selected Projects</button>
         </div>
       </div>
 

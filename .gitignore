@@ -5,7 +5,6 @@ node_modules/
 .env.development.local
 .env.test.local
 .env.production.local
-package-lock.json
 yarn.lock
 out/
 dist/
@@ -13,6 +12,7 @@ dist/
 .test-resources/
 .test-extensions/
 reports/
+coverage/
 src/test/fixtures/ui-*/.vscode/mf-explorer.roots.json
 src/test/fixtures/ui-*/**/.ui-*.started
 graphify-out/

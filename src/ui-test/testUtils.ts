@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
-import { By } from 'selenium-webdriver';
+import { By, WebElement } from 'selenium-webdriver';
 import {
   ActivityBar,
   CustomTreeSection,
@@ -8,7 +8,6 @@ import {
   Notification,
   NotificationType,
   SideBarView,
-  VSBrowser,
   Workbench
 } from 'vscode-extension-tester';
 
@@ -18,11 +17,62 @@ export async function waitFor(
   message = 'Timed out waiting for UI state'
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
+  let lastError: unknown;
   while (Date.now() < deadline) {
-    if (await condition()) return;
+    try {
+      if (await condition()) return;
+    } catch (error) {
+      lastError = error;
+    }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  throw new Error(message);
+  const details = lastError instanceof Error ? ` Last error: ${lastError.message}` : '';
+  throw new Error(`${message}.${details}`);
+}
+
+/** Dismiss transient workbench notifications that can intercept UI clicks. */
+export async function dismissNotifications(): Promise<void> {
+  const workbench = new Workbench();
+  try {
+    const notifications = await workbench.getNotifications();
+    if (notifications.length === 0) return;
+    await dismissNotificationList(notifications);
+  } catch (error) {
+    reportCleanupFailure('visible notifications', error);
+  }
+
+  try {
+    const center = await workbench.openNotificationsCenter();
+    await dismissNotificationList(await center.getNotifications(NotificationType.Any));
+    await center.close();
+  } catch (error) {
+    reportCleanupFailure('notification center', error);
+  }
+}
+
+async function dismissNotificationList(notifications: Notification[]): Promise<void> {
+  for (const notification of notifications) {
+    try {
+      await notification.dismiss();
+    } catch (error) {
+      reportCleanupFailure('notification', error);
+    }
+  }
+}
+
+/** Click an element after it is displayed, enabled, and no longer blocked by a toast. */
+export async function clickWhenReady(
+  findElement: () => Promise<WebElement>,
+  timeoutMs = 15000,
+  message = 'UI element did not become clickable'
+): Promise<void> {
+  await waitFor(async () => {
+    await dismissNotifications();
+    const element = await findElement();
+    if (!await element.isDisplayed() || !await element.isEnabled()) return false;
+    await element.click();
+    return true;
+  }, timeoutMs, message);
 }
 
 export function getFixtureWorkspacePath(name: string): string {
@@ -93,20 +143,16 @@ export async function selectTreeContextAction(
   maxLevel = 0
 ): Promise<void> {
   await waitFor(async () => {
-    try {
-      const item = await findTreeItem(label, maxLevel);
-      const menu = await item.openContextMenu();
-      if (!menu) return false;
-      const labels = await Promise.all((await menu.getItems()).map(item => item.getLabel()));
-      if (!labels.includes(action)) {
-        await menu.close();
-        return false;
-      }
-      await menu.select(action);
-      return true;
-    } catch {
+    const item = await findTreeItem(label, maxLevel);
+    const menu = await item.openContextMenu();
+    if (!menu) return false;
+    const labels = await Promise.all((await menu.getItems()).map(item => item.getLabel()));
+    if (!labels.includes(action)) {
+      await menu.close();
       return false;
     }
+    await menu.select(action);
+    return true;
   }, 15000, `Could not select '${action}' for tree item '${label}'`);
 }
 
@@ -116,15 +162,11 @@ export async function clickTreeItemAction(
   maxLevel = 0
 ): Promise<void> {
   await waitFor(async () => {
-    try {
-      const item = await findTreeItem(label, maxLevel);
-      const actionButton = await item.getActionButton(action);
-      if (!actionButton) return false;
-      await actionButton.click();
-      return true;
-    } catch {
-      return false;
-    }
+    const item = await findTreeItem(label, maxLevel);
+    const actionButton = await item.getActionButton(action);
+    if (!actionButton) return false;
+    await actionButton.click();
+    return true;
   }, 15000, `Could not click '${action}' for tree item '${label}'`);
 }
 
@@ -161,10 +203,22 @@ export async function findNotification(message: string): Promise<Notification> {
 }
 
 export async function closeEditorsAndTerminals(): Promise<void> {
-  await new Workbench().getEditorView().closeAllEditors().catch(() => undefined);
-  await new Workbench().getBottomBar().closePanel().catch(() => undefined);
+  const workbench = new Workbench();
+  await runCleanupCommand(workbench, 'workbench.action.terminal.killAll', 'terminals');
+  await runCleanupCommand(workbench, 'workbench.action.closeAllEditors', 'editors');
+  await runCleanupCommand(workbench, 'workbench.action.closePanel', 'bottom panel');
+  await dismissNotifications();
 }
 
-export function takeFailureScreenshot(name: string): void {
-  void VSBrowser.instance.takeScreenshot(name);
+async function runCleanupCommand(workbench: Workbench, command: string, target: string): Promise<void> {
+  try {
+    await workbench.executeCommand(command);
+  } catch (error) {
+    reportCleanupFailure(target, error);
+  }
+}
+
+function reportCleanupFailure(target: string, error: unknown): void {
+  const details = error instanceof Error ? error.message : String(error);
+  console.warn(`[ui-test] Could not clean up ${target}: ${details}`);
 }

@@ -159,9 +159,9 @@ export function generateWebviewContent(
     <div id="no-data">No Module Federation configurations found to display.</div>
 
     <div class="controls">
-        <button id="reset-view" class="control-button" onclick="resetZoom()">Reset View</button>
-        <button id="toggle-physics" class="control-button" onclick="togglePhysics()">Toggle Physics</button>
-        <button id="export-graph" class="control-button" onclick="exportGraph()">Export</button>
+        <button id="reset-view" class="control-button" aria-label="Reset graph view" onclick="resetZoom()">Reset View</button>
+        <button id="toggle-physics" class="control-button" aria-label="Toggle graph physics" onclick="togglePhysics()">Toggle Physics</button>
+        <button id="export-graph" class="control-button" aria-label="Export dependency graph" onclick="exportGraph()">Export</button>
     </div>
 
     <div class="legend">
@@ -343,7 +343,11 @@ export function generateWebviewContent(
                     .text(d => d.label && d.label.length > 30 ? d.label.substring(0, 30) + '...' : d.label);
 
                 const nodeGroups = g.selectAll('.node').data(graphData.nodes).enter().append('g')
-                    .attr('class', 'node').call(d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended));
+                    .attr('class', 'node')
+                    .attr('data-testid', 'graph-node')
+                    .attr('data-node-id', d => d.id)
+                    .attr('aria-label', d => \`\${d.label} (\${d.type})\`)
+                    .call(d3.drag().on('start', dragstarted).on('drag', dragged).on('end', dragended));
 
                 nodeGroups.append('circle')
                     .attr('r', d => {

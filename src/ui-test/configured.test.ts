@@ -1,11 +1,13 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { suite, suiteSetup, suiteTeardown, test } from 'mocha';
+import { beforeEach, afterEach, suite, suiteSetup, suiteTeardown, test } from 'mocha';
 import { By, WebElement } from 'selenium-webdriver';
-import { InputBox, ModalDialog, VSBrowser, WebView, Workbench } from 'vscode-extension-tester';
+import { InputBox, ModalDialog, WebView, Workbench } from 'vscode-extension-tester';
 import {
+  clickWhenReady,
   closeEditorsAndTerminals,
+  dismissNotifications,
   findNotification,
   findTreeItem,
   getFixtureWorkspacePath,
@@ -14,6 +16,7 @@ import {
   treeHasItem,
   waitFor
 } from './testUtils';
+import { resetConfiguredFixture } from './prepareConfiguredFixture';
 
 interface TestState {
   workspacePath: string;
@@ -32,8 +35,18 @@ suite('Desktop UI smoke tests', function (this: Mocha.Suite) {
     const rootPath = path.join(workspacePath, 'host');
     const rootConfigPath = path.join(workspacePath, '.vscode', 'mf-explorer.roots.json');
     state = { workspacePath, rootPath, rootConfigPath };
+  });
 
+  beforeEach(async function (this: Mocha.Context) {
+    this.timeout(120000);
+    await resetConfiguredFixture();
+    await dismissNotifications();
     await findTreeItem('host', 1);
+  });
+
+  afterEach(async function (this: Mocha.Context) {
+    this.timeout(120000);
+    await closeEditorsAndTerminals();
   });
 
   suiteTeardown(async function (this: Mocha.Context) {
@@ -112,56 +125,40 @@ suite('Desktop UI smoke tests', function (this: Mocha.Suite) {
 
   test('opens the graph webview and handles a node click', async () => {
     await waitFor(async () => {
-      try {
-        const tree = await getExplorerTree();
-        await VSBrowser.instance.driver.actions().move({ x: 1000, y: 300 }).perform();
-        const graphAction = await tree.getAction('Show Dependency Graph');
-        if (graphAction) {
-          await graphAction.click();
-          return true;
-        }
-        const moreActions = await tree.moreActions();
-        if (!moreActions) return false;
-        await moreActions.select('Show Dependency Graph');
+      const tree = await getExplorerTree();
+      const graphAction = await tree.getAction('Show Dependency Graph');
+      if (graphAction) {
+        await graphAction.click();
         return true;
-      } catch {
-        return false;
       }
+      const moreActions = await tree.moreActions();
+      if (!moreActions) return false;
+      await moreActions.select('Show Dependency Graph');
+      return true;
     }, 15000, 'Could not open the dependency graph action');
 
     await waitFor(async () => (await new Workbench().getEditorView().getOpenEditorTitles()).includes('Module Federation Explorer Graph'));
     const graph = new WebView();
     await graph.switchToFrame(15000);
     try {
-      await waitFor(async () => {
-        try {
-          await (await graph.findWebElement(By.id('reset-view'))).click();
-          return true;
-        } catch {
-          return false;
-        }
-      }, 15000, 'Graph reset control did not render');
-      await waitFor(async () => {
-        try {
-          await (await graph.findWebElement(By.id('toggle-physics'))).click();
-          return true;
-        } catch {
-          return false;
-        }
-      }, 15000, 'Graph physics control did not render');
+      await clickWhenReady(
+        () => graph.findWebElement(By.id('reset-view')),
+        15000,
+        'Graph reset control did not render'
+      );
+      await clickWhenReady(
+        () => graph.findWebElement(By.id('toggle-physics')),
+        15000,
+        'Graph physics control did not render'
+      );
       let hostNode: WebElement | undefined;
       await waitFor(async () => {
-        try {
-          const circles = await graph.findWebElements(By.css('g.node circle'));
-          for (const circle of circles) {
-            const className = await circle.getAttribute('class');
-            if (className?.split(/\s+/).some(value => value === 'host-node' || value === 'bidirectional-node')) {
-              hostNode = circle;
-              return true;
-            }
+        const nodes = await graph.findWebElements(By.css('g[data-testid="graph-node"]'));
+        for (const node of nodes) {
+          if (await node.getAttribute('aria-label') === 'ui-host (host)') {
+            hostNode = await node.findElement(By.css('circle'));
+            return true;
           }
-        } catch {
-          return false;
         }
         return false;
       }, 15000, 'Graph host node did not render');
@@ -174,43 +171,7 @@ suite('Desktop UI smoke tests', function (this: Mocha.Suite) {
           return false;
         }
       }, 15000, 'Graph host node did not settle inside the webview');
-      const graphSvg = await graph.findWebElement(By.css('svg'));
-      const svgRect = await graphSvg.getRect();
-      const nodeRect = await hostNode.getRect();
-      const nodeCenterX = nodeRect.x - svgRect.x + nodeRect.width / 2;
-      const nodeCenterY = nodeRect.y - svgRect.y + nodeRect.height / 2;
-      const hitTarget = await VSBrowser.instance.driver.executeScript<{
-        tagName: string;
-        className: string;
-        parentClass: string;
-      }>((x: number, y: number) => {
-        type DomElement = {
-          tagName?: string;
-          getAttribute: (name: string) => string | null;
-          parentElement?: DomElement | null;
-        };
-        const documentRef = (globalThis as unknown as {
-          document: { elementFromPoint: (x: number, y: number) => DomElement | null };
-        }).document;
-        const element = documentRef.elementFromPoint(x, y);
-        return {
-          tagName: element?.tagName ?? '',
-          className: element?.getAttribute('class') ?? '',
-          parentClass: element?.parentElement?.getAttribute('class') ?? ''
-        };
-      }, nodeCenterX, nodeCenterY);
-      assert.equal(hitTarget.tagName, 'circle', `Graph node hit test found ${JSON.stringify(hitTarget)}`);
-      // ChromeDriver's top-level pointer dispatch does not reliably enter nested VS Code webview frames.
-      await VSBrowser.instance.driver.executeScript((element: unknown) => {
-        const page = globalThis as unknown as {
-          MouseEvent: new (type: string, options: { bubbles: boolean; cancelable: boolean; view: unknown }) => unknown;
-        };
-        (element as { dispatchEvent: (event: unknown) => boolean }).dispatchEvent(new page.MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          view: globalThis
-        }));
-      }, hostNode);
+      await hostNode.click();
     } finally {
       await graph.switchBack();
     }
