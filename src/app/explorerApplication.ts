@@ -113,6 +113,7 @@ export class ExplorerApplication {
     this.onboardingWorkflow = new OnboardingWorkflow({
       rootConfigManager: this.services.rootConfigManager,
       path: this.services.path,
+      detectPackageManager: this.services.detectPackageManager,
       reloadConfigurations: () => this.reloadConfigurations()
     });
   }
@@ -373,13 +374,10 @@ export class ExplorerApplication {
       }
 
       if (!remote.buildCommand || !remote.startCommand) {
-        let packageManager = remote.packageManager;
-        if (!packageManager) {
-          const configType =
-            remote.configType === 'vite' || remote.configType === 'rsbuild' ? remote.configType : 'webpack';
-          ({ packageManager } = await this.services.detectPackageManager(folder, configType));
-          remote.packageManager = packageManager;
-        }
+        const configType =
+          remote.configType === 'vite' || remote.configType === 'rsbuild' ? remote.configType : 'webpack';
+        const { packageManager } = await this.services.detectPackageManager(folder, configType);
+        remote.packageManager = packageManager;
 
         const buildCommand = await this.services.dialogs.showCommandConfig({
           title: `Configure Build Command for ${remote.name}`,

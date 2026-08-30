@@ -27,7 +27,7 @@ export class RemoteWorkflow {
       this.dependencies.log(`Editing commands for remote ${remote.name}, folder: ${resolvedFolderPath || 'not set'}`);
 
       let packageManager = remote.packageManager;
-      if (resolvedFolderPath && !packageManager) {
+      if (resolvedFolderPath) {
         const configType =
           remote.configType === 'vite' || remote.configType === 'rsbuild' ? remote.configType : 'webpack';
         ({ packageManager } = await this.dependencies.detectPackageManager(resolvedFolderPath, configType));

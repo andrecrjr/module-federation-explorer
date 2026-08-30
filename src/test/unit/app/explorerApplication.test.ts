@@ -521,6 +521,35 @@ suite('ExplorerApplication', () => {
     assert.deepStrictEqual(harness.dialogs.successes, ['Started remote catalog']);
   });
 
+  test('refreshes a stale saved package manager before command setup', async () => {
+    const dialogs = new TestDialogs();
+    dialogs.infoResult = 'Browse for Folder';
+    dialogs.folderResult = '/workspace/host/catalog';
+    dialogs.commandResults.push('pnpm run build', 'pnpm run start');
+    const harness = createServices({ dialogs });
+    harness.services.detectPackageManager = async () => ({
+      packageManager: 'pnpm',
+      startCommand: 'pnpm run start'
+    });
+    const app = new ExplorerApplication('/workspace/project', new ExplorerStore(), harness.services);
+    const target = remote('catalog', { packageManager: 'npm', startCommand: undefined, buildCommand: undefined });
+
+    await app.startRemote(target);
+
+    assert.strictEqual(target.packageManager, 'pnpm');
+    assert.deepStrictEqual(
+      harness.dialogs.commandOptions.map(options => options.packageManager),
+      ['pnpm', 'pnpm']
+    );
+    assert.deepEqual(harness.terminalManager.startedRemotes[0], {
+      key: 'remote-catalog',
+      name: 'catalog',
+      folder: '/workspace/host/catalog',
+      build: 'pnpm run build',
+      start: 'pnpm run start'
+    });
+  });
+
   test('reconfigures a missing remote folder and skips a canceled command setup', async () => {
     const dialogs = new TestDialogs();
     dialogs.folderResult = '/workspace/host/auth-new';

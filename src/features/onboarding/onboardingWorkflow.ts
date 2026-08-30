@@ -1,4 +1,4 @@
-import type { PathPort, RootConfigService } from '../../app/ports';
+import type { PackageManagerConfigType, PackageManagerDetector, PathPort, RootConfigService } from '../../app/ports';
 import type { Remote } from '../../federation/types';
 import type { UnifiedRootConfig } from '../roots/types';
 import type { DetectedProject, OnboardingConfigurationResult, OnboardingSelection } from './types';
@@ -8,6 +8,7 @@ type RootConfigEntry = NonNullable<UnifiedRootConfig['rootConfigs']>[string];
 export interface OnboardingWorkflowDependencies {
   rootConfigManager: RootConfigService;
   path: PathPort;
+  detectPackageManager?: PackageManagerDetector;
   reloadConfigurations: () => Promise<void>;
 }
 
@@ -25,6 +26,19 @@ export class OnboardingWorkflow {
       rootConfigs: { ...currentConfig.rootConfigs }
     };
     const projectsByPath = new Map(detectedProjects.map(project => [project.path, project]));
+    const packageManagers = new Map<string, Promise<string>>();
+    const detectPackageManager = (project: DetectedProject): Promise<string> => {
+      const existing = packageManagers.get(project.path);
+      if (existing) return existing;
+
+      const detected = (
+        this.dependencies.detectPackageManager
+          ? this.dependencies.detectPackageManager(project.path, toPackageManagerConfigType(project.configType))
+          : Promise.resolve({ packageManager: 'npm' as const, startCommand: 'npm run start' })
+      ).then(result => result.packageManager);
+      packageManagers.set(project.path, detected);
+      return detected;
+    };
     let configuredProjects = 0;
     let skippedProjects = 0;
 
@@ -36,7 +50,7 @@ export class OnboardingWorkflow {
       }
 
       if (selection.role === 'host') {
-        this.configureHost(config, project, detectedProjects);
+        await this.configureHost(config, project, detectedProjects, detectPackageManager);
         configuredProjects++;
         continue;
       }
@@ -46,7 +60,7 @@ export class OnboardingWorkflow {
         continue;
       }
 
-      this.configureRemote(config, project, selection.hostFolder);
+      await this.configureRemote(config, project, selection.hostFolder, detectPackageManager);
       configuredProjects++;
     }
 
@@ -57,11 +71,12 @@ export class OnboardingWorkflow {
     return { configuredProjects, skippedProjects };
   }
 
-  private configureHost(
+  private async configureHost(
     config: UnifiedRootConfig,
     project: DetectedProject,
-    detectedProjects: readonly DetectedProject[]
-  ): void {
+    detectedProjects: readonly DetectedProject[],
+    detectPackageManager: (project: DetectedProject) => Promise<string>
+  ): Promise<void> {
     if (!config.roots.includes(project.path)) config.roots.push(project.path);
 
     const rootConfig = this.ensureRootConfigEntry(config, project.path);
@@ -76,12 +91,17 @@ export class OnboardingWorkflow {
         url: remote.url,
         folder: remoteProject.path,
         configType: toStoredConfigType(remoteProject.configType),
-        packageManager: 'npm'
+        packageManager: await detectPackageManager(remoteProject)
       };
     }
   }
 
-  private configureRemote(config: UnifiedRootConfig, project: DetectedProject, hostFolder: string): void {
+  private async configureRemote(
+    config: UnifiedRootConfig,
+    project: DetectedProject,
+    hostFolder: string,
+    detectPackageManager: (project: DetectedProject) => Promise<string>
+  ): Promise<void> {
     if (!config.roots.includes(hostFolder)) config.roots.push(hostFolder);
 
     const rootConfig = this.ensureRootConfigEntry(config, hostFolder);
@@ -91,7 +111,7 @@ export class OnboardingWorkflow {
       name: remoteName,
       folder: project.path,
       configType: toStoredConfigType(project.configType),
-      packageManager: 'npm'
+      packageManager: await detectPackageManager(project)
     };
   }
 
@@ -112,4 +132,8 @@ export class OnboardingWorkflow {
 
 function toStoredConfigType(configType: DetectedProject['configType']): Remote['configType'] {
   return configType === 'rspack' ? 'webpack' : configType;
+}
+
+function toPackageManagerConfigType(configType: DetectedProject['configType']): PackageManagerConfigType {
+  return configType === 'vite' || configType === 'rsbuild' ? configType : 'webpack';
 }

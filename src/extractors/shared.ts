@@ -37,7 +37,7 @@ export function extractConfigFromOptions(options: unknown, config: ModuleFederat
         url: finalUrl,
         folder: remoteName,
         remoteEntry: finalUrl,
-        packageManager: 'npm',
+        packageManager: '',
         configType: config.configType
       });
     }

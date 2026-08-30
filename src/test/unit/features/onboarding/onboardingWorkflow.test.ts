@@ -61,6 +61,10 @@ suite('Onboarding workflow', () => {
     const workflow = new OnboardingWorkflow({
       rootConfigManager: harness.service,
       path: pathPort,
+      detectPackageManager: async folder => ({
+        packageManager: folder.endsWith('/auth') ? 'yarn' : 'npm',
+        startCommand: folder.endsWith('/auth') ? 'yarn dev' : 'npm run start'
+      }),
       reloadConfigurations: async () => {
         reloads++;
       }
@@ -87,7 +91,7 @@ suite('Onboarding workflow', () => {
               url: 'https://cdn.example.test/auth/remoteEntry.js',
               folder: '/workspace/auth',
               configType: 'vite',
-              packageManager: 'npm'
+              packageManager: 'yarn'
             }
           }
         }
@@ -101,6 +105,7 @@ suite('Onboarding workflow', () => {
     const workflow = new OnboardingWorkflow({
       rootConfigManager: harness.service,
       path: pathPort,
+      detectPackageManager: async () => ({ packageManager: 'npm', startCommand: 'npm run start' }),
       reloadConfigurations: async () => {
         reloads++;
       }

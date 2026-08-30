@@ -6,6 +6,7 @@ import type {
   DialogService,
   FolderPickerOptions,
   InputBoxOptions,
+  PackageManager,
   PackageManagerDetector,
   ProgressReporter,
   QuickPickItem,
@@ -116,7 +117,10 @@ function createHostConfig(remotes: Remote[] = []): ModuleFederationConfig {
   };
 }
 
-function createHarness(configs: Map<string, ModuleFederationConfig[]>): {
+function createHarness(
+  configs: Map<string, ModuleFederationConfig[]>,
+  detectedPackageManager: PackageManager = 'npm'
+): {
   workflow: RemoteWorkflow;
   dialogs: TestDialogs;
   store: MemoryRootConfigurationStore;
@@ -157,8 +161,8 @@ function createHarness(configs: Map<string, ModuleFederationConfig[]>): {
     path: pathPort,
     dialogs,
     detectPackageManager: (async () => ({
-      packageManager: 'npm',
-      startCommand: 'npm start'
+      packageManager: detectedPackageManager,
+      startCommand: detectedPackageManager === 'yarn' ? 'yarn start' : `${detectedPackageManager} run start`
     })) as PackageManagerDetector,
     getRootConfigs: () => configs,
     remoteConfigurationService,
@@ -322,6 +326,19 @@ suite('RemoteWorkflow', () => {
       valid: false,
       message: 'Invalid Node.js project folder'
     });
+  });
+
+  test('uses the detected package manager when saved manager is stale', async () => {
+    const configs = new Map([['/workspace/host', [createHostConfig()]]]);
+    const harness = createHarness(configs, 'pnpm');
+    harness.dialogs.quickPickResult = { label: '🔨 Edit Build Command' };
+    harness.dialogs.commandResults.push('pnpm run build');
+    const target = createRemote('auth');
+
+    await harness.workflow.editRemoteCommands(target);
+
+    assert.strictEqual(target.packageManager, 'pnpm');
+    assert.strictEqual(harness.dialogs.commandOptions[0]?.packageManager, 'pnpm');
   });
 
   test('handles canceled command edits and remotes without a configured folder', async () => {
