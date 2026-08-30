@@ -266,15 +266,16 @@ export class ExplorerApplication {
       return;
     }
 
+    const configuredRoots = config.rootConfigs || {};
+    const configuredRootsByPath = new Map<string, (typeof configuredRoots)[string]>();
+    for (const [configuredRootPath, configuredRoot] of Object.entries(configuredRoots)) {
+      const normalizedPath = normalizePath(configuredRootPath);
+      if (!configuredRootsByPath.has(normalizedPath)) configuredRootsByPath.set(normalizedPath, configuredRoot);
+    }
+    const fallbackRoot = Object.keys(configuredRoots).length === 1 ? Object.values(configuredRoots)[0] : undefined;
+
     const rootFolders: RootFolder[] = Array.from(this.store.getConfigs().entries()).map(([rootPath, configs]) => {
-      const configuredRootPath = Object.keys(config.rootConfigs || {}).find(
-        candidate => normalizePath(candidate) === normalizePath(rootPath)
-      );
-      const configuredRoot = configuredRootPath
-        ? config.rootConfigs?.[configuredRootPath]
-        : Object.keys(config.rootConfigs || {}).length === 1
-          ? Object.values(config.rootConfigs || {})[0]
-          : undefined;
+      const configuredRoot = configuredRootsByPath.get(normalizePath(rootPath)) || fallbackRoot;
       return {
         type: 'rootFolder',
         path: rootPath,

@@ -1,5 +1,10 @@
 import * as assert from 'assert';
-import { getRemoteExposedModules, getRootFolderChildren } from '../../../../features/explorer/treeModel';
+import {
+  buildRemoteExposedModulesIndex,
+  getRemoteExposedModules,
+  getRemoteExposedModulesFromIndex,
+  getRootFolderChildren
+} from '../../../../features/explorer/treeModel';
 import type { ModuleFederationConfig } from '../../../../federation/types';
 import type { RootFolder } from '../../../../features/explorer/types';
 
@@ -57,6 +62,25 @@ suite('Tree model', () => {
       ['/workspace/two', [config('shell', [], ['Home'])]]
     ]);
 
+    assert.deepStrictEqual(
+      getRemoteExposedModules(configs, 'auth').map(expose => expose.name),
+      ['Login']
+    );
+  });
+
+  test('builds an ordered remote expose index with isolated result arrays', () => {
+    const hostConfig = config('host', ['auth'], []);
+    hostConfig.exposes.push({ name: 'Login', path: './src/Login.tsx', remoteName: 'auth' });
+    const configs = new Map([['/workspace/one', [hostConfig]]]);
+    const index = buildRemoteExposedModulesIndex(configs);
+    const firstResult = getRemoteExposedModulesFromIndex(index, 'auth');
+
+    firstResult.pop();
+
+    assert.deepStrictEqual(
+      getRemoteExposedModulesFromIndex(index, 'auth').map(expose => expose.name),
+      ['Login']
+    );
     assert.deepStrictEqual(
       getRemoteExposedModules(configs, 'auth').map(expose => expose.name),
       ['Login']

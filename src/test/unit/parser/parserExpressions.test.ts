@@ -234,4 +234,26 @@ suite('Parser expression resolution', () => {
 
     assert.equal(resolveConfigExpressionToObject(identifier('loop'), ast), undefined);
   });
+
+  test('resolves a long alias chain without rescanning unrelated declarations', () => {
+    const direct = object();
+    const aliasCount = 150;
+    const body = Array.from({ length: aliasCount }, (_, index) => ({
+      type: 'VariableDeclaration',
+      declarations: [
+        {
+          type: 'VariableDeclarator',
+          id: identifier(`alias${index}`),
+          init: identifier(index === aliasCount - 1 ? 'config' : `alias${index + 1}`)
+        }
+      ]
+    }));
+    body.push({
+      type: 'VariableDeclaration',
+      declarations: [{ type: 'VariableDeclarator', id: identifier('config'), init: direct }]
+    });
+
+    const ast = program(body);
+    assert.strictEqual(resolveConfigExpressionToObject(identifier('alias0'), ast), direct);
+  });
 });

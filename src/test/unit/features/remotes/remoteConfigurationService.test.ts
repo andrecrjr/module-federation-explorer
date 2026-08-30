@@ -117,4 +117,49 @@ suite('RemoteConfigurationService', () => {
       true
     );
   });
+
+  test('matches saved roots once and does not duplicate saved external remotes', async () => {
+    const existingExternal: Remote = {
+      name: 'catalog',
+      url: 'https://old.example/remoteEntry.js',
+      folder: '',
+      packageManager: '',
+      configType: 'external',
+      isExternal: true
+    };
+    const discoveredConfigs = new Map([
+      ['/workspace/host/', [config('host', [existingExternal])]],
+      ['/workspace/other', [config('other')]]
+    ]);
+    const store = new FakeRootConfigurationStore({
+      roots: ['/workspace/host'],
+      rootConfigs: {
+        '/workspace/host': {
+          externalRemotes: {
+            catalog: {
+              name: 'catalog',
+              url: 'https://catalog.example/remoteEntry.js',
+              configType: 'external',
+              isExternal: true
+            },
+            auth: {
+              name: 'auth',
+              url: 'https://auth.example/remoteEntry.js',
+              configType: 'external',
+              isExternal: true
+            }
+          }
+        }
+      }
+    });
+
+    const hydrated = await service(store, new Map()).hydrateRemoteConfigurations(discoveredConfigs);
+    const hostRemotes = hydrated.get('/workspace/host/')?.[0].remotes ?? [];
+
+    assert.deepStrictEqual(
+      hostRemotes.filter(remote => remote.isExternal).map(remote => remote.name),
+      ['catalog', 'auth']
+    );
+    assert.strictEqual(hydrated.get('/workspace/other')?.[0].remotes.length, 0);
+  });
 });

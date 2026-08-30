@@ -2,6 +2,13 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import type { DependencyGraph, D3GraphData } from '../types';
 
+export const LARGE_GRAPH_NODE_THRESHOLD = 150;
+export const LARGE_GRAPH_EDGE_THRESHOLD = 300;
+
+export function shouldUseAdaptivePhysics(nodeCount: number, edgeCount: number): boolean {
+  return nodeCount > LARGE_GRAPH_NODE_THRESHOLD || edgeCount > LARGE_GRAPH_EDGE_THRESHOLD;
+}
+
 /** Serialize JSON safely inside an HTML script element. */
 export function serializeForScript(value: unknown): string {
   return (JSON.stringify(value) ?? 'null')
@@ -193,6 +200,7 @@ export function generateWebviewContent(webview: vscode.Webview, extensionPath: s
         let simulation;
         let svg, g, zoom;
         let physicsEnabled = true;
+        const adaptivePhysics = ${shouldUseAdaptivePhysics(graph.nodes.length, graph.edges.length)};
         const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : undefined;
 
         if (graphRawData.nodes.length === 0) {
@@ -258,13 +266,23 @@ export function generateWebviewContent(webview: vscode.Webview, extensionPath: s
 
         function updateStats(nodes) {
             const stats = {
-                hosts: nodes.filter(n => n.type === 'host').length,
-                workspaceRemotes: nodes.filter(n => n.type === 'remote' && !n.id.startsWith('external-')).length,
-                externalRemotes: nodes.filter(n => n.type === 'remote' && n.id.startsWith('external-')).length,
-                bidirectional: nodes.filter(n => n.group === 'bidirectional').length,
-                shared: nodes.filter(n => n.type === 'shared-dependency').length,
-                modules: nodes.filter(n => n.type === 'exposed-module').length
+                hosts: 0,
+                workspaceRemotes: 0,
+                externalRemotes: 0,
+                bidirectional: 0,
+                shared: 0,
+                modules: 0
             };
+            nodes.forEach(n => {
+                if (n.type === 'host') stats.hosts++;
+                if (n.type === 'remote') {
+                    if (n.id.startsWith('external-')) stats.externalRemotes++;
+                    else stats.workspaceRemotes++;
+                }
+                if (n.group === 'bidirectional') stats.bidirectional++;
+                if (n.type === 'shared-dependency') stats.shared++;
+                if (n.type === 'exposed-module') stats.modules++;
+            });
             document.getElementById('stat-hosts').textContent = stats.hosts;
             document.getElementById('stat-workspace-remotes').textContent = stats.workspaceRemotes;
             document.getElementById('stat-external-remotes').textContent = stats.externalRemotes;
@@ -316,11 +334,17 @@ export function generateWebviewContent(webview: vscode.Webview, extensionPath: s
                     .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(d => {
                         switch(d.type) { case 'exposes': return 80; case 'shares': return 200; case 'consumes': return 150; default: return 120; }
                     }).strength(d => d.strength || 0.5))
-                    .force('charge', d3.forceManyBody().strength(d => -300 * ((d.size || 1) * 0.5)))
+                    .force('charge', d3.forceManyBody().strength(d => adaptivePhysics
+                        ? -120 - Math.min((d.size || 1) * 20, 180)
+                        : -300 * ((d.size || 1) * 0.5)))
                     .force('center', d3.forceCenter(width / 2, height / 2))
-                    .force('collide', d3.forceCollide().radius(d => 30 + (d.size || 1) * 5))
                     .force('x', d3.forceX(width / 2).strength(0.1))
                     .force('y', d3.forceY(height / 2).strength(0.1));
+                if (!adaptivePhysics) {
+                    simulation.force('collide', d3.forceCollide().radius(d => 30 + (d.size || 1) * 5));
+                } else {
+                    simulation.alphaDecay(0.08);
+                }
 
                 const edges = g.selectAll('.edge').data(graphData.links).enter().append('line')
                     .attr('class', d => { let c = \`edge \${d.type || 'default'}\`; if (d.bidirectional) c += ' bidirectional'; return c; })
@@ -394,10 +418,16 @@ export function generateWebviewContent(webview: vscode.Webview, extensionPath: s
                     try { vscodeApi?.postMessage({ command: 'nodeClick', node }); } catch (_) {}
                 }
 
+                let renderScheduled = false;
                 simulation.on('tick', () => {
-                    edges.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-                    edgeLabels.attr('x', d => (d.source.x + d.target.x) / 2).attr('y', d => (d.source.y + d.target.y) / 2);
-                    nodeGroups.attr('transform', d => \`translate(\${d.x}, \${d.y})\`);
+                    if (renderScheduled) return;
+                    renderScheduled = true;
+                    window.requestAnimationFrame(() => {
+                        renderScheduled = false;
+                        edges.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+                        edgeLabels.attr('x', d => (d.source.x + d.target.x) / 2).attr('y', d => (d.source.y + d.target.y) / 2);
+                        nodeGroups.attr('transform', d => \`translate(\${d.x}, \${d.y})\`);
+                    });
                 });
 
                 window.addEventListener('resize', () => {

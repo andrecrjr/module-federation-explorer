@@ -8,6 +8,17 @@ import {
   GraphGenerationResult
 } from './types';
 
+interface AppNameIndex {
+  exact: Map<string, string[]>;
+  caseInsensitive: Map<string, string[]>;
+}
+
+interface SharedDependencyAggregate {
+  hostIds: Set<string>;
+  config?: SharedDependency;
+  configDetail: number;
+}
+
 /**
  * Multi-pass graph generation algorithm.
  * Extracted from the original monolithic DependencyGraphManager.
@@ -39,20 +50,38 @@ export class GraphGenerator {
     const nodeMap = new Map<string, DependencyGraphNode>();
     const exposedModulesMap = new Map<string, string[]>();
     const remoteToHostMap = new Map<string, string[]>();
+    const remoteToHostSet = new Map<string, Set<string>>();
     const appCapabilities = new Map<string, AppCapability>();
     const diagnostics: GraphDiagnostic[] = [];
 
     // ── Pass 1: Analyze capabilities ──────────────────────────────
     this._pass1_analyzeCapabilities(configs, appCapabilities, exposedModulesMap, diagnostics);
+    const appNameIndex = this._buildAppNameIndex(appCapabilities);
 
     // ── Pass 2: Build remote consumption map ───────────────────────
-    this._pass2_buildRemoteConsumptionMap(appCapabilities, nodeMap, graph, remoteToHostMap, diagnostics);
+    this._pass2_buildRemoteConsumptionMap(
+      appCapabilities,
+      nodeMap,
+      graph,
+      remoteToHostMap,
+      remoteToHostSet,
+      appNameIndex,
+      diagnostics
+    );
 
     // ── Pass 3: Create unified nodes ───────────────────────────────
     this._pass3_createUnifiedNodes(appCapabilities, remoteToHostMap, nodeMap, graph);
 
     // ── Pass 4: Create consolidated consumption edges ──────────────
-    this._pass4_createConsumptionEdges(remoteToHostMap, nodeMap, graph, appCapabilities, diagnostics);
+    this._pass4_createConsumptionEdges(
+      remoteToHostMap,
+      remoteToHostSet,
+      nodeMap,
+      graph,
+      appCapabilities,
+      appNameIndex,
+      diagnostics
+    );
 
     // ── Pass 5: Create exposed module nodes and expose edges ───────
     this._pass5_createExposedModuleNodes(exposedModulesMap, nodeMap, graph, remoteToHostMap);
@@ -118,13 +147,15 @@ export class GraphGenerator {
     nodeMap: Map<string, DependencyGraphNode>,
     graph: DependencyGraph,
     remoteToHostMap: Map<string, string[]>,
+    remoteToHostSet: Map<string, Set<string>>,
+    appNameIndex: AppNameIndex,
     diagnostics: GraphDiagnostic[]
   ): void {
     appCapabilities.forEach((capabilities, appId) => {
       const { config } = capabilities;
 
       config.remotes.forEach(remote => {
-        const remoteAppId = this.findAppIdByName(remote.name, appCapabilities, diagnostics);
+        const remoteAppId = this._findAppIdByName(remote.name, appNameIndex, diagnostics);
 
         // Skip self-references
         if (remoteAppId === appId) {
@@ -140,8 +171,10 @@ export class GraphGenerator {
         if (remoteAppId) {
           if (!remoteToHostMap.has(remoteAppId)) {
             remoteToHostMap.set(remoteAppId, []);
+            remoteToHostSet.set(remoteAppId, new Set());
           }
           remoteToHostMap.get(remoteAppId)!.push(appId);
+          remoteToHostSet.get(remoteAppId)!.add(appId);
         } else {
           // External remote (not in workspace)
           const externalRemoteId = `external-${remote.name}`;
@@ -173,8 +206,10 @@ export class GraphGenerator {
 
           if (!remoteToHostMap.has(externalRemoteId)) {
             remoteToHostMap.set(externalRemoteId, []);
+            remoteToHostSet.set(externalRemoteId, new Set());
           }
           remoteToHostMap.get(externalRemoteId)!.push(appId);
+          remoteToHostSet.get(externalRemoteId)!.add(appId);
         }
       });
     });
@@ -241,9 +276,11 @@ export class GraphGenerator {
   // ─── Pass 4 ────────────────────────────────────────────────────────
   private _pass4_createConsumptionEdges(
     remoteToHostMap: Map<string, string[]>,
+    remoteToHostSet: Map<string, Set<string>>,
     nodeMap: Map<string, DependencyGraphNode>,
     graph: DependencyGraph,
     appCapabilities: Map<string, AppCapability>,
+    appNameIndex: AppNameIndex,
     diagnostics: GraphDiagnostic[]
   ): void {
     const processedPairs = new Set<string>();
@@ -260,12 +297,12 @@ export class GraphGenerator {
         const directedPairKey = `${hostId}->${remoteId}`;
         if (processedPairs.has(directedPairKey)) return;
 
-        const isHostAlsoRemote = remoteToHostMap.has(hostId) && remoteToHostMap.get(hostId)!.includes(remoteId);
+        const isHostAlsoRemote = remoteToHostSet.get(hostId)?.has(remoteId) ?? false;
 
         const hostConfig = appCapabilities.get(hostId)?.config;
         const remoteConfig = hostConfig?.remotes.find(
           r =>
-            this.findAppIdByName(r.name, appCapabilities, diagnostics) === remoteId || `external-${r.name}` === remoteId
+            this._findAppIdByName(r.name, appNameIndex, diagnostics) === remoteId || `external-${r.name}` === remoteId
         );
 
         if (remoteConfig?.url && !remoteNode.url) {
@@ -340,39 +377,44 @@ export class GraphGenerator {
     nodeMap: Map<string, DependencyGraphNode>,
     graph: DependencyGraph
   ): void {
-    const sharedDepsMap = new Map<string, Set<string>>();
+    const sharedDepsMap = new Map<string, SharedDependencyAggregate>();
 
     appCapabilities.forEach((capabilities, appId) => {
+      const seenInConfig = new Set<string>();
       capabilities.config.shared.forEach(sharedDep => {
-        if (!sharedDepsMap.has(sharedDep.name)) {
-          sharedDepsMap.set(sharedDep.name, new Set());
+        let aggregate = sharedDepsMap.get(sharedDep.name);
+        if (!aggregate) {
+          aggregate = { hostIds: new Set(), configDetail: 0 };
+          sharedDepsMap.set(sharedDep.name, aggregate);
         }
-        sharedDepsMap.get(sharedDep.name)!.add(appId);
+        aggregate.hostIds.add(appId);
+
+        // Match the previous selection rule: only the first occurrence in a
+        // configuration participates in the "most detailed" comparison.
+        if (seenInConfig.has(sharedDep.name)) return;
+        seenInConfig.add(sharedDep.name);
+
+        const configDetail = Object.keys(sharedDep).length;
+        if (!aggregate.config || configDetail > aggregate.configDetail) {
+          aggregate.config = sharedDep;
+          aggregate.configDetail = configDetail;
+        }
       });
     });
 
-    sharedDepsMap.forEach((hostIds, depName) => {
-      if (hostIds.size <= 1 || depName === '[DYNAMIC_SHARED]') return;
+    sharedDepsMap.forEach((aggregate, depName) => {
+      if (aggregate.hostIds.size <= 1 || depName === '[DYNAMIC_SHARED]') return;
 
       const sharedDepId = `shared-${depName}`;
-
-      // Find the most detailed shared dependency configuration
-      let sharedDepConfig: SharedDependency | undefined;
-      appCapabilities.forEach(({ config }) => {
-        const found = config.shared.find(s => s.name === depName);
-        if (found && (!sharedDepConfig || Object.keys(found).length > Object.keys(sharedDepConfig).length)) {
-          sharedDepConfig = found;
-        }
-      });
 
       const sharedDepNode: DependencyGraphNode = {
         id: sharedDepId,
         label: depName,
         type: 'shared-dependency',
         configType: 'webpack',
-        size: hostIds.size,
+        size: aggregate.hostIds.size,
         group: 'shared',
-        version: sharedDepConfig?.version,
+        version: aggregate.config?.version,
         sharedDependencies: [depName]
       };
 
@@ -380,7 +422,7 @@ export class GraphGenerator {
       graph.nodes.push(sharedDepNode);
       graph.metadata!.totalSharedDeps++;
 
-      hostIds.forEach(hostId => {
+      aggregate.hostIds.forEach(hostId => {
         const hostNode = nodeMap.get(hostId);
         if (hostNode) {
           graph.edges.push({
@@ -398,8 +440,14 @@ export class GraphGenerator {
 
   // ─── Finalize metadata ─────────────────────────────────────────────
   private _finalizeMetadata(graph: DependencyGraph): void {
-    graph.metadata!.totalHosts = graph.nodes.filter(n => n.type === 'host').length;
-    graph.metadata!.totalRemotes = graph.nodes.filter(n => n.type === 'remote').length;
+    let totalHosts = 0;
+    let totalRemotes = 0;
+    for (const node of graph.nodes) {
+      if (node.type === 'host') totalHosts++;
+      if (node.type === 'remote') totalRemotes++;
+    }
+    graph.metadata!.totalHosts = totalHosts;
+    graph.metadata!.totalRemotes = totalRemotes;
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────
@@ -420,36 +468,47 @@ export class GraphGenerator {
     appCapabilities: Map<string, AppCapability>,
     diagnostics?: GraphDiagnostic[]
   ): string | undefined {
-    const lowerAppName = appName.toLowerCase();
-    let matchedId: string | undefined;
+    return this._findAppIdByName(appName, this._buildAppNameIndex(appCapabilities), diagnostics);
+  }
 
-    for (const [appId, capabilities] of appCapabilities.entries()) {
-      const configName = capabilities.config.name;
+  private _buildAppNameIndex(appCapabilities: Map<string, AppCapability>): AppNameIndex {
+    const exact = new Map<string, string[]>();
+    const caseInsensitive = new Map<string, string[]>();
 
-      if (configName === appName) {
-        return appId;
-      }
+    for (const [appId, capabilities] of appCapabilities) {
+      const name = capabilities.config.name;
+      const exactMatches = exact.get(name) ?? [];
+      exactMatches.push(appId);
+      exact.set(name, exactMatches);
 
-      if (configName.toLowerCase() === lowerAppName) {
-        matchedId = matchedId ?? appId;
-      }
+      const normalizedName = name.toLowerCase();
+      const normalizedMatches = caseInsensitive.get(normalizedName) ?? [];
+      normalizedMatches.push(appId);
+      caseInsensitive.set(normalizedName, normalizedMatches);
     }
 
-    if (matchedId) {
-      const matchingIds = [...appCapabilities.entries()]
-        .filter(([, capabilities]) => capabilities.config.name.toLowerCase() === lowerAppName)
-        .map(([id]) => id);
-      if (matchingIds.length > 1) {
-        diagnostics?.push({
-          code: 'ambiguous-app-name',
-          severity: 'warning',
-          message: `Ambiguous app name '${appName}' matched ${matchingIds.length} configurations`
-        });
-        return undefined;
-      }
+    return { exact, caseInsensitive };
+  }
+
+  private _findAppIdByName(
+    appName: string,
+    appNameIndex: AppNameIndex,
+    diagnostics?: GraphDiagnostic[]
+  ): string | undefined {
+    const exactMatch = appNameIndex.exact.get(appName)?.[0];
+    if (exactMatch) return exactMatch;
+
+    const matchingIds = appNameIndex.caseInsensitive.get(appName.toLowerCase()) ?? [];
+    if (matchingIds.length > 1) {
+      diagnostics?.push({
+        code: 'ambiguous-app-name',
+        severity: 'warning',
+        message: `Ambiguous app name '${appName}' matched ${matchingIds.length} configurations`
+      });
+      return undefined;
     }
 
-    return matchedId;
+    return matchingIds[0];
   }
 }
 

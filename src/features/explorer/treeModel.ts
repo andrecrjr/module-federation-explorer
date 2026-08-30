@@ -1,14 +1,19 @@
-import type { ExposedModule, ModuleFederationConfig } from '../../federation/types';
+import type { ExposedModule, ModuleFederationConfig, Remote } from '../../federation/types';
 import type { ExposesFolder, RemotesFolder, RootFolder } from './types';
 
 export type RootFolderChild = RemotesFolder | ExposesFolder;
+export type RemoteExposedModulesIndex = ReadonlyMap<string, readonly ExposedModule[]>;
 
 export function getRootFolderChildren(
   rootFolder: RootFolder,
   log: (message: string) => void = () => {}
 ): RootFolderChild[] {
-  const allRemotes = rootFolder.configs.flatMap(config => config.remotes);
-  const allExposes = rootFolder.configs.flatMap(config => config.exposes);
+  const allRemotes: Remote[] = [];
+  const allExposes: ExposedModule[] = [];
+  for (const config of rootFolder.configs) {
+    allRemotes.push(...config.remotes);
+    allExposes.push(...config.exposes);
+  }
 
   log(`Building tree for Host folder ${rootFolder.name}:`);
   log(
@@ -49,19 +54,36 @@ export function getRootFolderChildren(
   return children;
 }
 
-export function getRemoteExposedModules(
-  rootConfigs: ReadonlyMap<string, ModuleFederationConfig[]>,
-  remoteName: string
-): ExposedModule[] {
-  const exposedModules: ExposedModule[] = [];
+export function buildRemoteExposedModulesIndex(
+  rootConfigs: ReadonlyMap<string, ModuleFederationConfig[]>
+): RemoteExposedModulesIndex {
+  const index = new Map<string, ExposedModule[]>();
 
   for (const configs of rootConfigs.values()) {
     for (const config of configs) {
-      if (config.remotes.some(remote => remote.name === remoteName)) {
-        exposedModules.push(...config.exposes.filter(expose => expose.remoteName === remoteName));
+      const remoteNames = new Set(config.remotes.map(remote => remote.name));
+      for (const expose of config.exposes) {
+        if (!remoteNames.has(expose.remoteName)) continue;
+        const modules = index.get(expose.remoteName) ?? [];
+        modules.push(expose);
+        index.set(expose.remoteName, modules);
       }
     }
   }
 
-  return exposedModules;
+  return index;
+}
+
+export function getRemoteExposedModulesFromIndex(
+  index: RemoteExposedModulesIndex,
+  remoteName: string
+): ExposedModule[] {
+  return index.get(remoteName)?.slice() ?? [];
+}
+
+export function getRemoteExposedModules(
+  rootConfigs: ReadonlyMap<string, ModuleFederationConfig[]>,
+  remoteName: string
+): ExposedModule[] {
+  return getRemoteExposedModulesFromIndex(buildRemoteExposedModulesIndex(rootConfigs), remoteName);
 }

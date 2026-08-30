@@ -11,7 +11,12 @@ import {
   isRemote,
   isRootFolder
 } from './treeItemFactory';
-import { getRemoteExposedModules, getRootFolderChildren } from './treeModel';
+import {
+  buildRemoteExposedModulesIndex,
+  getRemoteExposedModulesFromIndex,
+  getRootFolderChildren,
+  type RemoteExposedModulesIndex
+} from './treeModel';
 
 export interface ExplorerTreeActions {
   isRemoteRunning: (remoteKey: string) => boolean;
@@ -25,6 +30,7 @@ export class UnifiedModuleFederationProvider
 {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeElement | undefined>();
   private readonly unsubscribeFromStore: () => void;
+  private remoteExposedModulesIndex: RemoteExposedModulesIndex | undefined;
 
   readonly onDidChangeTreeData: vscode.Event<TreeElement | undefined> = this.onDidChangeTreeDataEmitter.event;
   readonly dragMimeTypes = ['application/vnd.code.tree.moduleFederation'];
@@ -34,7 +40,10 @@ export class UnifiedModuleFederationProvider
     private readonly store: ExplorerStore,
     private readonly actions: ExplorerTreeActions
   ) {
-    this.unsubscribeFromStore = store.subscribe(() => this.refresh());
+    this.unsubscribeFromStore = store.subscribe(() => {
+      this.remoteExposedModulesIndex = undefined;
+      this.refresh();
+    });
   }
 
   dispose(): void {
@@ -70,7 +79,8 @@ export class UnifiedModuleFederationProvider
       if (isExposesFolder(element)) return Promise.resolve(element.exposes);
       if (isExposedModule(element)) return Promise.resolve([]);
       if (isRemote(element)) {
-        return Promise.resolve(getRemoteExposedModules(snapshot.configs, element.name));
+        this.remoteExposedModulesIndex ??= buildRemoteExposedModulesIndex(snapshot.configs);
+        return Promise.resolve(getRemoteExposedModulesFromIndex(this.remoteExposedModulesIndex, element.name));
       }
       return Promise.resolve([]);
     } catch (error) {

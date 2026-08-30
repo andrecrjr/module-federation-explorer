@@ -35,6 +35,19 @@ function savedRootKey(config: UnifiedRootConfig, rootPath: string): string | und
   );
 }
 
+function createSavedRootKeyIndex(config: UnifiedRootConfig): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const candidate of config.roots) {
+    const normalized = normalizePath(candidate);
+    if (!index.has(normalized)) index.set(normalized, candidate);
+  }
+  for (const candidate of Object.keys(config.rootConfigs || {})) {
+    const normalized = normalizePath(candidate);
+    if (!index.has(normalized)) index.set(normalized, candidate);
+  }
+  return index;
+}
+
 function savedRemoteSettings(remote: Remote, saved?: Remote): Remote {
   if (!saved) return { ...remote };
   return {
@@ -81,18 +94,23 @@ export class RemoteConfigurationService {
   ): Promise<Map<string, ModuleFederationConfig[]>> {
     const persisted = await this.dependencies.rootConfigurationStore.loadRootConfig();
     const hydrated = new Map<string, ModuleFederationConfig[]>();
+    const savedRootKeys = persisted ? createSavedRootKeyIndex(persisted) : undefined;
 
     for (const [rootPath, configs] of discoveredConfigs.entries()) {
-      const key = persisted ? savedRootKey(persisted, rootPath) : undefined;
+      const key = savedRootKeys?.get(normalizePath(rootPath));
       const saved = key ? persisted?.rootConfigs?.[key] : undefined;
+      const externalRemotes = Object.values(saved?.externalRemotes || {});
       hydrated.set(
         rootPath,
         configs.map(config => {
           const next = cloneConfig(config);
           next.remotes = next.remotes.map(remote => savedRemoteSettings(remote, saved?.remotes?.[remote.name]));
+          const externalRemoteNames = new Set(
+            next.remotes.filter(remote => remote.isExternal).map(remote => remote.name)
+          );
 
-          for (const external of Object.values(saved?.externalRemotes || {})) {
-            if (!next.remotes.some(remote => remote.name === external.name && remote.isExternal)) {
+          for (const external of externalRemotes) {
+            if (!externalRemoteNames.has(external.name)) {
               next.remotes.push({
                 name: external.name,
                 url: external.url,
@@ -101,6 +119,7 @@ export class RemoteConfigurationService {
                 packageManager: '',
                 isExternal: true
               });
+              externalRemoteNames.add(external.name);
             }
           }
           return next;
