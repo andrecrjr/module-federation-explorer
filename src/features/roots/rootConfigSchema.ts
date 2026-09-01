@@ -1,4 +1,5 @@
 import type { UnifiedRootConfig } from './types';
+import type { ManifestSourceConfig } from '../../federation/manifestTypes';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -7,6 +8,7 @@ function isJsonRecord(value: unknown): value is JsonRecord {
 }
 
 const ROOT_CONFIG_TYPES = new Set(['webpack', 'vite', 'modernjs', 'rsbuild', 'rspack', 'external']);
+const MANIFEST_SOURCE_KINDS = new Set(['local', 'url']);
 
 function optionalString(record: JsonRecord, key: string): boolean {
   return record[key] === undefined || typeof record[key] === 'string';
@@ -58,12 +60,31 @@ function isRootConfigs(value: unknown): value is NonNullable<UnifiedRootConfig['
   return isJsonRecord(value) && Object.values(value).every(isRootConfigEntry);
 }
 
+function isManifestSource(value: unknown): value is ManifestSourceConfig {
+  return (
+    isJsonRecord(value) &&
+    typeof value.kind === 'string' &&
+    MANIFEST_SOURCE_KINDS.has(value.kind) &&
+    typeof value.location === 'string' &&
+    value.location.trim().length > 0 &&
+    (value.environment === undefined || typeof value.environment === 'string')
+  );
+}
+
+function isManifestSources(value: unknown): value is ManifestSourceConfig[] {
+  return Array.isArray(value) && value.every(isManifestSource);
+}
+
 /** Pure validation for current root configuration schema. */
 export function parseRootConfig(value: unknown): UnifiedRootConfig | undefined {
   if (!isJsonRecord(value) || !Array.isArray(value.roots) || !value.roots.every(root => typeof root === 'string'))
     return undefined;
   if (value.rootConfigs !== undefined && !isRootConfigs(value.rootConfigs)) return undefined;
-  return { roots: value.roots, rootConfigs: value.rootConfigs };
+  if (value.manifestSources !== undefined && !isManifestSources(value.manifestSources)) return undefined;
+  const config: UnifiedRootConfig = { roots: value.roots };
+  if (value.rootConfigs !== undefined) config.rootConfigs = value.rootConfigs;
+  if (value.manifestSources !== undefined) config.manifestSources = value.manifestSources;
+  return config;
 }
 
 /** Pure migration for documented legacy root arrays. */
