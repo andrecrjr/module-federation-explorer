@@ -3,7 +3,7 @@ import { resolveStringExpression } from '../parser/expressionResolver';
 import type { ModuleFederationConfig, SharedDependency } from '../federation/types';
 
 export function createConfig(configType: ModuleFederationConfig['configType']): ModuleFederationConfig {
-  return { name: '', remotes: [], exposes: [], shared: [], detected: false, configType, configPath: '' };
+  return { name: '', remotes: [], exposes: [], shared: [], provenance: 'static', detected: false, configType, configPath: '' };
 }
 
 export function extractConfigFromOptions(options: unknown, config: ModuleFederationConfig): void {

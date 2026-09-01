@@ -23,6 +23,7 @@ function config(name: string, remotes: string[], exposes: string[]): ModuleFeder
       remoteName: name
     })),
     shared: [],
+    provenance: 'static',
     detected: true,
     configType: 'webpack',
     configPath: `/workspace/${name}/webpack.config.ts`

@@ -1,6 +1,8 @@
 # Roadmap
 
-Product ideas and remaining technical work for Module Federation Explorer. Current architecture and ownership live in [`docs/architecture.md`](docs/architecture.md).
+Product roadmap for making Module Federation Explorer a manifest-first, AI-ready development companion. Current architecture and ownership live in [`docs/architecture.md`](docs/architecture.md).
+
+The central product direction is to use `mf-manifest.json` as a structured runtime artifact for discovery, visualization, comparison, export, and external AI context. The extension does not embed an AI assistant or execute project configuration code.
 
 ## Completed foundation
 
@@ -13,30 +15,87 @@ Product ideas and remaining technical work for Module Federation Explorer. Curre
 - [x] Track host/remote terminal lifecycle and dispose activation resources.
 - [x] Cover parser, discovery, workflows, tree, graph, webview boundaries, manual flows, and desktop UI flows with tests.
 
-## Technical priorities
+## P0 — First-class `mf-manifest.json` support
 
-- [ ] Harden malformed or partially migrated root configuration handling, including clearer recovery guidance.
-- [x] Move onboarding into `src/features/onboarding/`; separate controller, message validation, and HTML template.
-- [x] Move rating/feedback behavior into `src/features/feedback/`.
-- [x] Split shared models into domain and presentation models without adding a catch-all shared types module.
-- [x] Add automated dependency-direction checks for low-level, feature, and adapter imports.
-- [x] Organize tests under explicit unit, integration, and UI areas while preserving fast extension-host feedback.
-- [ ] Add support for asynchronous config functions and additional safe static-expression shapes.
-- [ ] Add manifest-based discovery for Module Federation 2.0 projects.
+- [ ] Discover local `mf-manifest.json` files inside configured roots.
+- [ ] Allow users to register manifests by local path or URL.
+- [ ] Add a pure, schema-validated manifest parser with diagnostics for malformed or incomplete JSON.
+- [ ] Extract manifest IDs, federation names, metadata, remotes, exposes, shared dependencies, assets, remote-entry information, and type-file URLs.
+- [ ] Associate manifests with static configurations using federation name, manifest ID, configuration path, and root path.
+- [ ] Keep manifest state separate from static AST configurations and persisted root settings.
+- [ ] Display manifest source, environment label, and last-loaded timestamp.
+- [ ] Never execute JavaScript, TypeScript, or `remoteEntry.js` to obtain manifest data.
 
-## Graph improvements
+`mf-manifest.json` is a runtime-oriented artifact containing the information needed to understand exposed modules, remotes, shared dependencies, assets, and remote entries. See the [Manifest and Snapshot documentation](https://module-federation.io/guide/basic/manifest-snapshot) and [manifest field reference](https://module-federation.io/guide/advanced/manifest-fields.html).
 
-- [ ] Add search and filter controls to the graph webview.
-- [ ] Add focus mode for immediate upstream/downstream connections.
-- [ ] Improve graph diagnostics presentation inside VS Code.
-- [ ] Evaluate lazy or incremental loading for large multi-root workspaces.
+## P1 — Manifest-powered Explorer and graph
 
-## Runtime and workflow improvements
+- [ ] Enrich tree nodes with manifest-derived applications, exposes, remotes, aliases, shared dependencies, assets, and types.
+- [ ] Add actions to open a manifest, open an exposed-module asset, open a type file, copy a manifest URL, and refresh a manifest.
+- [ ] Add manifest-derived relationships to the dependency graph.
+- [ ] Show manifest-only applications that have no matching local configuration.
+- [ ] Distinguish data provenance as `static`, `manifest`, or `merged`.
+- [ ] Add graph filters for manifest-backed applications and relationships.
 
-- [ ] Detect port conflicts before starting host or remote processes.
-- [ ] Add restart actions for running hosts and remotes.
-- [ ] Improve command validation and project-specific command suggestions.
-- [ ] Add clearer recovery actions for missing remote folders and invalid configuration files.
+## P1 — Static configuration versus manifest comparison
+
+- [ ] Compare declared configuration with manifest data without silently overwriting either source.
+- [ ] Report declared exposes missing from the manifest and manifest exposes missing from static configuration.
+- [ ] Report declared remotes missing from the manifest and manifest remotes missing from static configuration.
+- [ ] Report remote-entry, federation-name, and manifest-ID differences.
+- [ ] Report shared-dependency differences and missing asset or type metadata.
+- [ ] Link each diagnostic to the relevant configuration or manifest field.
+- [ ] Add stable diagnostic codes so external tools can process drift without parsing human-readable messages.
+
+## P1 — Stable AI context export
+
+The extension will not contain an AI assistant or call an AI provider. It will provide deterministic, provider-neutral context that Copilot, agents, skills, plugins, MCP adapters, and custom tools can consume.
+
+- [ ] Add `Module Federation: Copy AI Context as JSON`.
+- [ ] Add `Module Federation: Export AI Context`.
+- [ ] Add `Module Federation: Copy Federation Summary as Markdown`.
+- [ ] Define a versioned AI-context JSON schema.
+- [ ] Include applications, manifests, exposes, remotes, shared dependencies, relationships, provenance, and diagnostics.
+- [ ] Use workspace-relative paths where possible.
+- [ ] Redact URL credentials, query tokens, secrets, and unnecessary absolute paths by default.
+- [ ] Export normalized fields rather than arbitrary raw manifest data.
+
+The initial normalized export should contain:
+
+```json
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-29T00:00:00.000Z",
+  "applications": [],
+  "manifests": [],
+  "relationships": [],
+  "sharedDependencies": [],
+  "diagnostics": []
+}
+```
+
+## P2 — Agent and plugin interoperability
+
+- [ ] Document the AI-context schema and export commands in `docs/ai-integration.md`.
+- [ ] Document manifest field meanings, provenance rules, diagnostic codes, and redaction behavior.
+- [ ] Provide example agent questions for finding remotes, exposes, shared dependencies, and manifest drift.
+- [ ] Document how external skills, plugins, MCP servers, or CLIs can wrap the exported context.
+- [ ] Define future query capabilities such as `get_federation_context`, `list_manifests`, `list_exposes`, `list_remotes`, and `find_manifest_drift`.
+- [ ] Keep the integration contract provider-neutral and independent of any embedded AI implementation.
+
+## P2 — Manifest snapshots and comparison
+
+- [ ] Keep the last successfully loaded manifest snapshot in memory.
+- [ ] Add a `Compare Manifest` action.
+- [ ] Report added, removed, and changed applications, exposes, remotes, shared dependencies, assets, types, and remote-entry metadata.
+- [ ] Export comparison results using the same AI-ready JSON schema.
+- [ ] Add stable change categories for external tools and agents.
+
+## Deferred scope
+
+- [ ] Consider `mf-stats.json` support only after the `mf-manifest.json` model is stable.
+
+The following are intentionally outside this roadmap: embedded AI chat, AI provider calls, browser runtime instrumentation, `remoteEntry.js` parsing, runtime plugins, automatic environment-variable evaluation, and terminal/process orchestration.
 
 ## Quality bar
 

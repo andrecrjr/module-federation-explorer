@@ -112,6 +112,7 @@ function createHostConfig(remotes: Remote[] = []): ModuleFederationConfig {
     remotes,
     exposes: [],
     shared: [],
+    provenance: 'static',
     configType: 'webpack',
     configPath: '/workspace/host/webpack.config.js'
   };
@@ -188,6 +189,7 @@ suite('RemoteWorkflow', () => {
       remotes: [],
       exposes: [],
       shared: [],
+      provenance: 'static',
       configType: 'webpack',
       configPath: '/workspace/host/webpack.config.js'
     };
@@ -219,6 +221,7 @@ suite('RemoteWorkflow', () => {
       remotes: [existing],
       exposes: [],
       shared: [],
+      provenance: 'static',
       configType: 'webpack',
       configPath: '/workspace/host/webpack.config.js'
     };
@@ -244,6 +247,7 @@ suite('RemoteWorkflow', () => {
       remotes: [external],
       exposes: [],
       shared: [],
+      provenance: 'static',
       configType: 'webpack',
       configPath: '/workspace/host/webpack.config.js'
     };

@@ -19,6 +19,7 @@ function config(configPath = '/workspace/host/webpack.config.ts'): ModuleFederat
     remotes: [],
     exposes: [],
     shared: [],
+    provenance: 'static',
     detected: true,
     configType: 'webpack',
     configPath

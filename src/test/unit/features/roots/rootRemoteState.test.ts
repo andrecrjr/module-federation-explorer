@@ -43,6 +43,7 @@ function config(name: string, remoteValue: Remote, configPath: string): ModuleFe
     remotes: [remoteValue],
     exposes: [],
     shared: [],
+    provenance: 'static',
     detected: true,
     configType: 'webpack',
     configPath

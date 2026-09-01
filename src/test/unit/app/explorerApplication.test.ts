@@ -179,6 +179,7 @@ function hostConfig(): ModuleFederationConfig {
     remotes: [],
     exposes: [],
     shared: [],
+    provenance: 'static',
     detected: true,
     configType: 'webpack',
     configPath: '/workspace/host/webpack.config.js'

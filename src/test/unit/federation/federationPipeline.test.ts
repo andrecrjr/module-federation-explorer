@@ -185,6 +185,7 @@ suite('Federation discovery pipeline', () => {
         remotes: [],
         exposes: [],
         shared: [],
+        provenance: 'static',
         detected: true,
         configType: 'modernjs',
         configPath: filePath

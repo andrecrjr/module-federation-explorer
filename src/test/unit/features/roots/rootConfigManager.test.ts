@@ -174,7 +174,7 @@ suite('RootConfigManager', () => {
   test('uses the workspace configuration path until an explicit path is stored', async () => {
     const { manager, storage } = createManager();
 
-    assert.equal(manager.getConfigPath(), '/workspace/.vscode/mf-explorer.roots.json');
+    assert.equal(manager.getConfigPath(), '/workspace/.vscode/mf-explorer.json');
     await manager.setConfigPath('/tmp/custom-roots.json');
     assert.equal(storage.get<string>('mf-explorer.configPath'), '/tmp/custom-roots.json');
     assert.equal(manager.getConfigPath(), '/tmp/custom-roots.json');
@@ -186,7 +186,7 @@ suite('RootConfigManager', () => {
     await manager.addRoot('/workspace/apps/../host');
     await manager.addRoot('/workspace/host');
 
-    assert.deepEqual(repository.files.get('/workspace/.vscode/mf-explorer.roots.json'), {
+    assert.deepEqual(repository.files.get('/workspace/.vscode/mf-explorer.json'), {
       roots: ['/workspace/host']
     });
     assert.equal(repository.writeCount, 1);
@@ -195,7 +195,7 @@ suite('RootConfigManager', () => {
 
   test('removes a root and its persisted per-root settings', async () => {
     const { manager, repository } = createManager();
-    const configPath = '/workspace/.vscode/mf-explorer.roots.json';
+    const configPath = '/workspace/.vscode/mf-explorer.json';
     repository.files.set(configPath, {
       roots: ['/workspace/host', '/workspace/other'],
       rootConfigs: {
@@ -214,13 +214,41 @@ suite('RootConfigManager', () => {
 
   test('migrates a legacy paths array and persists the current schema', async () => {
     const { manager, repository } = createManager();
-    const configPath = '/workspace/.vscode/mf-explorer.roots.json';
-    repository.files.set(configPath, { paths: ['/workspace/host'] });
+    const legacyConfigPath = '/workspace/.vscode/mf-explorer.roots.json';
+    repository.files.set(legacyConfigPath, { paths: ['/workspace/host'] });
 
     const config = await manager.loadRootConfig();
 
     assert.deepEqual(config, { roots: ['/workspace/host'] });
-    assert.deepEqual(repository.files.get(configPath), { roots: ['/workspace/host'] });
+    assert.deepEqual(repository.files.get('/workspace/.vscode/mf-explorer.json'), { roots: ['/workspace/host'] });
+    assert.deepEqual(repository.files.get(legacyConfigPath), { paths: ['/workspace/host'] });
+  });
+
+  test('uses the new configuration when both new and legacy files exist', async () => {
+    const { manager, repository } = createManager();
+    repository.files.set('/workspace/.vscode/mf-explorer.json', { roots: ['/workspace/new'] });
+    repository.files.set('/workspace/.vscode/mf-explorer.roots.json', { roots: ['/workspace/legacy'] });
+
+    assert.deepEqual(await manager.loadRootConfig(), { roots: ['/workspace/new'] });
+  });
+
+  test('does not fall back to the legacy file when the new file is malformed', async () => {
+    const { manager, repository } = createManager();
+    repository.files.set('/workspace/.vscode/mf-explorer.json', '{malformed');
+    repository.files.set('/workspace/.vscode/mf-explorer.roots.json', { roots: ['/workspace/legacy'] });
+
+    assert.deepEqual(await manager.loadRootConfig(), { roots: [] });
+  });
+
+  test('prefers an explicitly stored configuration path over default migration', async () => {
+    const storage = new MemoryStorage();
+    await storage.update('mf-explorer.configPath', '/tmp/custom.json');
+    const { manager, repository } = createManager({ storage });
+    repository.files.set('/workspace/.vscode/mf-explorer.roots.json', { roots: ['/workspace/legacy'] });
+    repository.files.set('/tmp/custom.json', { roots: ['/workspace/custom'] });
+
+    assert.deepEqual(await manager.loadRootConfig(), { roots: ['/workspace/custom'] });
+    assert.equal(repository.files.has('/workspace/.vscode/mf-explorer.json'), false);
   });
 
   test('creates an empty configuration when the user selects a new file', async () => {
@@ -300,7 +328,7 @@ suite('RootConfigManager', () => {
 
   test('returns safe defaults for missing, unsupported, and malformed configurations', async () => {
     const { manager, repository, logger } = createManager();
-    const configPath = '/workspace/.vscode/mf-explorer.roots.json';
+    const configPath = '/workspace/.vscode/mf-explorer.json';
 
     assert.deepStrictEqual(await manager.loadRootConfig(), { roots: [] });
     repository.files.set(configPath, { unsupported: true });

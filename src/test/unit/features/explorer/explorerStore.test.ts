@@ -9,6 +9,7 @@ function config(name: string): ModuleFederationConfig {
     remotes: [],
     exposes: [],
     shared: [],
+    provenance: 'static',
     detected: true,
     configType: 'webpack',
     configPath: `/workspace/${name}/webpack.config.ts`

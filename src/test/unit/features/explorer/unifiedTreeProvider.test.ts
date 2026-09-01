@@ -19,6 +19,7 @@ function createConfig(): ModuleFederationConfig {
     ],
     exposes: [{ name: 'Shell', path: './src/Shell.tsx', remoteName: 'host' }],
     shared: [],
+    provenance: 'static',
     detected: true,
     configType: 'webpack',
     configPath: '/workspace/host/webpack.config.ts'

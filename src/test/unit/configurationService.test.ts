@@ -8,6 +8,7 @@ function config(name: string, configPath: string): ModuleFederationConfig {
     remotes: [],
     exposes: [],
     shared: [],
+    provenance: 'static',
     detected: true,
     configType: 'webpack',
     configPath

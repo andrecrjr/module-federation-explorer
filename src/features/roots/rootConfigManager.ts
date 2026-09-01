@@ -16,7 +16,8 @@ export interface RootConfigManagerDependencies {
 
 /** User-facing root configuration workflow backed by ports and a JSON repository. */
 export class RootConfigManager {
-  static readonly CONFIG_FILENAME = 'mf-explorer.roots.json';
+  static readonly CONFIG_FILENAME = 'mf-explorer.json';
+  static readonly LEGACY_CONFIG_FILENAME = 'mf-explorer.roots.json';
   private static readonly CONFIG_DIR = '.vscode';
 
   constructor(private readonly dependencies: RootConfigManagerDependencies) {}
@@ -43,6 +44,13 @@ export class RootConfigManager {
           RootConfigManager.CONFIG_DIR,
           RootConfigManager.CONFIG_FILENAME
         )
+      : undefined;
+  }
+
+  private getWorkspaceConfigPath(fileName: string): string | undefined {
+    const workspaceFolder = this.dependencies.workspace.folders[0];
+    return workspaceFolder
+      ? this.dependencies.path.join(workspaceFolder.path, RootConfigManager.CONFIG_DIR, fileName)
       : undefined;
   }
 
@@ -113,7 +121,7 @@ export class RootConfigManager {
       title: 'Configuration File Name',
       prompt: 'Enter a name for your Module Federation configuration file',
       value: RootConfigManager.CONFIG_FILENAME,
-      placeholder: 'Example: mf-explorer.roots.json'
+      placeholder: 'Example: mf-explorer.json'
     });
     if (!fileName) return undefined;
     return this.dependencies.path.join(
@@ -126,17 +134,34 @@ export class RootConfigManager {
   async loadRootConfig(): Promise<UnifiedRootConfig | null> {
     const configPath = this.getConfigPath();
     if (!configPath) return null;
-    if (!(await this.dependencies.repository.exists(configPath))) return { roots: [] };
+    const configuredPath = this.dependencies.storage.get<string>('mf-explorer.configPath');
+    let sourcePath = configPath;
+    let shouldMigrateToDefault = false;
+    if (!configuredPath && !(await this.dependencies.repository.exists(configPath))) {
+      const legacyPath = this.getWorkspaceConfigPath(RootConfigManager.LEGACY_CONFIG_FILENAME);
+      if (legacyPath && (await this.dependencies.repository.exists(legacyPath))) {
+        sourcePath = legacyPath;
+        shouldMigrateToDefault = true;
+      }
+    }
+    if (!(await this.dependencies.repository.exists(sourcePath))) return { roots: [] };
     try {
-      const parsed = await this.dependencies.repository.read(configPath);
+      const parsed = await this.dependencies.repository.read(sourcePath);
       const config = parseRootConfig(parsed);
-      if (config) return config;
+      if (config) {
+        if (shouldMigrateToDefault) await this.dependencies.repository.write(configPath, config);
+        return config;
+      }
       const migrated = migrateLegacyRootConfig(parsed);
       if (migrated) {
-        await this.saveRootConfig(migrated);
+        if (shouldMigrateToDefault) {
+          await this.dependencies.repository.write(configPath, migrated);
+        } else {
+          await this.saveRootConfig(migrated);
+        }
         return migrated;
       }
-      this.log(`Configuration file has unsupported format at ${configPath}`);
+      this.log(`Configuration file has unsupported format at ${sourcePath}`);
       return { roots: [] };
     } catch (error) {
       this.logError('Failed to load root configuration', error);

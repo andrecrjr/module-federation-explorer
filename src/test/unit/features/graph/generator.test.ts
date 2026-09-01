@@ -27,6 +27,7 @@ function config(
       remoteName: name
     })),
     shared: shared.map(name => ({ name })),
+    provenance: 'static',
     detected: true,
     configType: 'webpack',
     configPath: `/workspace/${name}/webpack.config.ts`

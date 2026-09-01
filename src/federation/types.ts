@@ -1,6 +1,9 @@
 /** Supported federation configuration formats. */
 export type FederationConfigType = 'webpack' | 'vite' | 'modernjs' | 'rsbuild' | 'rspack';
 
+/** Identifies the source of normalized federation data. */
+export type DataProvenance = 'static' | 'manifest' | 'merged';
+
 /** A remote may also be added manually as an external URL. */
 export type RemoteConfigType = FederationConfigType | 'external';
 
@@ -32,6 +35,7 @@ export interface ModuleFederationConfig {
   remotes: Remote[];
   exposes: ExposedModule[];
   shared: SharedDependency[];
+  provenance: DataProvenance;
   detected?: boolean;
   configType: FederationConfigType;
   configPath: string;
