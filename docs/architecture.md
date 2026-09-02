@@ -107,7 +107,7 @@ The architecture-boundary test guards removal of deprecated top-level compatibil
 
 ### Activation
 
-Manifest activation events in `package.json` cover supported config filenames and `.vscode/mf-explorer.roots.json`. `activate()` then:
+Manifest activation events in `package.json` cover supported config filenames, `mf-manifest.json`, `.vscode/mf-explorer.json`, and the legacy `.vscode/mf-explorer.roots.json`. `activate()` then:
 
 1. creates `ExplorerStore`, `ExplorerApplication`, and `UnifiedModuleFederationProvider`;
 2. registers the tree data provider and drag/drop tree view;
@@ -122,12 +122,13 @@ On activation, running-terminal bookkeeping is cleared. VS Code terminals that c
 
 ### Initialization
 
-`ExplorerApplication.initialize()` checks `RootConfigManager.hasConfiguredRoots()`:
+`ExplorerApplication.initialize()` checks the root configuration for configured roots or explicit manifest sources:
 
-- roots configured → load and hydrate configurations;
-- no roots configured → leave the store empty and wait for user setup/onboarding.
+- roots configured → load and hydrate static configurations, then load manifests;
+- only manifest sources configured → load manifests without scanning static roots;
+- no roots or manifest sources configured → leave the store empty and wait for user setup/onboarding.
 
-After 1.5 seconds, `scheduleOnboarding()` checks again. If roots are still absent, `features/onboarding/workspaceScanner.ts` runs the same `FederationDiscoveryService` used by normal loading and passes detected projects to `OnboardingController`.
+After 1.5 seconds, `scheduleOnboarding()` checks again. If neither roots nor explicit manifest sources are configured, `features/onboarding/workspaceScanner.ts` runs the same `FederationDiscoveryService` used by normal loading and passes detected projects to `OnboardingController`.
 
 ### Configuration reload
 
@@ -136,11 +137,13 @@ After 1.5 seconds, `scheduleOnboarding()` checks again. If roots are still absen
 ```text
 RootConfigManager.loadRootConfig()
   → read configured roots
-  → ConfigurationService.load(root paths)
-  → store discovered configs
+  → ConfigurationService.load(root paths) when roots exist
+  → store discovered static configs
   → RootAppController root presentation state
   → RemoteConfigurationService.hydrateRemoteConfigurations()
-  → store hydrated configs
+  → store hydrated static configs
+  → ManifestDiscoveryService.discover(root paths and explicit sources)
+  → store manifest records and diagnostics separately
   → build root-folder presentation state
   → refresh open dependency graph
 ```
@@ -151,7 +154,8 @@ RootConfigManager.loadRootConfig()
 
 - `**/{webpack,vite,rsbuild,rspack}.config.{js,ts}`;
 - `**/module-federation.config.{js,ts}`;
-- `**/.vscode/mf-explorer.roots.json`.
+- `**/mf-manifest.json`;
+- `**/.vscode/{mf-explorer.json,mf-explorer.roots.json}`.
 
 Create, change, and delete events use one 500 ms debounce before calling `reloadConfigurations()`.
 
@@ -182,6 +186,10 @@ configured root paths
 
 `ConfigurationService` enriches each discovered remote using `detectPackageManagerAndStartCommand()`, adds `configPath` to the config, and records `configSource` on remotes and exposed modules. Vite and Rsbuild default to `dev`; Webpack, Rspack, and Modern.js default to `start`. Users can override commands later.
 
+`ManifestDiscoveryService` is a separate pipeline for runtime `mf-manifest.json` artifacts. It combines explicit local/URL sources with automatic local discovery below configured roots, excludes `node_modules`, normalizes paths and canonical URLs, de-duplicates sources, and associates exact manifest names or IDs with matching static configuration names. A manifest without a static match remains a valid manifest-only record. `manifestParser.ts` accepts JSON data only, keeps known metadata/remotes/exposes/shared/assets/type/remote-entry fields, and reports stable diagnostic codes and JSON field paths for malformed or partial records.
+
+`UnifiedModuleFederationProvider` renders manifests in a separate top-level group so runtime data does not overwrite static AST configurations. Each manifest item displays its sanitized source, optional environment, ID, diagnostic count, and last-loaded timestamp.
+
 ### Static AST behavior
 
 `parseConfigFile.ts` uses `@typescript-eslint/parser` with module syntax, latest ECMAScript syntax, source locations, and ranges. It does not execute project configuration files. Supporting helpers:
@@ -201,6 +209,8 @@ State has deliberate ownership:
 | --- | --- | --- |
 | Root path and saved settings | `UnifiedRootConfig` through `RootConfigManager` and `JsonRootConfigRepository` | persisted JSON |
 | Discovered federation configs | `ExplorerStore.configs` | in-memory; rebuilt on reload |
+| Discovered manifests | `ExplorerStore.manifests` | in-memory; rebuilt independently on reload |
+| Manifest diagnostics | `ExplorerStore.manifestDiagnostics` and `manifestErrors` | in-memory source/load diagnostics |
 | Root tree presentation | `ExplorerStore.rootFolders` | in-memory derived state |
 | Loading status | `ExplorerStore.isLoading` | in-memory transaction state |
 | Remote/host running status | `TerminalManager` | transient VS Code session state |
@@ -208,13 +218,25 @@ State has deliberate ownership:
 
 ### Root configuration file
 
-`RootConfigManager` defaults to `.vscode/mf-explorer.roots.json` in the first workspace folder. The selected path is stored in VS Code `workspaceState` under `mf-explorer.configPath`. The manager owns user prompts and workflow behavior; `rootConfigSchema.ts` owns pure validation and migration; `JsonRootConfigRepository` owns filesystem JSON I/O.
+`RootConfigManager` defaults to `.vscode/mf-explorer.json` in the first workspace folder. The selected path is stored in VS Code `workspaceState` under `mf-explorer.configPath`. If no explicit path is stored and the new file is absent, the legacy `.vscode/mf-explorer.roots.json` is read and copied to the new filename; the legacy file is never modified. The manager owns user prompts and workflow behavior; `rootConfigSchema.ts` owns pure validation and migration; `JsonRootConfigRepository` owns filesystem JSON I/O.
 
 Current schema:
 
 ```json
 {
   "roots": ["/workspace/host"],
+  "manifestSources": [
+    {
+      "kind": "local",
+      "location": "apps/catalog/mf-manifest.json",
+      "environment": "local"
+    },
+    {
+      "kind": "url",
+      "location": "https://staging.example.test/mf-manifest.json",
+      "environment": "staging"
+    }
+  ],
   "rootConfigs": {
     "/workspace/host": {
       "startCommand": "pnpm run dev",

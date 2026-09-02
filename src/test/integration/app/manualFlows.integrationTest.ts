@@ -30,7 +30,7 @@ suite('Manual flow integration', () => {
     assert.ok(workspacePath, 'Fixture workspace must be open');
 
     const configDirectory = path.join(workspacePath, '.vscode');
-    const rootConfigPath = path.join(configDirectory, 'mf-explorer.roots.json');
+    const rootConfigPath = path.join(configDirectory, 'mf-explorer.json');
     const webpackConfigPath = path.join(workspacePath, 'host', 'webpack.config.js');
     const originalRootConfig = (await exists(rootConfigPath)) ? await fs.readFile(rootConfigPath, 'utf8') : undefined;
     const originalWebpackConfig = await fs.readFile(webpackConfigPath, 'utf8');

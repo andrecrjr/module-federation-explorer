@@ -1,4 +1,4 @@
-import type { DataProvenance } from './types';
+import type { DataProvenance, ModuleFederationConfig } from './types';
 
 export type ManifestSourceKind = 'local' | 'url';
 
@@ -12,6 +12,8 @@ export interface ManifestArtifact {
   name?: string;
   path: string;
   type?: string;
+  api?: string;
+  zip?: string;
 }
 
 export interface ManifestAsset {
@@ -22,12 +24,20 @@ export interface ManifestAsset {
 }
 
 export interface ManifestMetadata {
+  name?: string;
   type?: string;
   buildVersion?: string;
   buildName?: string;
+  buildInfo?: {
+    buildVersion?: string;
+    buildName?: string;
+  };
   description?: string;
+  globalName?: string;
+  pluginVersion?: string;
   publicPath?: string;
   remoteEntry?: ManifestArtifact;
+  ssrRemoteEntry?: ManifestArtifact;
   types?: ManifestArtifact;
   assets: ManifestAsset[];
   disableAssetsAnalyze: boolean;
@@ -38,17 +48,25 @@ export interface ManifestSharedDependency {
   name: string;
   version?: string;
   requiredVersion?: string;
+  hash?: string;
   singleton?: boolean;
   eager?: boolean;
   strictVersion?: boolean;
   shareScope?: string;
+  fallback?: boolean;
+  fallbackName?: string;
+  fallbackType?: string;
+  assets: ManifestAsset[];
 }
 
 export interface ManifestRemote {
   id?: string;
   name: string;
+  moduleName?: string;
+  federationContainerName?: string;
   aliases: string[];
   entry?: string;
+  version?: string;
   remoteEntry?: ManifestArtifact;
   types?: ManifestArtifact;
   assets: ManifestAsset[];
@@ -107,6 +125,11 @@ export interface ManifestParseOptions {
 export interface ManifestParseResult {
   manifest?: ManifestRecord;
   diagnostics: ManifestDiagnostic[];
+}
+
+export interface ManifestDiscoveryOptions {
+  sources?: readonly ManifestSourceConfig[];
+  staticConfigs?: ReadonlyMap<string, ModuleFederationConfig[]>;
 }
 
 export interface ManifestLoadError {

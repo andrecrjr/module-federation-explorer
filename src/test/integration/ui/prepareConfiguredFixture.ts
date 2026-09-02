@@ -7,7 +7,7 @@ export const configuredFixturePaths = {
     return path.join(this.workspacePath, 'host');
   },
   get configPath(): string {
-    return path.join(this.workspacePath, '.vscode', 'mf-explorer.roots.json');
+    return path.join(this.workspacePath, '.vscode', 'mf-explorer.json');
   }
 };
 

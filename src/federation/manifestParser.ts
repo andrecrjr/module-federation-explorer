@@ -60,6 +60,10 @@ function normalizeArtifact(value: unknown): ManifestArtifact | undefined {
   const type = stringValue(value.type);
   if (name) artifact.name = name;
   if (type) artifact.type = type;
+  const api = stringValue(value.api);
+  const zip = stringValue(value.zip);
+  if (api) artifact.api = api;
+  if (zip) artifact.zip = zip;
   return artifact;
 }
 
@@ -111,6 +115,7 @@ function parseMetadata(value: unknown, root: JsonRecord, diagnostics: ManifestDi
     disableAssetsAnalyze: root.disableAssetsAnalyze === true
   };
   if (value === undefined) {
+    addDiagnostic(diagnostics, 'INVALID_METADATA', '$.metaData', 'Manifest metaData is missing.');
     metadata.assets = normalizeAssets(root.assets, metadata.disableAssetsAnalyze);
     return metadata;
   }
@@ -119,12 +124,37 @@ function parseMetadata(value: unknown, root: JsonRecord, diagnostics: ManifestDi
     return metadata;
   }
 
-  for (const key of ['type', 'buildVersion', 'buildName', 'description', 'publicPath'] as const) {
+  for (const key of [
+    'name',
+    'type',
+    'buildVersion',
+    'buildName',
+    'description',
+    'globalName',
+    'pluginVersion',
+    'publicPath'
+  ] as const) {
     const field = stringValue(value[key]);
     if (field) metadata[key] = field;
   }
+  if (isRecord(value.buildInfo)) {
+    const buildInfo: NonNullable<ManifestMetadata['buildInfo']> = {};
+    const buildVersion = stringValue(value.buildInfo.buildVersion);
+    const buildName = stringValue(value.buildInfo.buildName);
+    if (buildVersion) {
+      buildInfo.buildVersion = buildVersion;
+      if (!metadata.buildVersion) metadata.buildVersion = buildVersion;
+    }
+    if (buildName) {
+      buildInfo.buildName = buildName;
+      if (!metadata.buildName) metadata.buildName = buildName;
+    }
+    if (buildInfo.buildVersion || buildInfo.buildName) metadata.buildInfo = buildInfo;
+  }
   const remoteEntry = normalizeArtifact(value.remoteEntry);
   if (remoteEntry) metadata.remoteEntry = remoteEntry;
+  const ssrRemoteEntry = normalizeArtifact(value.ssrRemoteEntry);
+  if (ssrRemoteEntry) metadata.ssrRemoteEntry = ssrRemoteEntry;
   const types = normalizeArtifact(value.types);
   if (types) metadata.types = types;
   metadata.disableAssetsAnalyze = value.disableAssetsAnalyze === true || metadata.disableAssetsAnalyze;
@@ -132,12 +162,19 @@ function parseMetadata(value: unknown, root: JsonRecord, diagnostics: ManifestDi
   return metadata;
 }
 
-function parseRemote(value: unknown, path: string, disabled: boolean, diagnostics: ManifestDiagnostic[]): ManifestRemote | undefined {
+function parseRemote(
+  value: unknown,
+  path: string,
+  disabled: boolean,
+  diagnostics: ManifestDiagnostic[]
+): ManifestRemote | undefined {
   if (!isRecord(value)) {
     addDiagnostic(diagnostics, 'INVALID_REMOTE', path, 'Manifest remote must be an object.');
     return undefined;
   }
-  const name = stringValue(value.name) || stringValue(value.id);
+  const moduleName = stringValue(value.moduleName);
+  const federationContainerName = stringValue(value.federationContainerName);
+  const name = stringValue(value.name) || moduleName || federationContainerName || stringValue(value.id);
   if (!name) {
     addDiagnostic(diagnostics, 'INVALID_REMOTE', path, 'Manifest remote must have a name or id.');
     return undefined;
@@ -146,6 +183,10 @@ function parseRemote(value: unknown, path: string, disabled: boolean, diagnostic
   const remote: ManifestRemote = { name, aliases: [], assets: [] };
   const id = stringValue(value.id);
   if (id) remote.id = id;
+  if (moduleName) remote.moduleName = moduleName;
+  if (federationContainerName) remote.federationContainerName = federationContainerName;
+  const version = stringValue(value.version);
+  if (version) remote.version = version;
   const alias = stringValue(value.alias);
   if (alias) remote.aliases.push(alias);
   if (Array.isArray(value.aliases)) {
@@ -166,7 +207,12 @@ function parseRemote(value: unknown, path: string, disabled: boolean, diagnostic
   return remote;
 }
 
-function parseExpose(value: unknown, path: string, disabled: boolean, diagnostics: ManifestDiagnostic[]): ManifestExpose | undefined {
+function parseExpose(
+  value: unknown,
+  path: string,
+  disabled: boolean,
+  diagnostics: ManifestDiagnostic[]
+): ManifestExpose | undefined {
   if (!isRecord(value)) {
     addDiagnostic(diagnostics, 'INVALID_EXPOSE', path, 'Manifest expose must be an object.');
     return undefined;
@@ -186,7 +232,11 @@ function parseExpose(value: unknown, path: string, disabled: boolean, diagnostic
   return expose;
 }
 
-function parseShared(value: unknown, path: string, diagnostics: ManifestDiagnostic[]): ManifestSharedDependency | undefined {
+function parseShared(
+  value: unknown,
+  path: string,
+  diagnostics: ManifestDiagnostic[]
+): ManifestSharedDependency | undefined {
   if (!isRecord(value)) {
     addDiagnostic(diagnostics, 'INVALID_SHARED_DEPENDENCY', path, 'Manifest shared dependency must be an object.');
     return undefined;
@@ -197,18 +247,30 @@ function parseShared(value: unknown, path: string, diagnostics: ManifestDiagnost
     return undefined;
   }
 
-  const dependency: ManifestSharedDependency = { name };
-  for (const key of ['id', 'version', 'requiredVersion', 'shareScope'] as const) {
+  const dependency: ManifestSharedDependency = { name, assets: normalizeAssets(value.assets, false) };
+  for (const key of [
+    'id',
+    'version',
+    'requiredVersion',
+    'hash',
+    'shareScope',
+    'fallbackName',
+    'fallbackType'
+  ] as const) {
     const field = stringValue(value[key]);
     if (field) dependency[key] = field;
   }
-  for (const key of ['singleton', 'eager', 'strictVersion'] as const) {
+  for (const key of ['singleton', 'eager', 'strictVersion', 'fallback'] as const) {
     if (typeof value[key] === 'boolean') dependency[key] = value[key];
   }
   return dependency;
 }
 
-function parseValue(value: unknown, options: ManifestParseOptions, diagnostics: ManifestDiagnostic[]): ManifestRecord | undefined {
+function parseValue(
+  value: unknown,
+  options: ManifestParseOptions,
+  diagnostics: ManifestDiagnostic[]
+): ManifestRecord | undefined {
   if (!isRecord(value)) {
     addDiagnostic(diagnostics, 'INVALID_ROOT', '$', 'Manifest root must be a JSON object.', 'error');
     return undefined;
@@ -220,8 +282,10 @@ function parseValue(value: unknown, options: ManifestParseOptions, diagnostics: 
     addDiagnostic(diagnostics, 'MISSING_IDENTITY', '$.id', 'Manifest must provide a non-empty id or name.', 'error');
     return undefined;
   }
-  if (!rawId) addDiagnostic(diagnostics, 'INVALID_IDENTITY', '$.id', 'Manifest id is missing; name was used as the id.');
-  if (!rawName) addDiagnostic(diagnostics, 'INVALID_IDENTITY', '$.name', 'Manifest name is missing; id was used as the name.');
+  if (!rawId)
+    addDiagnostic(diagnostics, 'INVALID_IDENTITY', '$.id', 'Manifest id is missing; name was used as the id.');
+  if (!rawName)
+    addDiagnostic(diagnostics, 'INVALID_IDENTITY', '$.name', 'Manifest name is missing; id was used as the name.');
 
   const metadata = parseMetadata(value.metaData, value, diagnostics);
   const disabled = metadata.disableAssetsAnalyze;
@@ -235,7 +299,9 @@ function parseValue(value: unknown, options: ManifestParseOptions, diagnostics: 
   }
 
   const remotes: ManifestRemote[] = [];
-  if (value.remotes !== undefined) {
+  if (value.remotes === undefined) {
+    addDiagnostic(diagnostics, 'INVALID_REMOTE', '$.remotes', 'Manifest remotes are missing.');
+  } else {
     if (Array.isArray(value.remotes)) {
       value.remotes.forEach((remote, index) => {
         const parsed = parseRemote(remote, `$.remotes[${index}]`, disabled, diagnostics);
@@ -247,7 +313,9 @@ function parseValue(value: unknown, options: ManifestParseOptions, diagnostics: 
   }
 
   const exposes: ManifestExpose[] = [];
-  if (value.exposes !== undefined) {
+  if (value.exposes === undefined) {
+    if (!disabled) addDiagnostic(diagnostics, 'INVALID_EXPOSE', '$.exposes', 'Manifest exposes are missing.');
+  } else {
     if (Array.isArray(value.exposes)) {
       value.exposes.forEach((expose, index) => {
         const parsed = parseExpose(expose, `$.exposes[${index}]`, disabled, diagnostics);
@@ -259,7 +327,11 @@ function parseValue(value: unknown, options: ManifestParseOptions, diagnostics: 
   }
 
   const shared: ManifestSharedDependency[] = [];
-  if (value.shared !== undefined) {
+  if (value.shared === undefined) {
+    if (!disabled) {
+      addDiagnostic(diagnostics, 'INVALID_SHARED_DEPENDENCY', '$.shared', 'Manifest shared dependencies are missing.');
+    }
+  } else {
     if (Array.isArray(value.shared)) {
       value.shared.forEach((dependency, index) => {
         const parsed = parseShared(dependency, `$.shared[${index}]`, diagnostics);

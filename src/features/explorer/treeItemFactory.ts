@@ -1,7 +1,8 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { formatManifestSource } from '../../federation/manifestDiscoveryService';
 import type { ExposedModule, Remote } from '../../federation/types';
-import type { ExposesFolder, RemotesFolder, RootFolder } from './types';
+import type { ExposesFolder, ManifestItem, ManifestsFolder, RemotesFolder, RootFolder } from './types';
 
 export interface LoadingPlaceholder {
   type: 'loadingPlaceholder';
@@ -18,6 +19,8 @@ export type TreeElement =
   | RootFolder
   | RemotesFolder
   | ExposesFolder
+  | ManifestsFolder
+  | ManifestItem
   | Remote
   | ExposedModule
   | LoadingPlaceholder
@@ -37,6 +40,14 @@ export function isRemotesFolder(element: unknown): element is RemotesFolder {
 
 export function isExposesFolder(element: unknown): element is ExposesFolder {
   return isRecord(element) && element.type === 'exposesFolder';
+}
+
+export function isManifestsFolder(element: unknown): element is ManifestsFolder {
+  return isRecord(element) && element.type === 'manifestsFolder';
+}
+
+export function isManifestItem(element: unknown): element is ManifestItem {
+  return isRecord(element) && element.type === 'manifestItem';
 }
 
 export function isExposedModule(element: unknown): element is ExposedModule {
@@ -133,6 +144,42 @@ export function createTreeItem(element: TreeElement, isRemoteRunning: (remoteKey
       `## Exposed Modules\n\n${element.exposes.length} modules exposed by ${element.parentName}`
     );
     treeItem.contextValue = 'exposesFolder';
+    return treeItem;
+  }
+
+  if (isManifestsFolder(element)) {
+    const treeItem = new vscode.TreeItem(
+      `Manifests (${element.manifests.length})`,
+      element.manifests.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
+    );
+    treeItem.iconPath = new vscode.ThemeIcon('file-code');
+    treeItem.tooltip = new vscode.MarkdownString(
+      `## Manifests\n\n${element.manifests.length} runtime manifests discovered`
+    );
+    treeItem.contextValue = 'manifestsFolder';
+    return treeItem;
+  }
+
+  if (isManifestItem(element)) {
+    const manifest = element.manifest;
+    const source = formatManifestSource(manifest.source);
+    const environment = manifest.source.environment || 'unspecified';
+    const loadedAt = manifest.loadedAt || 'unknown';
+    const tooltip = new vscode.MarkdownString(
+      `## Manifest: ${manifest.name}\n\n` +
+        `**ID:** ${manifest.id}\n\n` +
+        `**Source:** ${source}\n\n` +
+        `**Environment:** ${environment}\n\n` +
+        `**Last loaded:** ${loadedAt}`
+    );
+    if (manifest.diagnostics.length > 0) {
+      tooltip.appendMarkdown(`\n\n**Diagnostics:** ${manifest.diagnostics.length}`);
+    }
+    const treeItem = new vscode.TreeItem(manifest.name, vscode.TreeItemCollapsibleState.None);
+    treeItem.description = manifest.source.environment || source;
+    treeItem.iconPath = new vscode.ThemeIcon('file-code');
+    treeItem.contextValue = 'manifestItem';
+    treeItem.tooltip = tooltip;
     return treeItem;
   }
 

@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { ExplorerApplication } from './explorerApplication';
 
-const CONFIG_WATCH_PATTERN = '**/{webpack,vite,rsbuild,rspack}.config.{js,ts},**/module-federation.config.{js,ts}';
-const ROOT_CONFIG_WATCH_PATTERN = '**/.vscode/mf-explorer.roots.json';
+const CONFIG_WATCH_PATTERN =
+  '**/{webpack,vite,rsbuild,rspack}.config.{js,ts},**/module-federation.config.{js,ts},**/mf-manifest.json';
+const ROOT_CONFIG_WATCH_PATTERN = '**/.vscode/{mf-explorer.json,mf-explorer.roots.json}';
 const RELOAD_DEBOUNCE_MS = 500;
 
 /** Registers all workspace watchers and owns their debounce/listener disposables. */

@@ -52,7 +52,7 @@ suite('Desktop UI smoke tests', function (this: Mocha.Suite) {
     this.timeout(120000);
     const workspacePath = getFixtureWorkspacePath('ui-configured');
     const rootPath = path.join(workspacePath, 'host');
-    const rootConfigPath = path.join(workspacePath, '.vscode', 'mf-explorer.roots.json');
+    const rootConfigPath = path.join(workspacePath, '.vscode', 'mf-explorer.json');
     state = { workspacePath, rootPath, rootConfigPath };
     await openWorkspaceResource(workspacePath);
   });

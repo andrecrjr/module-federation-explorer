@@ -224,6 +224,20 @@ suite('RootConfigManager', () => {
     assert.deepEqual(repository.files.get(legacyConfigPath), { paths: ['/workspace/host'] });
   });
 
+  test('copies a legacy filename that already uses the current schema', async () => {
+    const { manager, repository } = createManager();
+    const legacyConfigPath = '/workspace/.vscode/mf-explorer.roots.json';
+    const legacyConfig = {
+      roots: ['/workspace/host'],
+      manifestSources: [{ kind: 'url' as const, location: 'https://example.test/mf-manifest.json' }]
+    };
+    repository.files.set(legacyConfigPath, legacyConfig);
+
+    assert.deepEqual(await manager.loadRootConfig(), legacyConfig);
+    assert.deepEqual(repository.files.get('/workspace/.vscode/mf-explorer.json'), legacyConfig);
+    assert.deepEqual(repository.files.get(legacyConfigPath), legacyConfig);
+  });
+
   test('uses the new configuration when both new and legacy files exist', async () => {
     const { manager, repository } = createManager();
     repository.files.set('/workspace/.vscode/mf-explorer.json', { roots: ['/workspace/new'] });
@@ -269,7 +283,7 @@ suite('RootConfigManager', () => {
       isDirectory: async () => true,
       readDirectory: async directory =>
         directory === '/workspace/.vscode'
-          ? ['mf-explorer.roots.json', 'settings.json', 'notes.txt']
+          ? ['mf-explorer.json', 'mf-explorer.roots.json', 'settings.json', 'notes.txt']
           : Promise.reject(new Error('missing directory'))
     };
     const { manager } = createManager({
@@ -281,6 +295,7 @@ suite('RootConfigManager', () => {
     });
 
     assert.deepStrictEqual(await manager.findExistingConfigs(), [
+      '/workspace/.vscode/mf-explorer.json',
       '/workspace/.vscode/mf-explorer.roots.json',
       '/workspace/.vscode/settings.json'
     ]);

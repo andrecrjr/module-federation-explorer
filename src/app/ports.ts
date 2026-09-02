@@ -1,6 +1,7 @@
 import type { ConfigurationSnapshot } from '../configurationService';
 import type { DependencyGraph } from '../features/graph/types';
 import type { ModuleFederationConfig } from '../federation/types';
+import type { ManifestDiscoveryOptions, ManifestDiscoveryResult } from '../federation/manifestTypes';
 import type { UnifiedRootConfig } from '../features/roots/types';
 
 /** Application logging boundary. Implementations may target VS Code output channels. */
@@ -129,6 +130,11 @@ export interface RootConfigService {
 /** Federation discovery boundary consumed by the explorer application. */
 export interface ConfigurationLoader {
   load(rootPaths: readonly string[]): Promise<ConfigurationSnapshot>;
+}
+
+/** Manifest discovery boundary consumed by the application coordinator. */
+export interface ManifestLoader {
+  discover(rootPaths: readonly string[], options?: ManifestDiscoveryOptions): Promise<ManifestDiscoveryResult>;
 }
 
 /** Graph feature boundary consumed by application commands. */

@@ -121,7 +121,7 @@ async function prepareWorkspace(worktree) {
   const rootConfigDirectory = path.join(workspace, '.vscode');
   await mkdir(rootConfigDirectory, { recursive: true });
   await writeFile(
-    path.join(rootConfigDirectory, 'mf-explorer.roots.json'),
+    path.join(rootConfigDirectory, 'mf-explorer.json'),
     JSON.stringify({ roots: [path.join(workspace, 'host')] }, null, 2),
     'utf8'
   );

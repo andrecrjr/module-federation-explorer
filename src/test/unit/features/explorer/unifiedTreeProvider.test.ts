@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import { ExplorerStore } from '../../../../features/explorer/explorerStore';
 import { UnifiedModuleFederationProvider } from '../../../../features/explorer/unifiedTreeProvider';
 import type { ModuleFederationConfig } from '../../../../federation/types';
+import type { ManifestRecord } from '../../../../federation/manifestTypes';
 import type { RootFolder } from '../../../../features/explorer/types';
 import type { TreeElement } from '../../../../features/explorer/treeItemFactory';
 import type { CancellationToken, DataTransfer, DataTransferItem } from 'vscode';
@@ -23,6 +24,22 @@ function createConfig(): ModuleFederationConfig {
     detected: true,
     configType: 'webpack',
     configPath: '/workspace/host/webpack.config.ts'
+  };
+}
+
+function createManifest(): ManifestRecord {
+  return {
+    provenance: 'manifest',
+    id: 'catalog-build',
+    name: 'catalog',
+    metadata: { assets: [], disableAssetsAnalyze: false },
+    shared: [],
+    remotes: [],
+    exposes: [],
+    source: { kind: 'local', location: '/workspace/catalog/mf-manifest.json', environment: 'local' },
+    manifestPath: '/workspace/catalog/mf-manifest.json',
+    loadedAt: '2026-09-01T12:34:56.000Z',
+    diagnostics: []
   };
 }
 
@@ -73,6 +90,24 @@ suite('UnifiedModuleFederationProvider', () => {
     const children = await provider.getChildren();
 
     assert.deepStrictEqual(children, [{ type: 'loadingPlaceholder', name: 'Loading configurations...' }]);
+    provider.dispose();
+  });
+
+  test('serves discovered manifests through a top-level folder', async () => {
+    const store = new ExplorerStore();
+    store.replaceManifests([createManifest()]);
+    const provider = createProvider(store);
+
+    const rootChildren = await provider.getChildren();
+    assert.equal(rootChildren.length, 1);
+    assert.equal('type' in rootChildren[0]! ? rootChildren[0].type : undefined, 'manifestsFolder');
+    const manifestFolder = rootChildren[0]!;
+    const manifestChildren = await provider.getChildren(manifestFolder);
+
+    assert.equal(manifestChildren.length, 1);
+    assert.equal('type' in manifestChildren[0]! ? manifestChildren[0].type : undefined, 'manifestItem');
+    assert.equal(provider.getTreeItem(manifestChildren[0]!).label, 'catalog');
+    assert.deepStrictEqual(await provider.getChildren(manifestChildren[0]!), []);
     provider.dispose();
   });
 

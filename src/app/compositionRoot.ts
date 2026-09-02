@@ -19,6 +19,8 @@ import { registerWatchers } from './registerWatchers';
 import { ExplorerStore } from '../features/explorer/explorerStore';
 import { UnifiedModuleFederationProvider } from '../features/explorer/unifiedTreeProvider';
 import { ConfigurationService } from '../configurationService';
+import { createVscodeDiscoveryDependencies } from '../federation/configFileRegistry';
+import { ManifestDiscoveryService } from '../federation/manifestDiscoveryService';
 import { DependencyGraphManager } from '../features/graph/dependencyGraph';
 import { DialogUtils } from '../infrastructure/vscode/dialogUtils';
 import { outputChannel } from '../infrastructure/vscode/outputChannel';
@@ -29,6 +31,7 @@ import { RootConfigManager } from '../features/roots/rootConfigManager';
 import { JsonRootConfigRepository } from '../infrastructure/node/rootConfigRepository';
 import { FeedbackWorkflow } from '../features/feedback/feedbackWorkflow';
 import { createExtensionPerformancePort } from '../infrastructure/node/extensionPerformance';
+import { NodeManifestSourceLoader } from '../infrastructure/node/manifestSourceLoader';
 
 export interface ExtensionComposition {
   application: ExplorerApplication;
@@ -39,6 +42,9 @@ export function createDefaultExplorerApplicationServices(
   context: vscode.ExtensionContext,
   performance: PerformancePort = createExtensionPerformancePort()
 ): ExplorerApplicationServices {
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const vscodeDiscovery = createVscodeDiscoveryDependencies();
+  const manifestSourceLoader = new NodeManifestSourceLoader();
   const fileSystem: FileSystemPort = {
     existsSync: filePath => fs.existsSync(filePath),
     statSync: filePath => fs.statSync(filePath),
@@ -129,6 +135,11 @@ export function createDefaultExplorerApplicationServices(
       repository: new JsonRootConfigRepository()
     }),
     configurationService: new ConfigurationService(),
+    manifestLoader: new ManifestDiscoveryService({
+      workspaceRoot,
+      findFiles: vscodeDiscovery.findFiles,
+      loadSource: source => manifestSourceLoader.load(source)
+    }),
     dependencyGraphManager: new DependencyGraphManager(context, message => outputChannel.appendLine(message)),
     terminalManager: new TerminalManager(),
     pathResolver: new PathResolver({ fileSystem, log: logger.log, logError: logger.logError }),

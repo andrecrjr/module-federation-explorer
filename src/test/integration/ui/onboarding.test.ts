@@ -26,12 +26,12 @@ suite('Desktop onboarding UI smoke test', function (this: Mocha.Suite) {
     this.timeout(30000);
     await closeEditorsAndTerminals();
     const workspacePath = getFixtureWorkspacePath('ui-onboarding');
-    await fs.rm(path.join(workspacePath, '.vscode', 'mf-explorer.roots.json'), { force: true });
+    await fs.rm(path.join(workspacePath, '.vscode', 'mf-explorer.json'), { force: true });
   });
 
   test('configures the detected host from the onboarding webview', async () => {
     const workspacePath = getFixtureWorkspacePath('ui-onboarding');
-    const configPath = path.join(workspacePath, '.vscode', 'mf-explorer.roots.json');
+    const configPath = path.join(workspacePath, '.vscode', 'mf-explorer.json');
     await fs.rm(configPath, { force: true });
     await dismissNotifications();
 

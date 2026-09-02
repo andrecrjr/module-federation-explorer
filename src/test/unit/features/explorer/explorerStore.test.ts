@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { ExplorerStore } from '../../../../features/explorer/explorerStore';
 import type { ModuleFederationConfig } from '../../../../federation/types';
+import type { ManifestLoadError, ManifestRecord } from '../../../../federation/manifestTypes';
 import type { RootFolder } from '../../../../features/explorer/types';
 
 function config(name: string): ModuleFederationConfig {
@@ -17,6 +18,36 @@ function config(name: string): ModuleFederationConfig {
 }
 
 suite('ExplorerStore', () => {
+  test('keeps manifest records and diagnostics separate from static configurations', () => {
+    const store = new ExplorerStore();
+    const record: ManifestRecord = {
+      provenance: 'manifest',
+      id: 'host-id',
+      name: 'host',
+      metadata: { assets: [], disableAssetsAnalyze: false },
+      shared: [],
+      remotes: [],
+      exposes: [],
+      source: { kind: 'local', location: '/workspace/host/mf-manifest.json' },
+      manifestPath: '/workspace/host/mf-manifest.json',
+      loadedAt: '2026-09-01T00:00:00.000Z',
+      diagnostics: []
+    };
+    const error: ManifestLoadError = {
+      source: { kind: 'url', location: 'https://example.test/mf-manifest.json' },
+      error: new Error('offline'),
+      diagnostics: []
+    };
+
+    store.replaceManifests([record], [error]);
+
+    assert.deepStrictEqual(store.getSnapshot().manifests, [record]);
+    assert.deepStrictEqual(store.getSnapshot().manifestErrors, [error]);
+    assert.deepStrictEqual(store.getManifests(), [record]);
+    assert.deepStrictEqual(store.getManifestErrors(), [error]);
+    assert.equal(store.getSnapshot().configs.size, 0);
+  });
+
   test('owns the configuration snapshot and notifies subscribers', () => {
     const store = new ExplorerStore();
     const changes: number[] = [];

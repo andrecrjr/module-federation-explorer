@@ -59,12 +59,12 @@ Install **Module Federation Explorer** from the [VS Code Marketplace](https://ma
 
 ### 2. Add projects to the Explorer
 
-If no roots are configured, the extension can scan the workspace and open onboarding. Select the projects you want to manage and import them as hosts or as remotes belonging to a host.
+If no roots or explicit manifest sources are configured, the extension can scan the workspace and open onboarding. Select the projects you want to manage and import them as hosts or as remotes belonging to a host.
 
 You can also configure projects manually:
 
 1. Open the **Module Federation Explorer** view in the Explorer sidebar.
-2. Choose **Change Configuration File** if you want a file other than the default `.vscode/mf-explorer.roots.json`.
+2. Choose **Change Configuration File** if you want a file other than the default `.vscode/mf-explorer.json`. Existing `.vscode/mf-explorer.roots.json` files are migrated automatically; the legacy file is left untouched.
 3. Choose **Add New Host Folder** and select a folder containing a federation configuration.
 4. Expand the host to inspect its remotes and exposed modules.
 
@@ -81,11 +81,11 @@ The extension does not automatically add every detected project as a root. This 
 
 ### Workspace discovery
 
-Scan configured root folders for supported Module Federation configuration files. Discovery is de-duplicated, excludes `node_modules`, and keeps successful configurations available even when another file has a parse error.
+Scan configured root folders for supported Module Federation configuration files and `mf-manifest.json` artifacts. Discovery is de-duplicated, excludes `node_modules`, and keeps successful records available even when another file has a parse error.
 
 ### Tree exploration
 
-Inspect hosts, remotes, exposed modules, source paths, remote URLs, configuration types, and running state in the VS Code Explorer view. Root folders can be reordered by drag and drop.
+Inspect hosts, remotes, exposed modules, source paths, remote URLs, configuration types, and running state in the VS Code Explorer view. Discovered manifests appear in a separate **Manifests** group with their source, environment, ID, diagnostics, and last-loaded timestamp. Root folders can be reordered by drag and drop.
 
 ### Dependency visualization
 
@@ -106,7 +106,7 @@ The graph makes these relationships visible:
 
 ### Live updates and persistence
 
-The extension watches supported federation configuration files and the roots file. Changes are debounced for 500 ms before reloading. Root folders, host commands, remote folders, remote commands, and external remotes are persisted in JSON; freshly discovered configuration remains separate from those saved overrides.
+The extension watches supported federation configuration files, `mf-manifest.json`, and both the current and legacy root configuration filenames. Changes are debounced for 500 ms before reloading. Root folders, host commands, remote folders, remote commands, external remotes, and explicit manifest sources are persisted in JSON; freshly discovered configuration and manifests remain separate from those saved settings.
 
 ## Supported configuration files
 
@@ -124,7 +124,7 @@ The shared extractor reads `name`, `remotes`, `exposes`, and `shared` values. Li
 
 ## Root configuration
 
-The default file is `.vscode/mf-explorer.roots.json` in the first workspace folder. Root paths are stored as absolute, normalized paths.
+The default file is `.vscode/mf-explorer.json` in the first workspace folder. Root paths are stored as absolute, normalized paths. The legacy `.vscode/mf-explorer.roots.json` file is read only when the new file does not exist, then copied to the new filename without deleting or changing the legacy file. An explicitly selected custom configuration path always takes precedence.
 
 Minimal configuration:
 
@@ -133,6 +133,28 @@ Minimal configuration:
   "roots": ["/workspace/host"]
 }
 ```
+
+Manifest sources can be discovered automatically below `roots` and can also be registered explicitly. Local locations are resolved from the workspace root; URL sources must use `http` or `https`.
+
+```json
+{
+  "roots": ["/workspace/host"],
+  "manifestSources": [
+    {
+      "kind": "local",
+      "location": "apps/catalog/mf-manifest.json",
+      "environment": "local"
+    },
+    {
+      "kind": "url",
+      "location": "https://staging.example.test/mf-manifest.json",
+      "environment": "staging"
+    }
+  ]
+}
+```
+
+Manifest JSON is parsed as data only. The extension does not execute configuration files or `remoteEntry.js`; malformed sources produce diagnostics while valid manifests remain available. Manifest records carry `provenance: "manifest"`, while static AST records carry `provenance: "static"`.
 
 Optional per-root settings store host commands, local remote overrides, and external remotes:
 
@@ -194,6 +216,7 @@ The graph is derived from the current configurations. Click a workspace applicat
 - **A URL or path shows a placeholder:** the value is dynamic. Placeholders are intentional because the extension does not evaluate environment variables, functions, or other runtime expressions.
 - **A local remote cannot be started:** configure a valid project folder and its build/start commands. External remotes are represented by their URL and are not started as local processes.
 - **A file has a parse problem:** the affected file produces a diagnostic, while valid configurations from other roots can still load.
+- **A manifest cannot be loaded:** check its local path or URL and inspect the output diagnostics. HTTP(S) loading is bounded, does not send cookies or authorization headers, and rejects oversized responses.
 
 ## Commands
 

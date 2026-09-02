@@ -11,6 +11,7 @@ import {
   isRootFolder
 } from '../../../../features/explorer/treeItemFactory';
 import type { ModuleFederationConfig } from '../../../../federation/types';
+import type { ManifestRecord } from '../../../../federation/manifestTypes';
 import type { RootFolder } from '../../../../features/explorer/types';
 
 function config(configPath = '/workspace/host/webpack.config.ts'): ModuleFederationConfig {
@@ -23,6 +24,22 @@ function config(configPath = '/workspace/host/webpack.config.ts'): ModuleFederat
     detected: true,
     configType: 'webpack',
     configPath
+  };
+}
+
+function manifest(): ManifestRecord {
+  return {
+    provenance: 'manifest',
+    id: 'catalog-build',
+    name: 'catalog',
+    metadata: { assets: [], disableAssetsAnalyze: false },
+    shared: [],
+    remotes: [],
+    exposes: [],
+    source: { kind: 'url', location: 'https://example.test/catalog/mf-manifest.json', environment: 'staging' },
+    manifestPath: 'https://example.test/catalog/mf-manifest.json',
+    loadedAt: '2026-09-01T12:34:56.000Z',
+    diagnostics: []
   };
 }
 
@@ -197,6 +214,17 @@ suite('TreeItemFactory', () => {
     assert.strictEqual(module.label, 'Shell');
     assert.ok(module.command);
     assert.strictEqual(sourceLessModule.command, undefined);
+  });
+
+  test('renders manifest source, environment, and load timestamp', () => {
+    const item = createTreeItem({ type: 'manifestItem', manifest: manifest() }, () => false);
+    const tooltip = item.tooltip as vscode.MarkdownString;
+
+    assert.strictEqual(item.label, 'catalog');
+    assert.strictEqual(item.description, 'staging');
+    assert.match(tooltip.value, /https:\/\/example\.test\/catalog\/mf-manifest\.json/);
+    assert.match(tooltip.value, /staging/);
+    assert.match(tooltip.value, /2026-09-01T12:34:56\.000Z/);
   });
 
   test('rejects unknown tree elements and keeps type guards strict', () => {

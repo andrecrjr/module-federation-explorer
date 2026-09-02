@@ -9,6 +9,7 @@ import type {
   FeedbackPort,
   FileSystemPort,
   Logger,
+  ManifestLoader,
   PathPort,
   PathResolverPort,
   PerformancePort,
@@ -24,6 +25,7 @@ import { ExplorerApplication, ExplorerApplicationServices } from '../../../app/e
 import { ExplorerStore } from '../../../features/explorer/explorerStore';
 import type { ConfigurationSnapshot } from '../../../configurationService';
 import type { ModuleFederationConfig, Remote } from '../../../federation/types';
+import type { ManifestDiscoveryResult, ManifestRecord, ManifestSourceConfig } from '../../../federation/manifestTypes';
 import type { RootFolder } from '../../../features/explorer/types';
 import type { UnifiedRootConfig } from '../../../features/roots/types';
 import type { DependencyGraph } from '../../../features/graph/types';
@@ -39,7 +41,7 @@ class MemoryRootConfig implements RootConfigService {
     return this.config;
   }
   getConfigPath(): string | undefined {
-    return '/workspace/.vscode/mf-explorer.roots.json';
+    return '/workspace/.vscode/mf-explorer.json';
   }
   async setConfigPath(_configPath: string): Promise<void> {}
   async saveRootConfig(config: UnifiedRootConfig): Promise<void> {
@@ -213,6 +215,7 @@ function createServices(
     dialogs?: TestDialogs;
     terminalManager?: RecordingTerminalManager;
     configurationError?: Error;
+    manifestSnapshot?: ManifestDiscoveryResult;
   } = {}
 ): {
   services: ExplorerApplicationServices;
@@ -227,6 +230,7 @@ function createServices(
   hostErrors: string[];
   loadCalls: () => number;
   trackedEvents: string[];
+  manifestCalls: Array<{ roots: readonly string[]; sources: readonly ManifestSourceConfig[] }>;
 } {
   const rootConfig = options.rootConfig || new MemoryRootConfig();
   const dialogs = options.dialogs || new TestDialogs();
@@ -243,6 +247,7 @@ function createServices(
   const scheduledTasks: Array<() => void> = [];
   const executedCommands: string[] = [];
   const hostErrors: string[] = [];
+  const manifestCalls: Array<{ roots: readonly string[]; sources: readonly ManifestSourceConfig[] }> = [];
   const graph: DependencyGraph = {
     nodes: [],
     edges: [],
@@ -255,6 +260,14 @@ function createServices(
       return snapshot;
     }
   };
+  const manifestLoader: ManifestLoader | undefined = options.manifestSnapshot
+    ? {
+        discover: async (roots, discoveryOptions) => {
+          manifestCalls.push({ roots, sources: discoveryOptions?.sources || [] });
+          return options.manifestSnapshot!;
+        }
+      }
+    : undefined;
   const dependencyGraphManager: DependencyGraphService = {
     refreshDependencyGraph: () => {
       graphCalls.refresh++;
@@ -310,6 +323,7 @@ function createServices(
     services: {
       rootConfigManager: rootConfig,
       configurationService,
+      manifestLoader,
       dependencyGraphManager,
       terminalManager,
       pathResolver,
@@ -332,7 +346,8 @@ function createServices(
     executedCommands,
     hostErrors,
     loadCalls: () => loadCount,
-    trackedEvents
+    trackedEvents,
+    manifestCalls
   };
 }
 
@@ -347,6 +362,50 @@ suite('ExplorerApplication', () => {
 
     assert.equal(harness.loadCalls(), 0);
     assert.equal(harness.contextValues.get('moduleFederation.hasRoots'), false);
+  });
+
+  test('loads explicit manifests even when no static roots are configured', async () => {
+    const rootConfig = new MemoryRootConfig();
+    const source: ManifestSourceConfig = {
+      kind: 'url',
+      location: 'https://example.test/mf-manifest.json',
+      environment: 'staging'
+    };
+    rootConfig.config = {
+      roots: [],
+      manifestSources: [source]
+    };
+    const manifest: ManifestRecord = {
+      provenance: 'manifest',
+      id: 'manifest-id',
+      name: 'manifest-only',
+      metadata: { assets: [], disableAssetsAnalyze: false },
+      shared: [],
+      remotes: [],
+      exposes: [],
+      source,
+      manifestPath: 'https://example.test/mf-manifest.json',
+      loadedAt: '2026-09-01T00:00:00.000Z',
+      diagnostics: []
+    };
+    const harness = createServices({ rootConfig, manifestSnapshot: { manifests: [manifest], errors: [] } });
+    const store = new ExplorerStore();
+    const app = new ExplorerApplication('/workspace/project', store, harness.services);
+
+    await app.initialize();
+
+    assert.equal(harness.loadCalls(), 0);
+    assert.deepEqual(store.getConfigs(), new Map());
+    assert.deepEqual(store.getManifests(), [manifest]);
+    assert.equal(harness.contextValues.get('moduleFederation.hasRoots'), true);
+    rootConfig.configured = false;
+    assert.equal(await app.hasConfiguredRoots(), true);
+    assert.deepEqual(harness.manifestCalls, [
+      {
+        roots: [],
+        sources: [source]
+      }
+    ]);
   });
 
   test('loads configurations, hydrates root folders, and refreshes the graph', async () => {
@@ -427,7 +486,7 @@ suite('ExplorerApplication', () => {
     assert.strictEqual(app.getWorkspaceRoot(), '/workspace/project');
     assert.strictEqual(await app.hasConfiguredRoots(), true);
     assert.deepStrictEqual(await app.loadRootConfig(), { roots: ['/workspace/host'] });
-    assert.strictEqual(app.getConfigPath(), '/workspace/.vscode/mf-explorer.roots.json');
+    assert.strictEqual(app.getConfigPath(), '/workspace/.vscode/mf-explorer.json');
     await app.setConfigPath('/workspace/custom.json');
     await app.saveRootConfig(saved);
     assert.deepStrictEqual(harness.rootConfig.config, saved);

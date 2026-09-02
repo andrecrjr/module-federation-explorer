@@ -7,6 +7,8 @@ import {
   createTreeItem,
   isExposedModule,
   isExposesFolder,
+  isManifestItem,
+  isManifestsFolder,
   isRemotesFolder,
   isRemote,
   isRootFolder
@@ -71,17 +73,29 @@ export class UnifiedModuleFederationProvider
         ]);
       }
 
-      if (!element) return Promise.resolve([...snapshot.rootFolders]);
+      if (!element) {
+        const manifestsFolder =
+          snapshot.manifests.length > 0
+            ? ({ type: 'manifestsFolder', manifests: snapshot.manifests } as const)
+            : undefined;
+        return Promise.resolve(
+          manifestsFolder ? [...snapshot.rootFolders, manifestsFolder] : [...snapshot.rootFolders]
+        );
+      }
       if (isRootFolder(element)) {
         return Promise.resolve(getRootFolderChildren(element, this.actions.log));
       }
       if (isRemotesFolder(element)) return Promise.resolve(element.remotes);
       if (isExposesFolder(element)) return Promise.resolve(element.exposes);
+      if (isManifestsFolder(element)) {
+        return Promise.resolve(element.manifests.map(manifest => ({ type: 'manifestItem', manifest }) as const));
+      }
       if (isExposedModule(element)) return Promise.resolve([]);
       if (isRemote(element)) {
         this.remoteExposedModulesIndex ??= buildRemoteExposedModulesIndex(snapshot.configs);
         return Promise.resolve(getRemoteExposedModulesFromIndex(this.remoteExposedModulesIndex, element.name));
       }
+      if (isManifestItem(element)) return Promise.resolve([]);
       return Promise.resolve([]);
     } catch (error) {
       this.actions.log(`Failed to get children: ${String(error)}`);

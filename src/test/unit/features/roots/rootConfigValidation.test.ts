@@ -32,10 +32,16 @@ suite('Root configuration validation', () => {
   });
 
   test('rejects malformed manifest source entries', () => {
-    assert.strictEqual(parseRootConfig({ roots: [], manifestSources: [{ kind: 'file', location: 'manifest.json' }] }), undefined);
+    assert.strictEqual(
+      parseRootConfig({ roots: [], manifestSources: [{ kind: 'file', location: 'manifest.json' }] }),
+      undefined
+    );
     assert.strictEqual(parseRootConfig({ roots: [], manifestSources: [{ kind: 'local' }] }), undefined);
     assert.strictEqual(
-      parseRootConfig({ roots: [], manifestSources: [{ kind: 'url', location: 'https://example.test', environment: 42 }] }),
+      parseRootConfig({
+        roots: [],
+        manifestSources: [{ kind: 'url', location: 'https://example.test', environment: 42 }]
+      }),
       undefined
     );
   });
@@ -58,5 +64,18 @@ suite('Root configuration validation', () => {
       roots: ['/workspace/remote']
     });
     assert.strictEqual(migrateLegacyRootConfig({ projectPath: '/workspace/host' }), undefined);
+  });
+
+  test('preserves valid manifest sources while migrating a legacy root array', () => {
+    assert.deepStrictEqual(
+      migrateLegacyRootConfig({
+        paths: ['/workspace/host'],
+        manifestSources: [{ kind: 'url', location: 'https://example.test/mf-manifest.json' }]
+      }),
+      {
+        roots: ['/workspace/host'],
+        manifestSources: [{ kind: 'url', location: 'https://example.test/mf-manifest.json' }]
+      }
+    );
   });
 });

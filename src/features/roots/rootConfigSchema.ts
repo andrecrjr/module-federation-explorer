@@ -92,7 +92,10 @@ export function migrateLegacyRootConfig(value: unknown): UnifiedRootConfig | und
   if (!isJsonRecord(value)) return undefined;
   for (const field of ['paths', 'directories']) {
     const roots = value[field];
-    if (Array.isArray(roots) && roots.every(root => typeof root === 'string')) return { roots };
+    if (Array.isArray(roots) && roots.every(root => typeof root === 'string')) {
+      const manifestSources = isManifestSources(value.manifestSources) ? value.manifestSources : undefined;
+      return manifestSources === undefined ? { roots } : { roots, manifestSources };
+    }
   }
   return undefined;
 }

@@ -17,14 +17,14 @@ The central product direction is to use `mf-manifest.json` as a structured runti
 
 ## P0 — First-class `mf-manifest.json` support
 
-- [ ] Discover local `mf-manifest.json` files inside configured roots.
-- [ ] Allow users to register manifests by local path or URL.
-- [ ] Add a pure, schema-validated manifest parser with diagnostics for malformed or incomplete JSON.
-- [ ] Extract manifest IDs, federation names, metadata, remotes, exposes, shared dependencies, assets, remote-entry information, and type-file URLs.
-- [ ] Associate manifests with static configurations using federation name, manifest ID, configuration path, and root path.
-- [ ] Keep manifest state separate from static AST configurations and persisted root settings.
-- [ ] Display manifest source, environment label, and last-loaded timestamp.
-- [ ] Never execute JavaScript, TypeScript, or `remoteEntry.js` to obtain manifest data.
+- [x] Discover local `mf-manifest.json` files inside configured roots.
+- [x] Allow users to register manifests by local path or URL.
+- [x] Add a pure, schema-validated manifest parser with diagnostics for malformed or incomplete JSON.
+- [x] Extract manifest IDs, federation names, metadata, remotes, exposes, shared dependencies, assets, remote-entry information, and type-file URLs.
+- [x] Associate manifests with static configurations using federation name, manifest ID, configuration path, and root path.
+- [x] Keep manifest state separate from static AST configurations and persisted root settings.
+- [x] Display manifest source, environment label, and last-loaded timestamp.
+- [x] Never execute JavaScript, TypeScript, or `remoteEntry.js` to obtain manifest data.
 
 `mf-manifest.json` is a runtime-oriented artifact containing the information needed to understand exposed modules, remotes, shared dependencies, assets, and remote entries. See the [Manifest and Snapshot documentation](https://module-federation.io/guide/basic/manifest-snapshot) and [manifest field reference](https://module-federation.io/guide/advanced/manifest-fields.html).
 

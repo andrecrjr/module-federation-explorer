@@ -6,6 +6,7 @@ import type {
   FeedbackPort,
   FileSystemPort,
   Logger,
+  ManifestLoader,
   PackageManagerDetector,
   PathPort,
   PathResolverPort,
@@ -24,11 +25,13 @@ import { RemoteWorkflow } from '../features/remotes/remoteWorkflow';
 import { RootAppController } from '../features/roots/rootAppWorkflow';
 import { normalizePath } from '../infrastructure/node/pathUtils';
 import { OnboardingWorkflow } from '../features/onboarding/onboardingWorkflow';
+import { formatManifestSource } from '../federation/manifestDiscoveryService';
 import type { DetectedProject, OnboardingConfigurationResult, OnboardingSelection } from '../features/onboarding/types';
 
 export interface ExplorerApplicationServices {
   rootConfigManager: RootConfigService;
   configurationService: ConfigurationLoader;
+  manifestLoader?: ManifestLoader;
   dependencyGraphManager: DependencyGraphService;
   terminalManager: TerminalPort;
   pathResolver: PathResolverPort;
@@ -129,7 +132,9 @@ export class ExplorerApplication {
   async initialize(): Promise<void> {
     await this.performance.measure('initialize', async () => {
       this.log('Initializing Module Federation Explorer application...');
-      if (await this.services.rootConfigManager.hasConfiguredRoots()) {
+      const rootConfig = await this.services.rootConfigManager.loadRootConfig();
+      const hasManifestSources = (rootConfig?.manifestSources?.length || 0) > 0;
+      if ((await this.services.rootConfigManager.hasConfiguredRoots()) || hasManifestSources) {
         await this.loadConfigurations();
         return;
       }
@@ -140,7 +145,8 @@ export class ExplorerApplication {
   }
 
   async hasConfiguredRoots(): Promise<boolean> {
-    return this.services.rootConfigManager.hasConfiguredRoots();
+    const config = await this.services.rootConfigManager.loadRootConfig();
+    return !!config && (config.roots.length > 0 || (config.manifestSources?.length || 0) > 0);
   }
 
   async loadRootConfig(): Promise<UnifiedRootConfig | null> {
@@ -204,7 +210,7 @@ export class ExplorerApplication {
             return;
           }
 
-          if (rootConfig.roots.length === 0) {
+          if (rootConfig.roots.length === 0 && (rootConfig.manifestSources?.length || 0) === 0) {
             this.store.clear();
             this.log('No Host directories configured. Configure at least one Host directory.');
             void this.services.host.setContext('moduleFederation.hasRoots', false);
@@ -221,25 +227,65 @@ export class ExplorerApplication {
             return;
           }
 
-          this.log(`Found ${rootConfig.roots.length} configured roots`);
-          progress.report({ message: 'Scanning federation configuration files...' });
-          const snapshot = await this.performance.measure('configurationLoad', () =>
-            this.services.configurationService.load(rootConfig.roots)
-          );
-          this.store.replace(snapshot.configs);
-          for (const loadError of snapshot.errors) {
-            this.log(`Failed to parse configuration file ${loadError.filePath}: ${String(loadError.error)}`);
+          if (rootConfig.roots.length > 0) {
+            this.log(`Found ${rootConfig.roots.length} configured roots`);
+            progress.report({ message: 'Scanning federation configuration files...' });
+            try {
+              const snapshot = await this.performance.measure('configurationLoad', () =>
+                this.services.configurationService.load(rootConfig.roots)
+              );
+              this.store.replace(snapshot.configs);
+              for (const loadError of snapshot.errors) {
+                this.log(`Failed to parse configuration file ${loadError.filePath}: ${String(loadError.error)}`);
+              }
+
+              progress.report({ message: 'Loading host configurations...' });
+              await this.performance.measure('rootAppConfigLoad', () => this.rootAppController.loadRootFolderConfigs());
+              progress.report({ message: 'Loading remote configurations...' });
+              const hydratedConfigs = await this.performance.measure('remoteHydration', () =>
+                this.remoteConfigurationService.hydrateRemoteConfigurations(this.store.getConfigs())
+              );
+              this.store.replace(hydratedConfigs);
+              await this.performance.measure('treeStateUpdate', () => this.updateRootFolders());
+              void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
+            } catch (error) {
+              this.store.replace(new Map());
+              this.store.setRootFolders([]);
+              this.logError('Failed to load Module Federation configurations', error);
+              void this.services.host.showErrorMessage(
+                'Failed to load Module Federation configurations. See output panel for details.'
+              );
+            }
+          } else {
+            this.store.replace(new Map());
+            this.store.setRootFolders([]);
+            void this.services.host.setContext('moduleFederation.hasRoots', false);
           }
 
-          progress.report({ message: 'Loading host configurations...' });
-          await this.performance.measure('rootAppConfigLoad', () => this.rootAppController.loadRootFolderConfigs());
-          progress.report({ message: 'Loading remote configurations...' });
-          const hydratedConfigs = await this.performance.measure('remoteHydration', () =>
-            this.remoteConfigurationService.hydrateRemoteConfigurations(this.store.getConfigs())
+          if (this.services.manifestLoader) {
+            progress.report({ message: 'Loading federation manifests...' });
+            try {
+              const manifestSnapshot = await this.services.manifestLoader.discover(rootConfig.roots, {
+                sources: rootConfig.manifestSources,
+                staticConfigs: this.store.getConfigs()
+              });
+              this.store.replaceManifests(manifestSnapshot.manifests, manifestSnapshot.errors);
+              for (const loadError of manifestSnapshot.errors) {
+                this.log(
+                  `Failed to load manifest ${formatManifestSource(loadError.source)}: ${String(loadError.error)}`
+                );
+              }
+            } catch (error) {
+              this.store.replaceManifests([], []);
+              this.logError('Failed to load federation manifests', error);
+            }
+          } else {
+            this.store.replaceManifests([], []);
+          }
+          void this.services.host.setContext(
+            'moduleFederation.hasRoots',
+            this.store.getConfigs().size > 0 || this.store.getManifests().length > 0
           );
-          this.store.replace(hydratedConfigs);
-          await this.performance.measure('treeStateUpdate', () => this.updateRootFolders());
-          void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
           this.log('Finished loading configurations from all roots');
         });
 

@@ -80,7 +80,7 @@ class TestDialogs implements DialogService {
 }
 
 class MemoryRootConfig implements RootConfigService {
-  configPath: string | undefined = '/workspace/.vscode/mf-explorer.roots.json';
+  configPath: string | undefined = '/workspace/.vscode/mf-explorer.json';
   config: UnifiedRootConfig = {
     roots: ['/workspace/host'],
     rootConfigs: { '/workspace/host': { startCommand: 'npm start' } }

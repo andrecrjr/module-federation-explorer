@@ -21,7 +21,7 @@ function createRootConfigService(initial: UnifiedRootConfig | null): {
   const service: RootConfigService = {
     hasConfiguredRoots: async () => Boolean(config?.roots.length),
     loadRootConfig: async () => config,
-    getConfigPath: () => '/workspace/.vscode/mf-explorer.roots.json',
+    getConfigPath: () => '/workspace/.vscode/mf-explorer.json',
     setConfigPath: async () => {},
     saveRootConfig: async next => {
       config = next;

@@ -32,6 +32,8 @@
         "workspaceContains:**/modern.config.ts",
         "workspaceContains:**/module-federation.config.js",
         "workspaceContains:**/module-federation.config.ts",
+        "workspaceContains:**/mf-manifest.json",
+        "workspaceContains:**/.vscode/mf-explorer.json",
         "workspaceContains:**/.vscode/mf-explorer.roots.json"
     ],
     "main": "./dist/extension.js",
