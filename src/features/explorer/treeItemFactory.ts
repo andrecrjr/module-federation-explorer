@@ -2,7 +2,16 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { formatManifestSource } from '../../federation/manifestDiscoveryService';
 import type { ExposedModule, Remote } from '../../federation/types';
-import type { ExposesFolder, ManifestItem, ManifestsFolder, RemotesFolder, RootFolder } from './types';
+import type {
+  ExposesFolder,
+  ManifestItem,
+  ManifestSection,
+  ManifestTreeValue,
+  ManifestValueItem,
+  ManifestsFolder,
+  RemotesFolder,
+  RootFolder
+} from './types';
 
 export interface LoadingPlaceholder {
   type: 'loadingPlaceholder';
@@ -21,6 +30,8 @@ export type TreeElement =
   | ExposesFolder
   | ManifestsFolder
   | ManifestItem
+  | ManifestSection
+  | ManifestValueItem
   | Remote
   | ExposedModule
   | LoadingPlaceholder
@@ -48,6 +59,14 @@ export function isManifestsFolder(element: unknown): element is ManifestsFolder 
 
 export function isManifestItem(element: unknown): element is ManifestItem {
   return isRecord(element) && element.type === 'manifestItem';
+}
+
+export function isManifestSection(element: unknown): element is ManifestSection {
+  return isRecord(element) && element.type === 'manifestSection';
+}
+
+export function isManifestValueItem(element: unknown): element is ManifestValueItem {
+  return isRecord(element) && element.type === 'manifestValue';
 }
 
 export function isExposedModule(element: unknown): element is ExposedModule {
@@ -175,11 +194,35 @@ export function createTreeItem(element: TreeElement, isRemoteRunning: (remoteKey
     if (manifest.diagnostics.length > 0) {
       tooltip.appendMarkdown(`\n\n**Diagnostics:** ${manifest.diagnostics.length}`);
     }
-    const treeItem = new vscode.TreeItem(manifest.name, vscode.TreeItemCollapsibleState.None);
+    const childCount = manifest.exposes.length + manifest.remotes.length + manifest.shared.length;
+    const treeItem = new vscode.TreeItem(
+      manifest.name,
+      childCount > 0 || manifest.metadata.assets.length > 0
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.None
+    );
     treeItem.description = manifest.source.environment || source;
     treeItem.iconPath = new vscode.ThemeIcon('file-code');
     treeItem.contextValue = 'manifestItem';
     treeItem.tooltip = tooltip;
+    return treeItem;
+  }
+
+  if (isManifestSection(element)) {
+    const labels: Record<ManifestSection['kind'], string> = {
+      exposes: 'Exposes',
+      remotes: 'Remotes',
+      shared: 'Shared Dependencies',
+      assets: 'Assets',
+      types: 'Types'
+    };
+    const treeItem = new vscode.TreeItem(
+      `${labels[element.kind]} (${element.items.length})`,
+      vscode.TreeItemCollapsibleState.Expanded
+    );
+    treeItem.iconPath = new vscode.ThemeIcon(element.kind === 'types' ? 'symbol-type-parameter' : 'list-tree');
+    treeItem.contextValue = 'manifestSection';
+    treeItem.tooltip = new vscode.MarkdownString(`## ${labels[element.kind]}\n\nFrom manifest **${element.manifestName}**`);
     return treeItem;
   }
 
@@ -259,5 +302,25 @@ export function createTreeItem(element: TreeElement, isRemoteRunning: (remoteKey
     return treeItem;
   }
 
+  if (isManifestValueItem(element)) {
+    const value = element.value;
+    const label =
+      ('name' in value && typeof value.name === 'string' && value.name) ||
+      ('path' in value && typeof value.path === 'string' && value.path) ||
+      'Manifest value';
+    const treeItem = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+    treeItem.description = 'path' in value && typeof value.path === 'string' ? value.path : undefined;
+    treeItem.tooltip = new vscode.MarkdownString(formatManifestTreeValue(value));
+    return treeItem;
+  }
+
   throw new Error('Unknown element type');
+}
+
+function formatManifestTreeValue(value: ManifestTreeValue): string {
+  if ('path' in value && typeof value.path === 'string') return `**Path:** ${value.path}`;
+  const details = [`## ${value.name}`];
+  if ('aliases' in value && value.aliases.length > 0) details.push(`**Aliases:** ${value.aliases.join(', ')}`);
+  if ('version' in value && value.version) details.push(`**Version:** ${value.version}`);
+  return details.join('\n\n');
 }

@@ -8,6 +8,8 @@ import {
   isExposedModule,
   isExposesFolder,
   isManifestItem,
+  isManifestSection,
+  isManifestValueItem,
   isManifestsFolder,
   isRemotesFolder,
   isRemote,
@@ -17,6 +19,7 @@ import {
   buildRemoteExposedModulesIndex,
   getRemoteExposedModulesFromIndex,
   getRootFolderChildren,
+  getManifestChildren,
   type RemoteExposedModulesIndex
 } from './treeModel';
 
@@ -98,7 +101,9 @@ export class UnifiedModuleFederationProvider
         this.remoteExposedModulesIndex ??= buildRemoteExposedModulesIndex(snapshot.configs);
         return Promise.resolve(getRemoteExposedModulesFromIndex(this.remoteExposedModulesIndex, element.name));
       }
-      if (isManifestItem(element)) return Promise.resolve([]);
+      if (isManifestItem(element)) return Promise.resolve(getManifestChildren(element.manifest));
+      if (isManifestSection(element)) return Promise.resolve([...element.items]);
+      if (isManifestValueItem(element)) return Promise.resolve([]);
       return Promise.resolve([]);
     } catch (error) {
       this.actions.log(`Failed to get children: ${String(error)}`);

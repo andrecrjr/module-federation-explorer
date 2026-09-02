@@ -13,6 +13,7 @@ dist/
 .test-extensions/
 reports/
 coverage/
+.serena/
 src/test/fixtures/ui-*/.vscode/mf-explorer.roots.json
 src/test/fixtures/ui-*/**/.ui-*.started
 *.vsix

@@ -34,8 +34,8 @@ function createManifest(): ManifestRecord {
     name: 'catalog',
     metadata: { assets: [], disableAssetsAnalyze: false },
     shared: [],
-    remotes: [],
-    exposes: [],
+    remotes: [{ name: 'auth', aliases: ['authentication'], assets: [] }],
+    exposes: [{ name: './Button', assets: [] }],
     source: { kind: 'local', location: '/workspace/catalog/mf-manifest.json', environment: 'local' },
     manifestPath: '/workspace/catalog/mf-manifest.json',
     loadedAt: '2026-09-01T12:34:56.000Z',
@@ -123,7 +123,12 @@ suite('UnifiedModuleFederationProvider', () => {
     assert.equal(manifestChildren.length, 1);
     assert.equal('type' in manifestChildren[0]! ? manifestChildren[0].type : undefined, 'manifestItem');
     assert.equal(provider.getTreeItem(manifestChildren[0]!).label, 'catalog');
-    assert.deepStrictEqual(await provider.getChildren(manifestChildren[0]!), []);
+    const manifestSections = await provider.getChildren(manifestChildren[0]!);
+    assert.deepStrictEqual(
+      manifestSections.map(section => ('type' in section ? section.type : undefined)),
+      ['manifestSection', 'manifestSection']
+    );
+    assert.strictEqual((await provider.getChildren(manifestSections[0]!)).length, 1);
     provider.dispose();
   });
 

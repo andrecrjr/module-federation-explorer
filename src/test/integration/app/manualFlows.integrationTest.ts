@@ -47,9 +47,19 @@ suite('Manual flow integration', () => {
       const roots = composition.application.getStore().getSnapshot().rootFolders;
       assert.strictEqual(roots.length, 1);
       assert.strictEqual(roots[0].configs[0].name, 'fixture-host');
+      const manifests = composition.application.getStore().getSnapshot().manifests;
+      assert.strictEqual(manifests.length, 1);
+      assert.strictEqual(manifests[0].name, 'fixture-host');
+      assert.strictEqual(manifests[0].remotes[0]?.aliases[0], 'authentication');
       const treeRoots = await composition.provider.getChildren();
       if (!treeRoots[0] || !('path' in treeRoots[0])) throw new Error('Expected root folder tree item');
       assert.strictEqual(treeRoots[0].path, path.join(workspacePath, 'host'));
+      const manifestFolder = treeRoots[1];
+      assert.strictEqual(manifestFolder && 'type' in manifestFolder ? manifestFolder.type : undefined, 'manifestsFolder');
+      const manifestItem = manifestFolder ? (await composition.provider.getChildren(manifestFolder))[0] : undefined;
+      assert.strictEqual(manifestItem && 'type' in manifestItem ? manifestItem.type : undefined, 'manifestItem');
+      assert.ok(manifestItem);
+      assert.strictEqual((await composition.provider.getChildren(manifestItem)).length, 5);
 
       const commands = await vscode.commands.getCommands(true);
       assert.ok(commands.includes('moduleFederation.refresh'));

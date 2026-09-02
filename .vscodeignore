@@ -2,6 +2,7 @@
 .github/**
 .claude/**
 .gitnexus/**
+.serena/**
 .vscode/**
 .vscode-test/**
 .test-resources/**
@@ -29,6 +30,8 @@ extester*.json
 tsconfig*.json
 rspack.config.*
 AGENTS.md
+CLAUDE.md
+docs/**
 todo-refactor.md
 roadmap.md
 dist/**/*.map
@@ -36,3 +39,5 @@ dist/**/*.map
 **/*.ts
 *.log
 *.vsix
+media/module-federation-logo.svg
+media/styles.css

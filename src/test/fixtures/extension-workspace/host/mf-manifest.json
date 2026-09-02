@@ -1,0 +1,53 @@
+{
+  "id": "fixture-host-build",
+  "name": "fixture-host",
+  "metaData": {
+    "type": "app",
+    "buildVersion": "1.0.0",
+    "remoteEntry": {
+      "name": "remoteEntry.js",
+      "path": "http://localhost:3000/remoteEntry.js",
+      "type": "global"
+    },
+    "types": {
+      "name": "fixture-host.d.ts",
+      "path": "http://localhost:3000/fixture-host.d.ts"
+    },
+    "assets": {
+      "js": {
+        "sync": ["http://localhost:3000/fixture-host.js"],
+        "async": []
+      }
+    }
+  },
+  "remotes": [
+    {
+      "id": "auth",
+      "name": "auth",
+      "alias": "authentication",
+      "entry": "http://localhost:3001/mf-manifest.json",
+      "types": "http://localhost:3001/auth.d.ts",
+      "assets": {
+        "js": {
+          "sync": ["http://localhost:3001/auth.js"],
+          "async": []
+        }
+      }
+    }
+  ],
+  "exposes": [
+    {
+      "id": "./App",
+      "name": "./App",
+      "path": "./src/App.tsx",
+      "types": "http://localhost:3000/App.d.ts"
+    }
+  ],
+  "shared": [
+    {
+      "id": "react",
+      "name": "react",
+      "version": "18.3.1"
+    }
+  ]
+}

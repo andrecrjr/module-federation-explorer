@@ -30,7 +30,7 @@ The central product direction is to use `mf-manifest.json` as a structured runti
 
 ## P1 — Manifest-powered Explorer and graph
 
-- [ ] Enrich tree nodes with manifest-derived applications, exposes, remotes, aliases, shared dependencies, assets, and types.
+- [x] Enrich tree nodes with manifest-derived applications, exposes, remotes, aliases, shared dependencies, assets, and types.
 - [ ] Add actions to open a manifest, open an exposed-module asset, open a type file, copy a manifest URL, and refresh a manifest.
 - [ ] Add manifest-derived relationships to the dependency graph.
 - [ ] Show manifest-only applications that have no matching local configuration.

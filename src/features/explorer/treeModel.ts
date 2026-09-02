@@ -1,8 +1,55 @@
 import type { ExposedModule, ModuleFederationConfig, Remote } from '../../federation/types';
-import type { ExposesFolder, RemotesFolder, RootFolder } from './types';
+import type {
+  ManifestSection,
+  ManifestTreeValue,
+  ManifestValueItem,
+  ExposesFolder,
+  RemotesFolder,
+  RootFolder
+} from './types';
+import type { ManifestRecord } from '../../federation/manifestTypes';
 
 export type RootFolderChild = RemotesFolder | ExposesFolder;
 export type RemoteExposedModulesIndex = ReadonlyMap<string, readonly ExposedModule[]>;
+
+function manifestAssets(manifest: ManifestRecord): ManifestTreeValue[] {
+  return [
+    ...manifest.metadata.assets,
+    ...manifest.exposes.flatMap(expose => expose.assets),
+    ...manifest.remotes.flatMap(remote => remote.assets),
+    ...manifest.shared.flatMap(dependency => dependency.assets)
+  ];
+}
+
+function manifestTypes(manifest: ManifestRecord): ManifestTreeValue[] {
+  const types: ManifestTreeValue[] = [];
+  if (manifest.metadata.types) types.push(manifest.metadata.types);
+  for (const remote of manifest.remotes) {
+    if (remote.types) types.push(remote.types);
+  }
+  for (const expose of manifest.exposes) {
+    if (expose.types) types.push(expose.types);
+  }
+  return types;
+}
+
+export function getManifestChildren(manifest: ManifestRecord): ManifestSection[] {
+  const sections: Array<{ kind: ManifestSection['kind']; items: ManifestTreeValue[] }> = [
+    { kind: 'exposes', items: manifest.exposes },
+    { kind: 'remotes', items: manifest.remotes },
+    { kind: 'shared', items: manifest.shared },
+    { kind: 'assets', items: manifestAssets(manifest) },
+    { kind: 'types', items: manifestTypes(manifest) }
+  ];
+  return sections
+    .filter(section => section.items.length > 0)
+    .map(section => ({
+      type: 'manifestSection',
+      kind: section.kind,
+      manifestName: manifest.name,
+      items: section.items.map((value): ManifestValueItem => ({ type: 'manifestValue', value }))
+    }));
+}
 
 export function getRootFolderChildren(
   rootFolder: RootFolder,

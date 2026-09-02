@@ -3,10 +3,32 @@ import {
   buildRemoteExposedModulesIndex,
   getRemoteExposedModules,
   getRemoteExposedModulesFromIndex,
-  getRootFolderChildren
+  getRootFolderChildren,
+  getManifestChildren
 } from '../../../../features/explorer/treeModel';
 import type { ModuleFederationConfig } from '../../../../federation/types';
 import type { RootFolder } from '../../../../features/explorer/types';
+import type { ManifestRecord } from '../../../../federation/manifestTypes';
+
+function manifest(): ManifestRecord {
+  return {
+    provenance: 'manifest',
+    id: 'catalog-build',
+    name: 'catalog',
+    metadata: {
+      types: { path: 'catalog.d.ts' },
+      assets: [{ name: 'entry', path: 'catalog.js' }],
+      disableAssetsAnalyze: false
+    },
+    shared: [{ name: 'react', assets: [{ path: 'react.js' }] }],
+    remotes: [{ name: 'auth', aliases: ['authentication'], assets: [], types: { path: 'auth.d.ts' } }],
+    exposes: [{ name: './Button', assets: [], types: { path: 'Button.d.ts' } }],
+    source: { kind: 'local', location: '/workspace/catalog/mf-manifest.json' },
+    manifestPath: '/workspace/catalog/mf-manifest.json',
+    loadedAt: '2026-09-01T12:34:56.000Z',
+    diagnostics: []
+  };
+}
 
 function config(name: string, remotes: string[], exposes: string[]): ModuleFederationConfig {
   return {
@@ -31,6 +53,18 @@ function config(name: string, remotes: string[], exposes: string[]): ModuleFeder
 }
 
 suite('Tree model', () => {
+  test('builds manifest sections and preserves manifest-derived values', () => {
+    const sections = getManifestChildren(manifest());
+
+    assert.deepStrictEqual(sections.map(section => section.kind), ['exposes', 'remotes', 'shared', 'assets', 'types']);
+    assert.deepStrictEqual(
+      sections.find(section => section.kind === 'remotes')?.items[0],
+      { type: 'manifestValue', value: manifest().remotes[0] }
+    );
+    assert.strictEqual(sections.find(section => section.kind === 'assets')?.items.length, 2);
+    assert.strictEqual(sections.find(section => section.kind === 'types')?.items.length, 3);
+  });
+
   test('builds remotes and exposes folders from all root configurations', () => {
     const rootFolder: RootFolder = {
       type: 'rootFolder',

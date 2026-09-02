@@ -227,6 +227,19 @@ suite('TreeItemFactory', () => {
     assert.match(tooltip.value, /2026-09-01T12:34:56\.000Z/);
   });
 
+  test('renders manifest applications as expandable and shows manifest remote aliases', () => {
+    const record = manifest();
+    record.remotes = [{ name: 'auth', aliases: ['authentication'], assets: [] }];
+    const item = createTreeItem({ type: 'manifestItem', manifest: record }, () => false);
+    assert.strictEqual(item.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+
+    const remote = createTreeItem(
+      { type: 'manifestValue', value: record.remotes[0]! },
+      () => false
+    );
+    assert.match((remote.tooltip as vscode.MarkdownString).value, /authentication/);
+  });
+
   test('rejects unknown tree elements and keeps type guards strict', () => {
     assert.strictEqual(isRootFolder(null), false);
     assert.strictEqual(isRemotesFolder([]), false);
