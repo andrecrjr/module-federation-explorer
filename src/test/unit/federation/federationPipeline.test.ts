@@ -1,6 +1,7 @@
 import * as assert from 'assert';
+import * as path from 'path';
 import { CONFIG_FILE_DEFINITIONS, FederationDiscoveryService } from '../../../federation/configFileRegistry';
-import { ConfigParseError, parseConfigText } from '../../../parser/parseConfigFile';
+import { ConfigParseError, parseConfigFile, parseConfigText } from '../../../parser/parseConfigFile';
 import { extractConfigFromWebpack } from '../../../extractors/webpack';
 import { extractConfigFromVite } from '../../../extractors/vite';
 import { extractConfigFromModernJS } from '../../../extractors/modernjs';
@@ -195,5 +196,79 @@ suite('Federation discovery pipeline', () => {
     const result = await service.discover(['/workspace']);
     assert.strictEqual(result.configurations.length, 1);
     assert.strictEqual(result.configurations[0].filePath, '/workspace/modern.config.ts');
+  });
+
+  test('parses the committed mf-examples workspace through the registry', async () => {
+    const examplesRoot = path.resolve(__dirname, '../../../../../src/test/fixtures/mf-examples');
+    const exampleFiles = [
+      'host-app/vite.config.js',
+      'remote-app/vite.config.js',
+      'module-federation-enhanced/consumer/module-federation.config.ts',
+      'module-federation-enhanced/consumer/rsbuild.config.ts',
+      'module-federation-enhanced/provider/rsbuild.config.ts'
+    ];
+    const relativePath = (filePath: string): string => path.relative(examplesRoot, filePath).split(path.sep).join('/');
+    const scannedFiles = new Set<string>();
+    const service = new FederationDiscoveryService({
+      findFiles: async (_rootPath, pattern) =>
+        exampleFiles
+          .filter(filePath => pattern.includes(path.basename(filePath)))
+          .map(filePath => path.join(examplesRoot, filePath)),
+      parseConfigFile: async (filePath, extractor) => {
+        scannedFiles.add(relativePath(filePath));
+        return parseConfigFile(filePath, extractor);
+      }
+    });
+
+    const result = await service.discover([examplesRoot]);
+
+    assert.deepStrictEqual([...scannedFiles].sort(), [...exampleFiles].sort());
+    assert.deepStrictEqual(result.errors, []);
+    assert.deepStrictEqual(
+      result.configurations
+        .map(({ filePath, type, config }) => ({
+          filePath: relativePath(filePath),
+          type,
+          name: config.name,
+          remotes: config.remotes.map(remote => remote.name),
+          exposes: config.exposes.map(expose => expose.name),
+          shared: config.shared.map(dependency => dependency.name)
+        }))
+        .sort((left, right) => left.filePath.localeCompare(right.filePath)),
+      [
+        {
+          filePath: 'host-app/vite.config.js',
+          type: 'vite',
+          name: 'host_app',
+          remotes: ['remoteApp'],
+          exposes: [],
+          shared: ['react', 'react-dom']
+        },
+        {
+          filePath: 'module-federation-enhanced/consumer/rsbuild.config.ts',
+          type: 'rsbuild',
+          name: 'federation_consumer',
+          remotes: ['federation_provider'],
+          exposes: [],
+          shared: ['react', 'react-dom']
+        },
+        {
+          filePath: 'module-federation-enhanced/provider/rsbuild.config.ts',
+          type: 'rsbuild',
+          name: 'federation_provider',
+          remotes: [],
+          exposes: ['./button'],
+          shared: ['react', 'react-dom']
+        },
+        {
+          filePath: 'remote-app/vite.config.js',
+          type: 'vite',
+          name: 'remote_app',
+          remotes: [],
+          exposes: ['./Button'],
+          shared: ['react', 'react-dom']
+        }
+      ]
+    );
   });
 });

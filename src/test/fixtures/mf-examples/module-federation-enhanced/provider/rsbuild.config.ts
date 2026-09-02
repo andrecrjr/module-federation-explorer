@@ -8,16 +8,16 @@ export default defineConfig({
     pluginModuleFederation({
       name: 'federation_provider',
       exposes: {
-        './button': './src/Button.tsx',
+        './button': './src/Button.tsx'
       },
-      shared: ['react', 'react-dom'],
-    }),
+      shared: ['react', 'react-dom']
+    })
   ],
   server: {
     port: 3000,
-    cors: { origin: '*' },
+    cors: { origin: '*' }
   },
   output: {
-    assetPrefix: 'http://localhost:3000',
-  },
+    assetPrefix: 'http://localhost:3000'
+  }
 });

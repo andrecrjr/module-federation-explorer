@@ -11,6 +11,7 @@
   "exclude": [
     "node_modules",
     ".vscode-test",
+    "src/test/fixtures",
     "src/test/integration/ui/**/*.ts"
   ]
 }
