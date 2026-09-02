@@ -270,6 +270,7 @@ npm run lint
 npm run typecheck
 npm run compile
 npm run package
+npm run clean:test
 npm run test:headless
 npm run test:coverage
 npm run test:manual
