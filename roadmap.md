@@ -91,6 +91,12 @@ The initial normalized export should contain:
 - [ ] Export comparison results using the same AI-ready JSON schema.
 - [ ] Add stable change categories for external tools and agents.
 
+## After 3.0.0 — CLI and extension ecosystem
+
+- [ ] Evolve MFE Explorer for CLI-based workflows and automation.
+- [ ] Add a dedicated `mcp/skills/` folder for MCP and skill integrations.
+- [ ] Keep extension-specific integrations in a separate `extensions/` folder.
+
 ## Deferred scope
 
 - [ ] Consider `mf-stats.json` support only after the `mf-manifest.json` model is stable.

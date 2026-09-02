@@ -38,6 +38,7 @@ export class PerformanceRecorder implements PerformancePort {
   private completedAt: string | undefined;
   private readonly measurements: PerformanceMeasurement[] = [];
   private readonly marks: PerformanceMark[] = [];
+  private flushPromise: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly runtime: PerformanceRuntime,
@@ -72,6 +73,8 @@ export class PerformanceRecorder implements PerformancePort {
 
   async flush(): Promise<void> {
     this.completedAt = this.runtime.timestamp();
-    await this.sink(this.getSnapshot());
+    const snapshot = this.getSnapshot();
+    this.flushPromise = this.flushPromise.catch(() => undefined).then(() => this.sink(snapshot));
+    await this.flushPromise;
   }
 }

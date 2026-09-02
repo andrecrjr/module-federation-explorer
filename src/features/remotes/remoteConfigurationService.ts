@@ -90,9 +90,11 @@ export class RemoteConfigurationService {
   }
 
   async hydrateRemoteConfigurations(
-    discoveredConfigs: ReadonlyMap<string, ModuleFederationConfig[]>
+    discoveredConfigs: ReadonlyMap<string, ModuleFederationConfig[]>,
+    persistedConfig?: UnifiedRootConfig | null
   ): Promise<Map<string, ModuleFederationConfig[]>> {
-    const persisted = await this.dependencies.rootConfigurationStore.loadRootConfig();
+    const persisted =
+      persistedConfig === undefined ? await this.dependencies.rootConfigurationStore.loadRootConfig() : persistedConfig;
     const hydrated = new Map<string, ModuleFederationConfig[]>();
     const savedRootKeys = persisted ? createSavedRootKeyIndex(persisted) : undefined;
 

@@ -64,7 +64,10 @@ export class UnifiedModuleFederationProvider
   getChildren(element?: TreeElement): Thenable<TreeElement[]> {
     try {
       const snapshot = this.store.getSnapshot();
-      if (snapshot.isLoading) {
+      if (
+        snapshot.isLoading ||
+        (snapshot.isManifestLoading && snapshot.rootFolders.length === 0 && snapshot.manifests.length === 0)
+      ) {
         return Promise.resolve([
           {
             type: 'loadingPlaceholder',

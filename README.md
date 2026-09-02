@@ -285,7 +285,7 @@ Desktop UI tests use VS Code Extension Tester and need a graphical display. On h
 
 ### Measure extension startup
 
-The performance benchmark measures extension activation and initial configuration loading in clean VS Code test hosts. It reports median and p95 timings for activation, initialization, and initial loading.
+The performance benchmark compares two Git refs in clean VS Code test hosts. It reports median and p95 timings for activation return, static-tree readiness, complete application data, registration milestones, runner time, and compile time. It uses an external tree-provider probe, so `master` does not need the refactor’s test or instrumentation files.
 
 ```bash
 rtk npm run perf:extension -- --base master --head feature/refactoring --runs 5 --mode cold,warm

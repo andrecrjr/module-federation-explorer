@@ -51,4 +51,30 @@ suite('PerformanceRecorder', () => {
     assert.equal(result, 'result');
     assert.deepEqual(performance.getSnapshot().measurements, []);
   });
+
+  test('serializes overlapping flushes so the final snapshot is not overwritten', async () => {
+    let releaseFirstFlush: (() => void) | undefined;
+    const firstFlush = new Promise<void>(resolve => {
+      releaseFirstFlush = resolve;
+    });
+    let sinkCalls = 0;
+    let isFirstCall = true;
+    const recorder = new PerformanceRecorder(new FakePerformanceRuntime(), async () => {
+      sinkCalls++;
+      if (isFirstCall) {
+        isFirstCall = false;
+        await firstFlush;
+      }
+    });
+
+    const first = recorder.flush();
+    await Promise.resolve();
+    const second = recorder.flush();
+    await Promise.resolve();
+
+    assert.equal(sinkCalls, 1);
+    releaseFirstFlush!();
+    await Promise.all([first, second]);
+    assert.equal(sinkCalls, 2);
+  });
 });

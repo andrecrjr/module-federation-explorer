@@ -93,6 +93,22 @@ suite('UnifiedModuleFederationProvider', () => {
     provider.dispose();
   });
 
+  test('keeps static roots visible while manifests are being loaded', async () => {
+    const store = new ExplorerStore();
+    const rootFolder: RootFolder = {
+      type: 'rootFolder',
+      path: '/workspace/host',
+      name: 'host',
+      configs: [createConfig()]
+    };
+    store.setRootFolders([rootFolder]);
+    store.setManifestLoading(true);
+    const provider = createProvider(store);
+
+    assert.deepStrictEqual(await provider.getChildren(), [rootFolder]);
+    provider.dispose();
+  });
+
   test('serves discovered manifests through a top-level folder', async () => {
     const store = new ExplorerStore();
     store.replaceManifests([createManifest()]);

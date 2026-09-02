@@ -63,6 +63,7 @@ suite('ExplorerStore', () => {
     ];
 
     store.setLoading(true);
+    store.setManifestLoading(true);
     store.replace(configs);
     store.setRootFolders(rootFolders);
     store.setLoading(false);
@@ -71,12 +72,13 @@ suite('ExplorerStore', () => {
     assert.strictEqual(snapshot.configs, configs);
     assert.deepStrictEqual(snapshot.rootFolders, rootFolders);
     assert.strictEqual(snapshot.isLoading, false);
-    assert.strictEqual(changes.length, 4);
+    assert.strictEqual(snapshot.isManifestLoading, true);
+    assert.strictEqual(changes.length, 5);
 
     unsubscribe();
     store.clear();
     assert.strictEqual(store.getSnapshot().configs.size, 0);
-    assert.strictEqual(changes.length, 4);
+    assert.strictEqual(changes.length, 5);
   });
 
   test('returns a read-only snapshot shape to tree consumers', () => {

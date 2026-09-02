@@ -54,6 +54,8 @@ export class ExplorerApplication {
   private readonly performance: PerformancePort;
   private initialLoadCompleted = false;
   private reloadQueued = false;
+  private initializationPromise: Promise<void> | undefined;
+  private loadGeneration = 0;
 
   constructor(
     private readonly workspaceRoot: string | undefined,
@@ -129,19 +131,54 @@ export class ExplorerApplication {
     return this.workspaceRoot;
   }
 
-  async initialize(): Promise<void> {
-    await this.performance.measure('initialize', async () => {
-      this.log('Initializing Module Federation Explorer application...');
-      const rootConfig = await this.services.rootConfigManager.loadRootConfig();
-      const hasManifestSources = (rootConfig?.manifestSources?.length || 0) > 0;
-      if ((await this.services.rootConfigManager.hasConfiguredRoots()) || hasManifestSources) {
-        await this.loadConfigurations();
-        return;
-      }
+  initialize(): Promise<void> {
+    this.initializationPromise ??= this.runInitialization();
+    return this.initializationPromise;
+  }
 
-      void this.services.host.setContext('moduleFederation.hasRoots', false);
-      this.log('No host directories configured yet. Waiting for user to set up configuration.');
-    });
+  startInitialization(): void {
+    void this.initialize()
+      .catch(error => {
+        this.store.clear();
+        this.logError('Failed to initialize Module Federation Explorer', error);
+      })
+      .finally(() => this.performance.flush())
+      .catch(error => this.logError('Failed to flush extension performance data', error));
+  }
+
+  private async runInitialization(): Promise<void> {
+    this.store.setLoading(true);
+    this.store.setManifestLoading(false);
+    try {
+      await this.performance.measure('initialize', async () => {
+        this.log('Initializing Module Federation Explorer application...');
+        const rootConfig = await this.performance.measure('rootConfigLoad', () =>
+          this.services.rootConfigManager.loadRootConfig()
+        );
+        const hasManifestSources = (rootConfig?.manifestSources?.length || 0) > 0;
+        const hasConfiguredContent =
+          hasManifestSources ||
+          (rootConfig?.roots.length ? true : await this.services.rootConfigManager.hasConfiguredRoots());
+        if (hasConfiguredContent) {
+          await this.loadConfigurations({ rootConfig });
+          return;
+        }
+
+        void this.services.host.setContext('moduleFederation.hasRoots', false);
+        this.log('No host directories configured yet. Waiting for user to set up configuration.');
+      });
+    } finally {
+      if (this.store.getSnapshot().isManifestLoading) this.store.setManifestLoading(false);
+      if (this.store.getSnapshot().isLoading) this.store.setLoading(false);
+      if (!this.initialLoadCompleted) {
+        this.performance.mark('initial-data-ready');
+        this.performance.mark('extension-ready');
+      }
+      if (this.reloadQueued && !this.store.getSnapshot().isLoading && !this.store.getSnapshot().isManifestLoading) {
+        this.reloadQueued = false;
+        void this.loadConfigurations();
+      }
+    }
   }
 
   async hasConfiguredRoots(): Promise<boolean> {
@@ -166,7 +203,8 @@ export class ExplorerApplication {
   }
 
   async reloadConfigurations(): Promise<void> {
-    if (this.store.getSnapshot().isLoading) {
+    const snapshot = this.store.getSnapshot();
+    if (snapshot.isLoading || snapshot.isManifestLoading) {
       this.reloadQueued = true;
       return;
     }
@@ -189,21 +227,27 @@ export class ExplorerApplication {
     });
   }
 
-  private async loadConfigurations(): Promise<void> {
-    if (this.store.getSnapshot().isLoading) {
+  private async loadConfigurations(options?: { rootConfig: UnifiedRootConfig | null }): Promise<void> {
+    const isInitialLoad = options !== undefined;
+    const snapshot = this.store.getSnapshot();
+    if (!isInitialLoad && (snapshot.isLoading || snapshot.isManifestLoading)) {
       this.reloadQueued = true;
       return;
     }
 
     const measureName = this.initialLoadCompleted ? 'reload' : 'initialLoad';
     await this.performance.measure(measureName, async () => {
-      this.store.setLoading(true);
+      if (!isInitialLoad) {
+        this.store.setLoading(true);
+        this.store.setManifestLoading(false);
+      }
+      const generation = ++this.loadGeneration;
       try {
         await this.services.host.withProgress('Module Federation Explorer', async progress => {
           progress.report({ message: 'Loading configurations...' });
-          const rootConfig = await this.performance.measure('rootConfigLoad', () =>
-            this.services.rootConfigManager.loadRootConfig()
-          );
+          const rootConfig = isInitialLoad
+            ? (options?.rootConfig ?? null)
+            : await this.performance.measure('rootConfigLoad', () => this.services.rootConfigManager.loadRootConfig());
           if (!rootConfig) {
             this.store.clear();
             this.log('Failed to load root configuration');
@@ -239,14 +283,12 @@ export class ExplorerApplication {
                 this.log(`Failed to parse configuration file ${loadError.filePath}: ${String(loadError.error)}`);
               }
 
-              progress.report({ message: 'Loading host configurations...' });
-              await this.performance.measure('rootAppConfigLoad', () => this.rootAppController.loadRootFolderConfigs());
               progress.report({ message: 'Loading remote configurations...' });
               const hydratedConfigs = await this.performance.measure('remoteHydration', () =>
-                this.remoteConfigurationService.hydrateRemoteConfigurations(this.store.getConfigs())
+                this.remoteConfigurationService.hydrateRemoteConfigurations(this.store.getConfigs(), rootConfig)
               );
               this.store.replace(hydratedConfigs);
-              await this.performance.measure('treeStateUpdate', () => this.updateRootFolders());
+              await this.performance.measure('treeStateUpdate', () => this.updateRootFolders(rootConfig));
               void this.services.host.setContext('moduleFederation.hasRoots', this.store.getConfigs().size > 0);
             } catch (error) {
               this.store.replace(new Map());
@@ -262,25 +304,40 @@ export class ExplorerApplication {
             void this.services.host.setContext('moduleFederation.hasRoots', false);
           }
 
-          if (this.services.manifestLoader) {
+          const hasStaticTree = this.store.getSnapshot().rootFolders.length > 0;
+          const manifestLoader = this.services.manifestLoader;
+          if (manifestLoader) {
+            this.store.setManifestLoading(true);
+            if (hasStaticTree) {
+              this.store.setLoading(false);
+              this.performance.mark('static-tree-ready');
+            }
             progress.report({ message: 'Loading federation manifests...' });
             try {
-              const manifestSnapshot = await this.services.manifestLoader.discover(rootConfig.roots, {
+              const manifestSnapshot = await manifestLoader.discover(rootConfig.roots, {
                 sources: rootConfig.manifestSources,
                 staticConfigs: this.store.getConfigs()
               });
-              this.store.replaceManifests(manifestSnapshot.manifests, manifestSnapshot.errors);
-              for (const loadError of manifestSnapshot.errors) {
-                this.log(
-                  `Failed to load manifest ${formatManifestSource(loadError.source)}: ${String(loadError.error)}`
-                );
+              if (generation === this.loadGeneration) {
+                this.store.replaceManifests(manifestSnapshot.manifests, manifestSnapshot.errors);
+                for (const loadError of manifestSnapshot.errors) {
+                  this.log(
+                    `Failed to load manifest ${formatManifestSource(loadError.source)}: ${String(loadError.error)}`
+                  );
+                }
               }
             } catch (error) {
-              this.store.replaceManifests([], []);
-              this.logError('Failed to load federation manifests', error);
+              if (generation === this.loadGeneration) {
+                this.store.replaceManifests([], []);
+                this.logError('Failed to load federation manifests', error);
+              }
             }
           } else {
             this.store.replaceManifests([], []);
+            if (hasStaticTree) {
+              this.store.setLoading(false);
+              this.performance.mark('static-tree-ready');
+            }
           }
           void this.services.host.setContext(
             'moduleFederation.hasRoots',
@@ -296,9 +353,14 @@ export class ExplorerApplication {
           'Failed to load Module Federation configurations. See output panel for details.'
         );
       } finally {
-        this.store.setLoading(false);
-        this.initialLoadCompleted = true;
-        if (this.reloadQueued) {
+        if (generation === this.loadGeneration) {
+          this.store.setManifestLoading(false);
+          this.store.setLoading(false);
+          this.performance.mark('initial-data-ready');
+          this.performance.mark('extension-ready');
+          this.initialLoadCompleted = true;
+        }
+        if (generation === this.loadGeneration && this.reloadQueued) {
           this.reloadQueued = false;
           void this.loadConfigurations();
         }
@@ -306,8 +368,8 @@ export class ExplorerApplication {
     });
   }
 
-  private async updateRootFolders(): Promise<void> {
-    const config = await this.services.rootConfigManager.loadRootConfig();
+  private async updateRootFolders(rootConfig?: UnifiedRootConfig | null): Promise<void> {
+    const config = rootConfig === undefined ? await this.services.rootConfigManager.loadRootConfig() : rootConfig;
     if (!config) {
       this.store.setRootFolders([]);
       return;

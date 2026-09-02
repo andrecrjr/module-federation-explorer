@@ -202,12 +202,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       context.subscriptions.push(...registerWatchers(application));
       registerTerminalLifecycle(context, application);
       scheduleOnboarding(context, application);
-      await application.initializeFeedback();
-      await application.initialize();
+      void application.initializeFeedback().catch(error => {
+        application.logError('Failed to initialize feedback', error);
+      });
+      application.startInitialization();
 
       vscode.window.showInformationMessage('Module Federation Explorer is now active!');
       application.log('Extension activated successfully');
-      performance.mark('extension-ready');
+      performance.mark('activation-ready');
       return { application, provider };
     });
     return composition;

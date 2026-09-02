@@ -115,18 +115,20 @@ Manifest activation events in `package.json` cover supported config filenames, `
 4. registers configuration watchers;
 5. registers terminal close handling and periodic cleanup;
 6. schedules delayed onboarding detection;
-7. initializes rating state;
-8. starts `application.initialize()` without blocking activation on the first load.
+7. starts rating-state initialization in the background;
+8. starts application initialization without blocking activation on the first load.
 
 On activation, running-terminal bookkeeping is cleared. VS Code terminals that close later are removed from runtime state, and a ten-second cleanup interval removes entries whose process is no longer alive.
 
 ### Initialization
 
-`ExplorerApplication.initialize()` checks the root configuration for configured roots or explicit manifest sources:
+`ExplorerApplication.initialize()` checks the root configuration for configured roots or explicit manifest sources. Static configuration loading and manifest discovery are separate phases:
 
-- roots configured → load and hydrate static configurations, then load manifests;
-- only manifest sources configured → load manifests without scanning static roots;
+- roots configured → load and hydrate static configurations, publish the root folders, then discover manifests in the background;
+- only manifest sources configured → keep the tree in a loading state until manifest discovery completes;
 - no roots or manifest sources configured → leave the store empty and wait for user setup/onboarding.
+
+While manifests are loading, the store exposes `isManifestLoading`. The tree provider keeps already loaded static roots visible and uses the loading placeholder for manifest-only workspaces. A reload requested during either phase is queued until the current transaction completes.
 
 After 1.5 seconds, `scheduleOnboarding()` checks again. If neither roots nor explicit manifest sources are configured, `features/onboarding/workspaceScanner.ts` runs the same `FederationDiscoveryService` used by normal loading and passes detected projects to `OnboardingController`.
 
@@ -139,9 +141,10 @@ RootConfigManager.loadRootConfig()
   → read configured roots
   → ConfigurationService.load(root paths) when roots exist
   → store discovered static configs
-  → RootAppController root presentation state
+  → root presentation state
   → RemoteConfigurationService.hydrateRemoteConfigurations()
   → store hydrated static configs
+  → publish static tree state
   → ManifestDiscoveryService.discover(root paths and explicit sources)
   → store manifest records and diagnostics separately
   → build root-folder presentation state

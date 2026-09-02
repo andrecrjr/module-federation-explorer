@@ -9,6 +9,7 @@ export interface ExplorerSnapshot {
   readonly manifestDiagnostics: readonly ManifestDiagnostic[];
   readonly rootFolders: readonly RootFolder[];
   readonly isLoading: boolean;
+  readonly isManifestLoading: boolean;
 }
 
 type StoreListener = () => void;
@@ -21,6 +22,7 @@ export class ExplorerStore {
   private manifestDiagnostics: readonly ManifestDiagnostic[] = [];
   private rootFolders: readonly RootFolder[] = [];
   private loading = false;
+  private manifestLoading = false;
   private readonly listeners = new Set<StoreListener>();
 
   getSnapshot(): ExplorerSnapshot {
@@ -30,7 +32,8 @@ export class ExplorerStore {
       manifestErrors: this.manifestErrors,
       manifestDiagnostics: this.manifestDiagnostics,
       rootFolders: this.rootFolders,
-      isLoading: this.loading
+      isLoading: this.loading,
+      isManifestLoading: this.manifestLoading
     };
   }
 
@@ -76,12 +79,18 @@ export class ExplorerStore {
     this.notify();
   }
 
+  setManifestLoading(isLoading: boolean): void {
+    this.manifestLoading = isLoading;
+    this.notify();
+  }
+
   clear(): void {
     this.configs = new Map();
     this.manifests = [];
     this.manifestErrors = [];
     this.manifestDiagnostics = [];
     this.rootFolders = [];
+    this.manifestLoading = false;
     this.notify();
   }
 

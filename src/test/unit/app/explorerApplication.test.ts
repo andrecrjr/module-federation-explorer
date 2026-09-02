@@ -33,11 +33,13 @@ import type { DependencyGraph } from '../../../features/graph/types';
 class MemoryRootConfig implements RootConfigService {
   configured = true;
   config: UnifiedRootConfig | null = { roots: ['/workspace/host'] };
+  loadCount = 0;
 
   async hasConfiguredRoots(): Promise<boolean> {
     return this.configured;
   }
   async loadRootConfig(): Promise<UnifiedRootConfig | null> {
+    this.loadCount++;
     return this.config;
   }
   getConfigPath(): string | undefined {
@@ -216,6 +218,7 @@ function createServices(
     terminalManager?: RecordingTerminalManager;
     configurationError?: Error;
     manifestSnapshot?: ManifestDiscoveryResult;
+    manifestLoader?: ManifestLoader;
   } = {}
 ): {
   services: ExplorerApplicationServices;
@@ -260,14 +263,16 @@ function createServices(
       return snapshot;
     }
   };
-  const manifestLoader: ManifestLoader | undefined = options.manifestSnapshot
-    ? {
-        discover: async (roots, discoveryOptions) => {
-          manifestCalls.push({ roots, sources: discoveryOptions?.sources || [] });
-          return options.manifestSnapshot!;
+  const manifestLoader: ManifestLoader | undefined =
+    options.manifestLoader ||
+    (options.manifestSnapshot
+      ? {
+          discover: async (roots, discoveryOptions) => {
+            manifestCalls.push({ roots, sources: discoveryOptions?.sources || [] });
+            return options.manifestSnapshot!;
+          }
         }
-      }
-    : undefined;
+      : undefined);
   const dependencyGraphManager: DependencyGraphService = {
     refreshDependencyGraph: () => {
       graphCalls.refresh++;
@@ -355,6 +360,7 @@ suite('ExplorerApplication', () => {
   test('initializes without scanning when no roots are configured', async () => {
     const rootConfig = new MemoryRootConfig();
     rootConfig.configured = false;
+    rootConfig.config = { roots: [] };
     const harness = createServices({ rootConfig });
     const app = new ExplorerApplication('/workspace/project', new ExplorerStore(), harness.services);
 
@@ -422,13 +428,102 @@ suite('ExplorerApplication', () => {
     assert.equal(harness.graphCalls.refresh, 1);
     assert.deepEqual(harness.performance.measurements, [
       'initialize',
-      'initialLoad',
       'rootConfigLoad',
+      'initialLoad',
       'configurationLoad',
-      'rootAppConfigLoad',
       'remoteHydration',
       'treeStateUpdate'
     ]);
+    assert.equal(harness.rootConfig.loadCount, 1);
+  });
+
+  test('starts initialization in the background and renders static roots before manifests', async () => {
+    const manifest: ManifestRecord = {
+      provenance: 'manifest',
+      id: 'manifest-id',
+      name: 'manifest-only',
+      metadata: { assets: [], disableAssetsAnalyze: false },
+      shared: [],
+      remotes: [],
+      exposes: [],
+      source: { kind: 'local', location: '/workspace/host/mf-manifest.json' },
+      manifestPath: '/workspace/host/mf-manifest.json',
+      loadedAt: '2026-09-01T00:00:00.000Z',
+      diagnostics: []
+    };
+    let releaseManifest: (() => void) | undefined;
+    const manifestReady = new Promise<void>(resolve => {
+      releaseManifest = resolve;
+    });
+    const harness = createServices({
+      manifestLoader: {
+        discover: async () => {
+          await manifestReady;
+          return { manifests: [manifest], errors: [] };
+        }
+      }
+    });
+    const store = new ExplorerStore();
+    const app = new ExplorerApplication('/workspace/project', store, harness.services);
+
+    app.startInitialization();
+    assert.equal(store.getSnapshot().isLoading, true);
+
+    while (store.getSnapshot().rootFolders.length === 0) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+
+    assert.equal(store.getSnapshot().isLoading, false);
+    assert.equal(store.getSnapshot().isManifestLoading, true);
+    assert.equal(store.getManifests().length, 0);
+    await app.reloadConfigurations();
+    assert.equal(harness.loadCalls(), 1);
+
+    releaseManifest!();
+    await app.initialize();
+    while (harness.loadCalls() < 2) await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(store.getSnapshot().isManifestLoading, false);
+    assert.deepEqual(store.getManifests(), [manifest]);
+  });
+
+  test('keeps a manifest-only workspace loading until manifest discovery completes', async () => {
+    const source: ManifestSourceConfig = {
+      kind: 'url',
+      location: 'https://example.test/mf-manifest.json'
+    };
+    const rootConfig = new MemoryRootConfig();
+    rootConfig.config = { roots: [], manifestSources: [source] };
+    let releaseManifest: (() => void) | undefined;
+    let discoveryStarted = false;
+    const manifestReady = new Promise<void>(resolve => {
+      releaseManifest = resolve;
+    });
+    const harness = createServices({
+      rootConfig,
+      manifestLoader: {
+        discover: async () => {
+          discoveryStarted = true;
+          await manifestReady;
+          return { manifests: [], errors: [] };
+        }
+      }
+    });
+    const store = new ExplorerStore();
+    const app = new ExplorerApplication('/workspace/project', store, harness.services);
+
+    app.startInitialization();
+    while (!discoveryStarted) await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(store.getSnapshot().isLoading, true);
+    assert.equal(store.getSnapshot().isManifestLoading, true);
+    assert.deepEqual(store.getSnapshot().rootFolders, []);
+
+    releaseManifest!();
+    await app.initialize();
+
+    assert.equal(store.getSnapshot().isLoading, false);
+    assert.equal(store.getSnapshot().isManifestLoading, false);
   });
 
   test('shows an informational message instead of opening an empty graph', async () => {
